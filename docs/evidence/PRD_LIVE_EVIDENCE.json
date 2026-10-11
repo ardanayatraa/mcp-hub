@@ -1,0 +1,33 @@
+{
+  "verified_at": "2026-10-09T21:23:03.474360+00:00",
+  "fixture": "isolated SQLite UAT with dummy Your App data",
+  "checks": {
+    "real_http_sdk_call": {
+      "passed": true,
+      "protocol": "2026-07-28",
+      "records": 1
+    },
+    "revoked_source_user_denied": {
+      "passed": true
+    },
+    "cross_tenant_source_user_denied": {
+      "passed": true
+    },
+    "cached_disabled_tool_denied": {
+      "passed": true
+    },
+    "real_http_after_atomic_restore": {
+      "passed": true,
+      "protocol": "2026-07-28",
+      "records": 1
+    },
+    "real_http_after_process_restart": {
+      "passed": true,
+      "protocol": "2026-07-28",
+      "records": 1
+    },
+    "session_and_credential_persistence": {
+      "passed": true
+    }
+  }
+}

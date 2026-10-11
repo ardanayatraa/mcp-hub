@@ -1,0 +1,83 @@
+{
+    "name": "laravel/laravel",
+    "type": "project",
+    "description": "The Laravel Framework.",
+    "keywords": ["framework", "laravel"],
+    "license": "MIT",
+    "require": {
+        "php": "^8.0.2",
+        "asantibanez/livewire-charts": "^2.5",
+        "aws/aws-sdk-php": "~3.0",
+        "darkaonline/l5-swagger": "^8.3",
+        "fruitcake/laravel-cors": "^2.0",
+        "guzzlehttp/guzzle": "^7.2",
+        "laravel/framework": "^9.2",
+        "laravel/jetstream": "^2.6",
+        "laravel/sanctum": "^2.14.1",
+        "laravel/telescope": "^5.15",
+        "laravel/tinker": "^2.7",
+        "league/flysystem": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.0",
+        "league/flysystem-sftp-v3": "3.0",
+        "livewire/livewire": "^2.12",
+        "maatwebsite/excel": "^3.1",
+        "mediconesystems/livewire-datatables": "^0.10.3",
+        "messagebird/php-rest-api": "^1.20",
+        "milon/barcode": "9.0.0",
+        "predis/predis": "^3.3",
+        "psr/simple-cache": "1.0",
+        "te7a-houdini/laravel-trix": "^2.0",
+        "twilio/sdk": "^6.22",
+        "unicodeveloper/novu": "^1.1",
+        "vinkla/hashids": "10.0.0",
+        "vladimir-yuldashev/laravel-queue-rabbitmq": "^13.3"
+    },
+    "require-dev": {
+        "barryvdh/laravel-debugbar": "^3.14",
+        "fakerphp/faker": "^1.9.1",
+        "laravel/sail": "^1.0.1",
+        "mockery/mockery": "^1.4.4",
+        "nunomaduro/collision": "^6.1",
+        "phpunit/phpunit": "^9.5.10",
+        "spatie/laravel-ignition": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        },
+        "files": [
+            "app/Helpers/Helper.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi"
+        ],
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-create-project-cmd": [
+            "@php artisan key:generate --ansi"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

@@ -1,0 +1,78 @@
+# Dev compose. Replace every secret and the TLS certificate before any shared deployment.
+# Private egress is on so the hub can reach the reference app on the compose network.
+# Production must keep EGRESS_ALLOW_PRIVATE and ALLOW_INSECURE_HTTP false.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: hub
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - hub-pg:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: postgresql+psycopg://hub:${POSTGRES_PASSWORD}@postgres:5432/hub
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?set SECRET_ENCRYPTION_KEY}
+      SESSION_SIGNING_KEY: ${SESSION_SIGNING_KEY:?set SESSION_SIGNING_KEY}
+      ADMIN_INITIAL_EMAIL: ${ADMIN_INITIAL_EMAIL:-admin@localhost}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?set ADMIN_INITIAL_PASSWORD}
+      COOKIE_SECURE: "true"
+      MFA_REQUIRED: "false"
+      ALLOW_INSECURE_HTTP: "true"
+      EGRESS_ALLOW_PRIVATE: "true"
+      EGRESS_ALLOWED_PORTS: "80,443,8081"
+      EGRESS_ALLOWED_HOSTS: "your-app"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,localhost:8443,127.0.0.1:8443"
+      ALLOWED_ORIGINS: "https://localhost:8443,https://127.0.0.1:8443"
+      MCP_PUBLIC_URL: "https://localhost:8443/mcp"
+      MCP_ISSUER_URL: "https://localhost:8443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  your-app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.your-app
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8081"
+      YOUR_APP_API_KEY: ${YOUR_APP_API_KEY:-dev-your-app-key}
+      YOUR_APP_DELEGATION_SECRET: ${YOUR_APP_DELEGATION_SECRET:-dev-delegation-secret}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8081/api/ai/v1/health', headers={'X-API-Key': os.environ['YOUR_APP_API_KEY']}), timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  edge:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.frontend
+    ports:
+      - "8443:443"
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  hub-pg:

@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import { ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
+
+import { useSession } from "@/stores/session";
+import { errorMessage } from "@/utils/format";
+
+const session = useSession();
+const route = useRoute();
+const router = useRouter();
+const email = ref("admin@localhost");
+const password = ref("");
+const code = ref("");
+const mfaToken = ref("");
+const otpauth = ref("");
+const error = ref("");
+const busy = ref(false);
+
+async function finish() {
+  const next = typeof route.query.next === "string" && route.query.next.startsWith("/") ? route.query.next : "/";
+  await router.push(next);
+}
+
+async function submit() {
+  error.value = "";
+  busy.value = true;
+  try {
+    if (mfaToken.value) {
+      await session.confirmMfa(mfaToken.value, code.value);
+      await finish();
+      return;
+    }
+    const data = await session.login(email.value, password.value);
+    if (data.user) {
+      await finish();
+      return;
+    }
+    mfaToken.value = data.mfa_token || "";
+    otpauth.value = data.otpauth_uri || "";
+  } catch (exc) {
+    error.value = errorMessage(exc, "Sign-in failed");
+  } finally {
+    busy.value = false;
+  }
+}
+</script>
+
+<template>
+  <main class="flex min-h-screen items-center justify-center px-4">
+    <div class="w-full max-w-sm">
+      <div class="mb-6 flex items-center gap-3">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-brand text-brand-ink"><AppIcon name="bolt" :size="22" /></span>
+        <div>
+          <p class="text-lg font-semibold">MCP Hub</p>
+          <p class="text-sm text-subtle">Connect your apps to AI, safely.</p>
+        </div>
+      </div>
+      <form class="card card-pad space-y-4" @submit.prevent="submit">
+        <h1 class="text-base">{{ mfaToken ? "Two-step verification" : "Sign in" }}</h1>
+        <p v-if="error" role="alert" class="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>
+        <template v-if="!mfaToken">
+          <label class="block"><span class="label">Email</span>
+            <input v-model="email" class="input" autocomplete="username" type="email" required /></label>
+          <label class="block"><span class="label">Password</span>
+            <input v-model="password" class="input" autocomplete="current-password" type="password" required /></label>
+        </template>
+        <template v-else>
+          <div v-if="otpauth" class="space-y-2 rounded-lg bg-muted p-3 text-xs">
+            <p class="text-ink">Add this account to your authenticator app (for example Google Authenticator or 1Password), then enter the 6-digit code.</p>
+            <p class="break-all font-mono text-subtle">{{ otpauth }}</p>
+            <CopyButton :text="otpauth" label="Copy setup link" />
+          </div>
+          <p v-else class="text-sm text-subtle">Enter the 6-digit code from your authenticator app.</p>
+          <label class="block"><span class="label">Code</span>
+            <input v-model="code" class="input text-center font-mono text-lg tracking-[0.4em]" inputmode="numeric"
+                   autocomplete="one-time-code" maxlength="6" required /></label>
+        </template>
+        <button class="btn-primary w-full" type="submit" :disabled="busy">{{ mfaToken ? "Verify" : "Sign in" }}</button>
+      </form>
+    </div>
+  </main>
+</template>

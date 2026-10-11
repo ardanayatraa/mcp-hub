@@ -1,0 +1,5 @@
+{
+  "config/mcp.php": "config/ai.php",
+  "config/ai_resources.php": "config/ai.php",
+  "config/mcp_resources.php": "config/ai.php"
+}

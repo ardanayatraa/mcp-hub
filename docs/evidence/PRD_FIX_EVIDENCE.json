@@ -1,0 +1,572 @@
+{
+  "verified_at": "2026-10-09T21:22:32.660616+00:00",
+  "database": "isolated SQLite",
+  "checks": {
+    "ruff": {
+      "exit_code": 0,
+      "passed": true
+    },
+    "pytest": {
+      "exit_code": 0,
+      "passed": true
+    }
+  },
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "90",
+      "time": "16.730",
+      "timestamp": "2026-10-10T05:22:34.774984+08:00",
+      "hostname": "LAPTOP-2R4LDVTT"
+    }
+  ],
+  "cases": [
+    {
+      "name": "test_manifest_accepts_the_reference_shape",
+      "class": "tests.contract.test_manifest",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_manifest_rejects_unknown_operations_and_app_mismatch",
+      "class": "tests.contract.test_manifest",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_admin_can_publish_a_read_only_tool_without_new_python",
+      "class": "tests.integration.test_connector_and_tool",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_ssrf_connector_url_is_rejected",
+      "class": "tests.integration.test_connector_and_tool",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_populated_upgrade_downgrade_preserves_fk_children",
+      "class": "tests.integration.test_migrations",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_revoked_module_and_cross_app_token_fail",
+      "class": "tests.security.test_backup_and_authz",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_metadata_backup_round_trip_keeps_ciphertext",
+      "class": "tests.security.test_backup_and_authz",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_rest_metadata_pii_never_reaches_tool_or_logs[scope]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_rest_metadata_pii_never_reaches_tool_or_logs[as_of]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_rest_metadata_pii_never_reaches_tool_or_logs[timezone]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[3201010101010001]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[3201010101010001.0]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[+62 812 3456 7890]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[value3]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[password=should-never-leak]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[hub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_numeric_formatted_and_nested_pii_fail_closed[canary@localhost]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_wrong_output_shape_or_type_is_never_empty_success[bad shape]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_wrong_output_shape_or_type_is_never_empty_success[None]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_wrong_output_shape_or_type_is_never_empty_success[data2]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_wrong_output_shape_or_type_is_never_empty_success[data3]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_input_validation_errors_do_not_echo_sensitive_values",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_upstream_record_limit_enforced",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_unassigned_admin_cannot_view_mutate_or_issue_other_app_tokens",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_cross_app_discovery_and_direct_call_are_both_denied",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_scoped_auditor_reads_identity_metadata_without_write_authority",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_service_identity_ttl_is_strictly_validated[True]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_service_identity_ttl_is_strictly_validated[90]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_service_identity_ttl_is_strictly_validated[ttl2]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_service_identity_ttl_is_strictly_validated[0]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_service_identity_ttl_is_strictly_validated[366]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_unreviewed_route_and_weaker_delegation_rejected",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_schema_generation_handles_optional_before_required_and_rejects_reserved_names",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_edit_invalidates_revision_bound_tests_and_revision_publish_is_atomic",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_synthetic_test_validates_required_input",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_complete_backup_restore_preserves_secrets_tests_and_runtime",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_reference_source_reauthorizes_known_active_user[unknown-tenant_a]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_reference_source_reauthorizes_known_active_user[revoked_user-tenant_a]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_reference_source_reauthorizes_known_active_user[user_1-tenant_b]",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_reference_source_record_permissions_and_pagination",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_source_denies_long_lived_signed_assertion",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_push_dataset_bound_to_source_content_policy_and_quota",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_push_metadata_canary_and_numeric_sort",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_official_sdk_client_discovers_and_executes_protocol_target",
+      "class": "tests.security.test_prd_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_socket_uses_validated_ip_and_preserves_origin",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_chunked_request_limit_counts_actual_bytes",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_response_stops_streaming_when_limit_exceeded",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_overall_deadline_cancels_slow_upstream",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_only_safe_get_requests_retry[GET-3]",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_only_safe_get_requests_retry[POST-1]",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_burst_of_50_calls_has_bounded_concurrency",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_mfa_challenge_and_totp_cannot_be_replayed",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_mfa_attempts_are_rate_limited",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_egress_allowlist_is_required_and_applied",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_contract_change_requires_module_review_and_keeps_history",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_lifecycle_revocation_rotation_and_archive",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_configuration_type_returns_422[bad]",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_configuration_type_returns_422[value1]",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_configuration_type_returns_422[None]",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_configuration_type_returns_422[True]",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_unknown_tool_name_never_leaks_into_audit",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_blank_delegation_secret_is_returned_once",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_pii_in_enum_metadata_cannot_be_published",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_retries_and_health_failures_are_real_metrics",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_activity_source_checks_module_and_row_permission",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_delegation_must_be_short_lived",
+      "class": "tests.security.test_resource_and_mfa",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_detectors_match_canaries",
+      "class": "tests.unit.test_privacy_and_dataset",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_guard_drops_blocked_fields_and_rejects_embedded_pii",
+      "class": "tests.unit.test_privacy_and_dataset",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_inactive_count_respects_timezone_nulls_and_hides_pii",
+      "class": "tests.unit.test_privacy_and_dataset",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_partial_coverage_is_preserved_and_filter_is_allowlisted",
+      "class": "tests.unit.test_privacy_and_dataset",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_formula_injection_is_neutralized",
+      "class": "tests.unit.test_privacy_and_dataset",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_sensitive_field_cannot_be_allowlisted",
+      "class": "tests.unit.test_privacy_and_dataset",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_time_series_groups_in_declared_timezone",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_transform_normalizes_dates_and_desc_sort_keeps_null_last",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_processing_types_have_safe_validation_errors[parameters0]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_processing_types_have_safe_validation_errors[parameters1]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_processing_types_have_safe_validation_errors[parameters2]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_invalid_processing_types_have_safe_validation_errors[parameters3]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_nonfinite_aggregates_are_rejected[nan]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_nonfinite_aggregates_are_rejected[inf]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_nonfinite_aggregates_are_rejected[NaN]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_nonfinite_aggregates_are_rejected[Infinity]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_metadata_count_cannot_carry_numeric_pii_or_invalid_types[3201010101010001]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_metadata_count_cannot_carry_numeric_pii_or_invalid_types[True]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_metadata_count_cannot_carry_numeric_pii_or_invalid_types[-1]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_metadata_count_cannot_carry_numeric_pii_or_invalid_types[1.2]",
+      "class": "tests.unit.test_processing_regressions",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_metadata_and_loopback_and_private_are_blocked",
+      "class": "tests.unit.test_ssrf",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_private_stays_blocked_when_rfc1918_is_explicitly_allowed",
+      "class": "tests.unit.test_ssrf",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_public_host_is_allowed_when_every_address_is_public",
+      "class": "tests.unit.test_ssrf",
+      "passed": true,
+      "skipped": false
+    },
+    {
+      "name": "test_rebinding_to_a_private_address_is_rejected",
+      "class": "tests.unit.test_ssrf",
+      "passed": true,
+      "skipped": false
+    }
+  ],
+  "limits": [
+    "PostgreSQL and Docker jobs are configured in CI; no local Docker runtime is installed.",
+    "Actual CI execution and production deployment are not claimed by this local verification."
+  ]
+}

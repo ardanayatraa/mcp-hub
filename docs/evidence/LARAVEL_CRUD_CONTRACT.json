@@ -1,0 +1,375 @@
+{
+    "contract_version": "1.0",
+    "application": "laravel_app",
+    "managed_by": "application",
+    "manifest_version": "bd0dbed54fba6c5f",
+    "modules": [
+        {
+            "key": "templates",
+            "name": "Templates",
+            "schema_version": "1.0",
+            "supported_operations": [
+                "read",
+                "create",
+                "update",
+                "delete"
+            ],
+            "readable_fields": [
+                "ref",
+                "name",
+                "type",
+                "is_enabled",
+                "created_at",
+                "count"
+            ],
+            "max_page_size": 50,
+            "field_policies": {
+                "id": "blocked",
+                "user_id": "blocked",
+                "msisdn": "blocked",
+                "message_content": "blocked",
+                "description": "blocked",
+                "email": "blocked",
+                "phone": "blocked",
+                "phone_number": "blocked",
+                "password": "blocked",
+                "token": "blocked",
+                "secret": "blocked",
+                "api_key": "blocked"
+            },
+            "read_endpoints": [
+                {
+                    "tool_key": "laravel_app.templates.list",
+                    "description": "List authorized templates for the signed-in user.",
+                    "method": "GET",
+                    "safe_query": false,
+                    "path_template": "/api/ai/v1/templates/list",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 50
+                            },
+                            "cursor": {
+                                "type": "string",
+                                "maxLength": 64
+                            }
+                        },
+                        "required": []
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ref": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "is_enabled": {
+                                    "type": "boolean"
+                                },
+                                "created_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 64
+                                }
+                            },
+                            "required": [
+                                "ref",
+                                "name",
+                                "type",
+                                "is_enabled",
+                                "created_at"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "tool_key": "laravel_app.templates.get",
+                    "description": "Get authorized templates for the signed-in user.",
+                    "method": "GET",
+                    "safe_query": false,
+                    "path_template": "/api/ai/v1/templates/get",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "maxLength": 80
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ref": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "is_enabled": {
+                                    "type": "boolean"
+                                },
+                                "created_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 64
+                                }
+                            },
+                            "required": [
+                                "ref",
+                                "name",
+                                "type",
+                                "is_enabled",
+                                "created_at"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "tool_key": "laravel_app.templates.count",
+                    "description": "Count authorized templates for the signed-in user.",
+                    "method": "GET",
+                    "safe_query": false,
+                    "path_template": "/api/ai/v1/templates/count",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {},
+                        "required": []
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "count": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 1000000000
+                                }
+                            },
+                            "required": [
+                                "count"
+                            ]
+                        }
+                    }
+                }
+            ],
+            "writable_fields": [
+                "name",
+                "type",
+                "is_enabled",
+                "ref"
+            ],
+            "write_endpoints": [
+                {
+                    "tool_key": "laravel_app.templates.prepare_create",
+                    "description": "Prepare create for authorized templates. No business data changes until the user confirms in the source application.",
+                    "method": "POST",
+                    "safe_query": false,
+                    "path_template": "/api/ai/v1/templates/prepare_create",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "maxLength": 80
+                            },
+                            "type": {
+                                "type": "string",
+                                "maxLength": 64
+                            },
+                            "is_enabled": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "proposal_ref": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                },
+                                "requires_confirmation": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "proposal_ref",
+                                "summary",
+                                "requires_confirmation"
+                            ]
+                        }
+                    },
+                    "operation": "create"
+                },
+                {
+                    "tool_key": "laravel_app.templates.prepare_update",
+                    "description": "Prepare update for authorized templates. No business data changes until the user confirms in the source application.",
+                    "method": "POST",
+                    "safe_query": false,
+                    "path_template": "/api/ai/v1/templates/prepare_update",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "ref": {
+                                "type": "string",
+                                "maxLength": 64
+                            },
+                            "name": {
+                                "type": "string",
+                                "maxLength": 80
+                            },
+                            "type": {
+                                "type": "string",
+                                "maxLength": 64
+                            },
+                            "is_enabled": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "ref"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "proposal_ref": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                },
+                                "requires_confirmation": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "proposal_ref",
+                                "summary",
+                                "requires_confirmation"
+                            ]
+                        }
+                    },
+                    "operation": "update"
+                },
+                {
+                    "tool_key": "laravel_app.templates.prepare_delete",
+                    "description": "Prepare delete for authorized templates. No business data changes until the user confirms in the source application.",
+                    "method": "POST",
+                    "safe_query": false,
+                    "path_template": "/api/ai/v1/templates/prepare_delete",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "ref": {
+                                "type": "string",
+                                "maxLength": 64
+                            }
+                        },
+                        "required": [
+                            "ref"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "proposal_ref": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "maxLength": 2000
+                                },
+                                "requires_confirmation": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "proposal_ref",
+                                "summary",
+                                "requires_confirmation"
+                            ]
+                        }
+                    },
+                    "operation": "delete"
+                }
+            ]
+        }
+    ]
+}

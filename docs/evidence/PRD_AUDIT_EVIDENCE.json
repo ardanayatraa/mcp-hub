@@ -1,0 +1,131 @@
+{
+  "official_sdk_client": {
+    "negotiated_protocol": "2026-07-28",
+    "published_tool_found": true,
+    "call_error": false
+  },
+  "rest_metadata_pii": {
+    "leaked": true,
+    "tool_error": false
+  },
+  "numeric_national_id": {
+    "leaked": true,
+    "tool_error": false
+  },
+  "invalid_upstream_shape": {
+    "result": {
+      "success": true,
+      "data": [],
+      "meta": {
+        "as_of": "2026-10-10T09:00:00+08:00",
+        "timezone": "UTC",
+        "scope": "authorized_records",
+        "coverage": "complete",
+        "contains_personal_data": false
+      },
+      "trace_id": "tr_72868c48ad784044a821f06430061f70"
+    }
+  },
+  "numeric_sort": {
+    "result": {
+      "success": true,
+      "data": [
+        {
+          "value": 10
+        },
+        {
+          "value": 2
+        }
+      ],
+      "meta": {
+        "as_of": "2026-10-10T01:00:00+00:00",
+        "timezone": "UTC",
+        "scope": "authorized_records",
+        "coverage": "complete",
+        "contains_personal_data": false,
+        "operation": "sort"
+      },
+      "trace_id": "tr_1b49d3b8d7914c9d96f093add9e39304"
+    }
+  },
+  "push_metadata_pii": {
+    "leaked": true,
+    "tool_error": false
+  },
+  "builtin_tool_rate_limit": {
+    "successful_calls": 65,
+    "configured_per_minute": 60
+  },
+  "wizard_blank_delegation": {
+    "http_status": 201,
+    "generated_secret_returned": false,
+    "falsely_reports_supplied": true
+  },
+  "cross_app_discovery": {
+    "listed_other_app_tool": true,
+    "direct_call_denied": true
+  },
+  "backup_with_published_tool": {
+    "http_status": 500,
+    "error": {
+      "code": "INTERNAL",
+      "message": "The request could not be completed"
+    },
+    "saved_tool_count": 1
+  },
+  "backup_restore_cause": {
+    "error_type": "IntegrityError",
+    "database_reason": "FOREIGN KEY constraint failed",
+    "statement": "INSERT INTO field_policies (id, module_id, field_path, classification, source, locked) VALUES (?, ?, ?, ?, ?, ?)"
+  },
+  "unassigned_app_admin": {
+    "identity_for_other_app_status": 201,
+    "pause_other_app_status": 200
+  },
+  "publish_unverified_endpoint": {
+    "synthetic_passed": true,
+    "approval_status": 200,
+    "publish_status": 200,
+    "required_input_omitted": true,
+    "user_context_disabled": true
+  },
+  "upstream_record_limit": {
+    "returned_records": 60,
+    "configured_module_max": 50,
+    "metadata": {
+      "as_of": "2026-10-10T09:00:00+08:00",
+      "timezone": "UTC",
+      "scope": "authorized_records",
+      "coverage": "complete",
+      "contains_personal_data": false
+    }
+  },
+  "optional_before_required_schema": {
+    "publish_status": 500,
+    "persisted_status": "published",
+    "runtime_tool_name": "your_app__projects__optional_required"
+  },
+  "restart_registry_sync": {
+    "error_type": "SyntaxError",
+    "message": "parameter without a default follows parameter with a default (<string>, line 1)"
+  },
+  "backup_restore_migrated_database": {
+    "restored": false,
+    "error_type": "IntegrityError",
+    "database_reason": "FOREIGN KEY constraint failed",
+    "statement": "INSERT INTO field_policies (id, module_id, field_path, classification, source, locked) VALUES (?, ?, ?, ?, ?, ?)"
+  },
+  "reference_authorization_and_pagination": {
+    "http_status": 200,
+    "unknown_user_received_records": 1,
+    "actual_matching_records": 2,
+    "metadata": {
+      "as_of": "2026-10-09T20:00:17.870525+00:00",
+      "timezone": "Asia/Makassar",
+      "scope": "authorized_records",
+      "coverage": "complete",
+      "total_count": 1,
+      "has_more": false
+    }
+  }
+}

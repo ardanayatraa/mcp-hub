@@ -1,0 +1,94 @@
+{
+  "permission_source": "Source application admin only",
+  "mode": "source_managed",
+  "generic_model_catalog": {
+    "source_models": [
+      "billing_users",
+      "blast_messages"
+    ],
+    "hub_current_model_count": 2,
+    "current_tool_count": 4,
+    "templates_absent_from_source_manifest_mcp_and_current_admin_catalog": true,
+    "retired_metadata_preserved_as_history": true,
+    "add_remove_disable_refresh_without_chat_or_manual_sync": true,
+    "unavailable_source_does_not_present_stale_grants": true,
+    "connection_settings_remain_accessible_for_repair": true,
+    "admin_scope_limits_upstream_refreshes": true,
+    "per_model_config_required": false,
+    "write_fields": "approved fields intersected with Eloquent fillable/mass assignment and actual MySQL/SQLite schema",
+    "inferred_rules": [
+      "scalar type",
+      "nullable",
+      "required without a model/database default",
+      "bounded length",
+      "unsigned numbers"
+    ],
+    "model_defaults_casts_policies_and_observers_retained": true,
+    "database_defaults_reloaded_after_create": true,
+    "changes_to_fillable_or_schema_invalidate_pending_proposals": true,
+    "supported_field_types": [
+      "string",
+      "integer",
+      "number",
+      "boolean",
+      "date/datetime",
+      "nullable scalar"
+    ],
+    "unsupported_field_types": [
+      "JSON/array",
+      "relationship",
+      "binary",
+      "encrypted"
+    ],
+    "global_writes_still_off_until_configured": true,
+    "saved_admin_grants_credentials_connections_and_dependencies_preserved": true,
+    "client_key_permissions_unchanged": true,
+    "business_mutations": false,
+    "tests_use_isolated_sqlite_and_mocked_upstream": true,
+    "laravel_tests": 77,
+    "laravel_assertions": 833,
+    "hub_tests": 153,
+    "frontend_typecheck_and_build": "passed",
+    "browser_errors_and_warnings": [],
+    "new_application_files": 0,
+    "new_application_folders": 0,
+    "installed_files_verified": 26
+  },
+  "verification": {
+    "laravel_tests": 77,
+    "laravel_assertions": 833,
+    "hub_tests": 153,
+    "frontend_typecheck": "passed",
+    "frontend_build": "passed",
+    "installed_overlay_files": 26
+  },
+  "browser_checks": {
+    "questions": [
+      "anda menyajikan data apa aja ini sekarang bisanya?",
+      "data apa aja yang bisa anda akses sekarang?"
+    ],
+    "expected_models": [
+      "Billing Users",
+      "Blast Messages"
+    ],
+    "operations": [
+      "read"
+    ],
+    "chat_uses_current_admin_and_mcp_catalog": true
+  },
+  "source_health": "ok",
+  "published_tool_count": 4,
+  "live_catalog": {
+    "checked_at": "2026-10-10T16:01:40.919997+00:00",
+    "source_health": "ok",
+    "source_models": [
+      "billing_users",
+      "blast_messages"
+    ],
+    "published_tool_count": 4,
+    "source_and_mcp_match": true,
+    "source_missing_key_rejected": true,
+    "business_rows_read": false,
+    "business_mutations": false
+  }
+}

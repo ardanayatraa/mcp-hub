@@ -1,0 +1,12 @@
+{
+  "app/Services/AI/AIClient.php": "app/Services/AI/AiProviderClient.php",
+  "app/Services/AI/ChatAgent.php": "app/Services/AI/AiChatOrchestrator.php",
+  "app/Services/AI/ResourceExecutor.php": "app/Services/AI/AiResourceExecutor.php",
+  "app/Services/AI/AiToolGuard.php": "app/Services/AI/AiToolAccessGuard.php",
+  "app/Services/Mcp/HubClient.php": "app/Services/Mcp/McpHubClient.php",
+  "app/Services/Mcp/HubContract.php": "app/Services/Mcp/McpResourceRegistry.php",
+  "app/Services/Mcp/HubIdentity.php": "app/Services/Mcp/McpActorIdentity.php",
+  "app/Services/Mcp/HubPrivacyGuard.php": "app/Services/Mcp/McpPrivacyGuard.php",
+  "app/Http/Controllers/HubConnectorController.php": "app/Http/Controllers/McpConnectorController.php",
+  "tests/Feature/HubConnectorTest.php": "tests/Feature/McpConnectorTest.php"
+}
