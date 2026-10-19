@@ -6,6 +6,9 @@ __pycache__/
 .env
 node_modules/
 dist/
+.nuxt/
+.output/
+.data/
 *.db
 .mypy_cache/
 infra/certs/
