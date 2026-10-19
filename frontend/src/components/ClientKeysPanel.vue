@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import CodeBlock from "@/components/CodeBlock.vue";
 import EmptyState from "@/components/EmptyState.vue";
@@ -49,6 +49,11 @@ const appTools = computed(() => {
           { name: "save_memory", label: "Save memory (when memory is on)", write: false },
           { name: "forget_memory", label: "Forget memory (when memory is on)", write: false }, ...own];
 });
+const writeNames = computed(() => new Set(appTools.value.filter((tool) => tool.write).map((tool) => tool.name)));
+// A read-only key never keeps a tick on a tool that changes data.
+watch(() => keyForm.value.write, (write) => {
+  if (!write) keyForm.value.allowed = keyForm.value.allowed.filter((name) => !writeNames.value.has(name));
+});
 const snippet = computed(() => JSON.stringify({
   mcpServers: { "mcp-hub": { type: "http", url: system.value?.mcp_url, headers: { Authorization: `Bearer ${created.value?.token ?? "<client key>"}` } } },
 }, null, 2));
@@ -67,7 +72,7 @@ async function saveKey() {
   busy.value = true;
   const form = keyForm.value;
   try {
-    const allowed_tools = form.limit ? form.allowed : null;
+    const allowed_tools = form.limit ? form.allowed.filter((name) => form.write || !writeNames.value.has(name)) : null;
     if (form.editing) {
       await hub.updateKey(form.editing, { name: form.name, write: form.write, allowed_tools });
       toast.ok("Client key updated");
@@ -162,8 +167,14 @@ async function revoke() {
         <div class="rounded-lg border border-line p-3">
           <label class="flex items-center gap-3"><input v-model="keyForm.limit" type="checkbox" /> <span class="font-medium">Only selected tools</span></label>
           <div v-if="keyForm.limit" class="mt-3 max-h-48 space-y-1.5 overflow-y-auto">
-            <label v-for="tool in appTools" :key="tool.name" class="flex items-center gap-2 text-sm" :class="tool.write && !keyForm.write ? 'opacity-50' : ''">
-              <input v-model="keyForm.allowed" type="checkbox" :value="tool.name" /> {{ tool.label }} <span class="font-mono text-xs text-subtle">{{ tool.name }}</span>
+            <p v-if="!keyForm.write && writeNames.size" class="text-xs text-subtle">
+              <AppIcon name="lock" :size="12" class="mr-1 inline align-[-1px]" />Read-only key: tools that create, update or delete are off.
+              Tick <span class="font-medium">Allow write tools</span> to choose them.</p>
+            <label v-for="tool in appTools" :key="tool.name" class="flex items-center gap-2 text-sm"
+                   :class="tool.write && !keyForm.write ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'">
+              <input v-model="keyForm.allowed" type="checkbox" :value="tool.name" :disabled="tool.write && !keyForm.write" />
+              {{ tool.label }} <span class="font-mono text-xs text-subtle">{{ tool.name }}</span>
+              <span v-if="tool.write" class="badge-warn">Changes data</span>
             </label>
           </div>
         </div>

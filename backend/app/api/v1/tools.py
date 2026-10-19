@@ -10,6 +10,7 @@ from app.persistence.models import AdminUser
 from app.persistence.session import get_db
 from app.security.auth import require_csrf
 from app.security.authorization import WRITE_ROLES, require_role, require_tool_access
+from app.services import capabilities as capabilities_service
 from app.services import tool_cards
 from app.services import tools as service
 from app.tools.definitions import TEMPLATES
@@ -27,6 +28,13 @@ async def index(include_archived: bool = False, db: Session = Depends(get_db), u
 def templates(user: AdminUser = Depends(require_csrf)):
     del user
     return ok([{"key": key, **value} for key, value in TEMPLATES.items()])
+
+
+@router.get("/capabilities")
+def capabilities(db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    """What this MCP can do now: protocol, limits, report features, a per-app matrix and 7-day calls per tool."""
+
+    return ok(capabilities_service.capabilities(db, user, get_settings()))
 
 
 @router.get("/builtins")

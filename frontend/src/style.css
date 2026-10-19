@@ -2,7 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Theme tokens (RGB channels), modelled on the shadcn/ui zinc theme. Dark mode follows the operating system. */
+/* Theme tokens (RGB channels), modelled on the shadcn/ui zinc theme. People choose Light, Dark or
+   System in the app; with System (no data-theme on <html>) the operating system decides. */
 :root {
   --canvas: 255 255 255;
   --surface: 255 255 255;
@@ -26,8 +27,30 @@
   color-scheme: light;
 }
 
+:root[data-theme="dark"] {
+  --canvas: 9 9 11;
+  --surface: 9 9 11;
+  --sidebar: 24 24 27;
+  --muted: 39 39 42;
+  --line: 39 39 42;
+  --ink: 250 250 250;
+  --subtle: 161 161 170;
+  --brand: 250 250 250;
+  --brand-soft: 39 39 42;
+  --brand-ink: 24 24 27;
+  --ok: 52 211 153;
+  --ok-soft: 6 46 36;
+  --warn: 251 191 36;
+  --warn-soft: 51 38 8;
+  --bad: 248 113 113;
+  --bad-soft: 60 18 20;
+  --chart-1: 57 135 229;
+  --chart-2: 217 89 38;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --canvas: 9 9 11;
     --surface: 9 9 11;
     --sidebar: 24 24 27;
@@ -47,6 +70,15 @@
     --chart-1: 57 135 229;
     --chart-2: 217 89 38;
     color-scheme: dark;
+  }
+}
+
+/* Printing (for example a guide) always uses the light look, whatever the screen shows. */
+@media print {
+  :root, :root[data-theme="dark"], :root:not([data-theme="light"]) {
+    --canvas: 255 255 255; --surface: 255 255 255; --sidebar: 250 250 250; --muted: 244 244 245; --line: 228 228 231;
+    --ink: 9 9 11; --subtle: 113 113 122; --brand: 24 24 27; --brand-soft: 244 244 245; --brand-ink: 250 250 250;
+    color-scheme: light;
   }
 }
 
@@ -77,7 +109,7 @@
   .btn-primary { @apply btn bg-brand text-brand-ink shadow-card hover:bg-brand/90; }
   .btn-secondary { @apply btn border border-line bg-surface text-ink shadow-card hover:bg-muted; }
   .btn-ghost { @apply btn text-subtle hover:bg-muted hover:text-ink; }
-  .btn-danger { @apply btn bg-bad text-white shadow-card hover:bg-bad/90; }
+  .btn-danger { @apply btn bg-bad text-canvas shadow-card hover:bg-bad/90; }
   .btn-sm { @apply h-8 px-3 text-xs; }
   .btn-icon { @apply h-9 w-9 px-0; }
 

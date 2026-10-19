@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import ThemeSwitch from "@/components/ThemeSwitch.vue";
 import { useSession } from "@/stores/session";
 import { errorMessage } from "@/utils/format";
 
@@ -46,7 +47,8 @@ async function submit() {
 </script>
 
 <template>
-  <main class="flex min-h-screen items-center justify-center px-4">
+  <main class="relative flex min-h-screen items-center justify-center px-4">
+    <div class="absolute right-4 top-4"><ThemeSwitch variant="toggle" /></div>
     <div class="w-full max-w-sm">
       <div class="mb-6 flex items-center gap-3">
         <span class="grid h-10 w-10 place-items-center rounded-xl bg-brand text-brand-ink"><AppIcon name="bolt" :size="22" /></span>

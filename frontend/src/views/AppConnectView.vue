@@ -5,7 +5,8 @@ import { useRouter } from "vue-router";
 import PageHeader from "@/components/PageHeader.vue";
 import SecretInput from "@/components/SecretInput.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
-import { hub, type AppSummary, type DataSource, type Health } from "@/services/hub";
+import ToolChecklist from "@/components/ToolChecklist.vue";
+import { hub, type AppSummary, type DataSource, type Health, type ToolSwitchRow } from "@/services/hub";
 import { useToast } from "@/stores/toast";
 import { errorMessage, slugify } from "@/utils/format";
 import { useSlowFlag } from "@/utils/loading";
@@ -18,7 +19,7 @@ const error = ref("");
 const advanced = ref(false);
 const keyEdited = ref(false);
 const form = ref({
-  name: "", app_key: "", environment: "dev", base_url: "", auth_type: "api_key", secret: "", delegation_secret: "",
+  name: "", app_key: "", environment: "dev", base_url: "", auth_type: "bearer", secret: "", delegation_secret: "",
   manifest_path: "/api/ai/v1/capabilities", health_path: "/api/ai/v1/health", timeout_ms: 5000, tls_verify: true,
   connector_type: "http_contract",
 });
@@ -29,11 +30,18 @@ const check = ref<{ health: Health | null; syncing: boolean; sources: number; sy
 const waiting = ref(false);
 const slow = useSlowFlag(waiting);
 const sources = ref<(DataSource & { allow: boolean })[]>([]);
+const toolRows = ref<ToolSwitchRow[]>([]);
+const allowed = ref<Record<string, boolean>>({});
+// What happened to each ticked draft, so the last screen can name the ones that stayed drafts.
+const outcome = ref<{ title: string; ok: boolean; note: string }[]>([]);
+const done = ref(false);
 
 watch(() => form.value.name, (name) => { if (!keyEdited.value) form.value.app_key = slugify(name); });
 
 const sourceManaged = computed(() => form.value.connector_type === "source_managed");
-const steps = computed(() => sourceManaged.value ? ["App details", "Check connection"] : ["App details", "Check connection", "Choose data"]);
+const steps = computed(() => sourceManaged.value ? ["App details", "Check connection", "Choose tools"]
+  : ["App details", "Check connection", "Choose data", "Choose tools"]);
+const toolsStep = computed(() => steps.value.length);
 const canNext = computed(() => form.value.name && form.value.app_key && form.value.base_url && form.value.secret.length >= 8);
 
 async function runChecks() {
@@ -98,30 +106,95 @@ async function toSources() {
   }
 }
 
-async function finish() {
+// Allow the chosen data sources, create their tools as drafts, then show every tool with a tick box.
+async function toTools() {
   if (!app.value) return;
+  const id = app.value.id;
   busy.value = true;
   error.value = "";
   try {
-    for (const source of sources.value.filter((item) => !sourceManaged.value && item.allow && item.enableable_operations.includes("read"))) {
-      await hub.updateSource(source.id, { enabled: true, operations: ["read"] });
+    if (!sourceManaged.value) {
+      for (const source of sources.value.filter((item) => item.enableable_operations.includes("read"))) {
+        if (source.allow && !(source.enabled && source.operations_enabled.includes("read"))) {
+          await hub.updateSource(source.id, { enabled: true, operations: ["read"] });
+        } else if (!source.allow && source.enabled) {
+          await hub.updateSource(source.id, { enabled: false, operations: [] });
+        }
+      }
+      await hub.generateTools({ connector_id: id, publish: false });
     }
-    await hub.appAction(app.value.id, "activate");
-    toast.ok(`${form.value.name} is connected`);
-    step.value = 4;
+    const allowedNames = new Set(sources.value.filter((item) => item.allow).map((item) => item.name));
+    const fresh = await hub.sources(id);
+    sources.value = fresh.map((source) => ({ ...source, allow: sourceManaged.value || allowedNames.has(source.name) }));
+    const rows = (await hub.toolSwitches(id)).tools;
+    toolRows.value = sourceManaged.value ? rows : rows.filter((row) => row.kind !== "app" || allowedNames.has(row.group));
+    // Reading is ticked by default; anything that changes data waits for an explicit tick.
+    allowed.value = Object.fromEntries(toolRows.value.map((row) =>
+      [row.name, allowed.value[row.name] ?? (!row.write && row.status !== "disabled")]));
+    step.value = toolsStep.value;
   } catch (exc) {
     error.value = errorMessage(exc);
   } finally {
     busy.value = false;
   }
 }
+
+async function finish() {
+  if (!app.value) return;
+  const id = app.value.id;
+  busy.value = true;
+  error.value = "";
+  outcome.value = [];
+  try {
+    const usable = toolRows.value.filter((row) => row.kind !== "memory" && row.status !== "disabled");
+    const changes = Object.fromEntries(usable.map((row) => [row.name, !!allowed.value[row.name]]));
+    // Switches first, so an unticked tool is never reachable once the app is active.
+    if (Object.keys(changes).length) await hub.updateToolSwitches(id, changes);
+    await hub.appAction(id, "activate");
+    if (!sourceManaged.value) {
+      const ticked = usable.filter((row) => row.kind === "app" && allowed.value[row.name]);
+      // A ticked create, update or delete tool needs that operation on its data source.
+      const operations = new Map<string, Set<string>>();
+      for (const row of ticked.filter((item) => item.write)) {
+        const source = sources.value.find((item) => item.name === row.group);
+        if (!source || !source.enableable_operations.includes(row.template)) continue;
+        if (!operations.has(source.id)) operations.set(source.id, new Set(["read", ...source.operations_enabled]));
+        operations.get(source.id)?.add(row.template);
+      }
+      for (const [sourceId, ops] of operations) await hub.updateSource(sourceId, { enabled: true, operations: [...ops] });
+      // Ticked drafts: a sample test (nothing is sent to the app), then publish.
+      for (const row of ticked.filter((item) => item.status !== "published" && item.tool_id)) {
+        try {
+          const test = await hub.testTool(row.tool_id as string, { mode: "sample", fill_required: true });
+          if (!test.passed) {
+            outcome.value.push({ title: row.title, ok: false, note: test.error_message || test.error_code || "The sample test did not pass" });
+            continue;
+          }
+          await hub.publishTool(row.tool_id as string);
+          outcome.value.push({ title: row.title, ok: true, note: "Published" });
+        } catch (exc) {
+          outcome.value.push({ title: row.title, ok: false, note: errorMessage(exc) });
+        }
+      }
+    }
+    toast.ok(`${form.value.name} is connected`);
+    done.value = true;
+  } catch (exc) {
+    error.value = errorMessage(exc);
+  } finally {
+    busy.value = false;
+  }
+}
+
+const allowedCount = computed(() => toolRows.value.filter((row) => row.kind !== "memory" && allowed.value[row.name]).length);
+const failed = computed(() => outcome.value.filter((item) => !item.ok));
 </script>
 
 <template>
   <PageHeader title="Connect an app" back="/apps"
               subtitle="The app must implement the connector contract: an authenticated health check, a capability manifest and the reviewed routes it lists." />
 
-  <ol v-if="step < 4" class="mb-6 flex flex-wrap gap-2">
+  <ol v-if="!done" class="mb-6 flex flex-wrap gap-2">
     <li v-for="(label, index) in steps" :key="label" class="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
         :class="step === index + 1 ? 'bg-brand-soft text-brand' : step > index + 1 ? 'bg-ok-soft text-ok' : 'bg-muted text-subtle'">
       <AppIcon v-if="step > index + 1" name="check" :size="14" /><span v-else>{{ index + 1 }}</span> {{ label }}
@@ -130,7 +203,7 @@ async function finish() {
 
   <p v-if="error" role="alert" class="mb-4 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>
 
-  <form v-if="step === 1" class="card card-pad max-w-3xl space-y-5" @submit.prevent="save">
+  <form v-if="!done && step === 1" class="card card-pad max-w-3xl space-y-5" @submit.prevent="save">
     <div class="grid gap-4 sm:grid-cols-2">
       <label><span class="label">App name</span><input v-model="form.name" class="input" placeholder="Telixmart" required /></label>
       <label><span class="label">App key</span>
@@ -143,18 +216,10 @@ async function finish() {
         <select v-model="form.environment" class="input" :disabled="!!app">
           <option value="dev">Development</option><option value="test">Test</option><option value="staging">Staging</option><option value="production">Production</option>
         </select></label>
-      <div>
-        <span class="label">Authentication</span>
-        <div class="flex rounded-lg border border-line p-0.5">
-          <button v-for="[value, label] in [['api_key', 'API key header'], ['bearer', 'Bearer token']]" :key="value" type="button"
-                  class="flex-1 rounded-md px-3 py-1.5 text-xs font-medium" :class="form.auth_type === value ? 'bg-brand-soft text-brand' : 'text-subtle'"
-                  :disabled="!!app" @click="form.auth_type = value">{{ label }}</button>
-        </div>
-      </div>
-      <label class="sm:col-span-2"><span class="label">{{ form.auth_type === "api_key" ? "API key" : "Bearer token" }}</span>
+      <label class="sm:col-span-2"><span class="label">Bearer token</span>
         <SecretInput v-model="form.secret" :required="!app" minlength="8" maxlength="500"
-                     :placeholder="app ? 'Leave blank to keep the saved secret' : 'Issued by the app for the Hub'" />
-        <span class="hint">Stored encrypted. It is never shown again or sent to AI clients.</span></label>
+                     :placeholder="app ? 'Leave blank to keep the saved token' : 'Issued by the app for the Hub'" />
+        <span class="hint">Sent as <code class="code">Authorization: Bearer &lt;token&gt;</code> on every call. Stored encrypted; never shown again or sent to AI clients.</span></label>
       <label class="sm:col-span-2"><span class="label">Permission management</span>
         <select v-model="form.connector_type" class="input" :disabled="!!app">
           <option value="http_contract">Set up in Hub</option>
@@ -185,7 +250,7 @@ async function finish() {
     </div>
   </form>
 
-  <section v-else-if="step === 2" class="card card-pad max-w-3xl space-y-4">
+  <section v-else-if="!done && step === 2" class="card card-pad max-w-3xl space-y-4">
     <div class="flex items-start gap-3 rounded-lg border border-line p-4">
       <span v-if="!check.health" class="spinner mt-0.5 h-5 w-5 text-brand" />
       <AppIcon v-else :name="check.health.status === 'ok' ? 'check' : 'alert'" :size="20"
@@ -225,18 +290,18 @@ async function finish() {
       <button type="button" class="btn-secondary" @click="step = 1">Edit details</button>
       <div class="flex gap-2">
         <button type="button" class="btn-secondary" :disabled="busy" @click="runChecks"><AppIcon name="refresh" :size="16" /> Retry</button>
-        <button type="button" class="btn-primary" :disabled="busy || check.health?.status !== 'ok' || !!check.syncError || (!sourceManaged && !check.sources)" @click="sourceManaged ? finish() : toSources()">
+        <button type="button" class="btn-primary" :disabled="busy || check.health?.status !== 'ok' || !!check.syncError || (!sourceManaged && !check.sources)" @click="sourceManaged ? toTools() : toSources()">
           <span v-if="busy && check.health?.status === 'ok' && !check.syncing" class="spinner" />
-          {{ sourceManaged ? "Activate app" : "Continue" }} <AppIcon name="chevron-right" :size="16" />
+          Continue <AppIcon name="chevron-right" :size="16" />
         </button>
       </div>
     </div>
   </section>
 
-  <section v-else-if="step === 3" class="card card-pad max-w-3xl space-y-4">
+  <section v-else-if="!done && step === 3 && !sourceManaged" class="card card-pad max-w-3xl space-y-4">
     <div>
       <h2 class="section-title">Which data may AI clients read?</h2>
-      <p class="text-xs text-subtle">Read access lets clients use run_report and the tools you publish for that data source. Field visibility and write operations can be set later on the app page.</p>
+      <p class="text-xs text-subtle">Read access lets clients use run_report and the tools of that data source. You choose the tools, including any that change data, in the next step.</p>
     </div>
     <ul class="divide-y divide-line rounded-lg border border-line">
       <li v-for="source in sources" :key="source.id" class="flex items-center justify-between gap-4 p-4">
@@ -251,15 +316,38 @@ async function finish() {
     </ul>
     <div class="flex justify-between gap-2 border-t border-line pt-4">
       <button type="button" class="btn-secondary" @click="step = 2">Back</button>
-      <button type="button" class="btn-primary" :disabled="busy" @click="finish"><span v-if="busy" class="spinner" /> Activate app</button>
+      <button type="button" class="btn-primary" :disabled="busy || !sources.some((source) => source.allow)" @click="toTools">
+        <span v-if="busy" class="spinner" /> Continue <AppIcon name="chevron-right" :size="16" /></button>
+    </div>
+  </section>
+
+  <section v-else-if="!done && step === toolsStep" class="card card-pad max-w-3xl space-y-4">
+    <div>
+      <h2 class="section-title">Which tools may AI clients use?</h2>
+      <p class="text-xs text-subtle">
+        {{ sourceManaged ? "These follow the app's own permissions." : "Made from the routes in the app's manifest." }}
+        Tools that create, update or delete stay unticked until you choose them, and cannot be ticked where the app's API is read-only.
+      </p>
+    </div>
+    <ToolChecklist v-model="allowed" :rows="toolRows" :sources="sources" />
+    <div class="flex justify-between gap-2 border-t border-line pt-4">
+      <button type="button" class="btn-secondary" :disabled="busy" @click="step = toolsStep - 1">Back</button>
+      <button type="button" class="btn-primary" :disabled="busy" @click="finish">
+        <span v-if="busy" class="spinner" /> Activate app</button>
     </div>
   </section>
 
   <section v-else class="card card-pad max-w-2xl text-center">
     <div class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-ok-soft text-ok"><AppIcon name="check" :size="24" /></div>
     <h2 class="text-lg">{{ form.name }} is connected</h2>
-    <p v-if="sourceManaged" class="mx-auto mt-1 max-w-md text-sm text-subtle">Models, permissions and tools follow the application automatically.</p>
-    <p v-else class="mx-auto mt-1 max-w-md text-sm text-subtle">AI clients with a key for this app can already use <span class="code">list_data_sources</span> and <span class="code">run_report</span>. Publish named tools for the questions you expect most.</p>
+    <p class="mx-auto mt-1 max-w-md text-sm text-subtle">{{ allowedCount }} tool{{ allowedCount === 1 ? "" : "s" }} allowed for AI clients with a key for this app.
+      {{ sourceManaged ? "Data sources and permissions follow the application automatically." : "Change them any time on the app's Tools tab." }}</p>
+    <div v-if="failed.length" class="mx-auto mt-4 max-w-md rounded-lg border border-warn/40 bg-warn-soft p-3 text-left text-sm">
+      <p class="font-medium">Some ticked tools stay drafts</p>
+      <ul class="mt-1 space-y-0.5 text-xs text-subtle">
+        <li v-for="item in failed" :key="item.title"><span class="font-medium text-ink">{{ item.title }}</span>: {{ item.note }}</li>
+      </ul>
+    </div>
     <div class="mt-5 flex flex-wrap justify-center gap-2">
       <RouterLink :to="`/apps/${app?.id}`" class="btn-secondary">Review fields</RouterLink>
       <RouterLink v-if="!sourceManaged" :to="`/tools/new?connector=${app?.id}`" class="btn-secondary">Create a tool</RouterLink>

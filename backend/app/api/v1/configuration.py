@@ -17,7 +17,7 @@ class ConnectorConfiguration(BaseModel):
     environment: Environment = "dev"
     connector_type: Literal["http_contract", "data_push", "source_managed"] = "http_contract"
     base_url: str = Field(min_length=1, max_length=2048)
-    auth_type: Literal["api_key", "bearer"]
+    auth_type: Literal["bearer"] = "bearer"
     secret: str = Field(min_length=8, max_length=500)
     delegation_secret: str = Field(default="", max_length=500)
     manifest_path: str = Field(default="/api/ai/v1/capabilities", max_length=500)

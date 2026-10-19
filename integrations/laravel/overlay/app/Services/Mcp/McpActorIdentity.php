@@ -3,6 +3,7 @@
 namespace App\Services\Mcp;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 class McpActorIdentity
@@ -41,7 +42,7 @@ class McpActorIdentity
         if (strlen($secret) < 32) {
             throw new RuntimeException('Hub delegation is not configured.');
         }
-        $payload = ['app_key' => 'hireach', 'aud' => $audience, 'exp' => time() + 90,
+        $payload = ['app_key' => 'hireach', 'aud' => $audience, 'exp' => time() + 90, 'jti' => self::encode(random_bytes(18)),
             'tenant_id' => self::tenant($user), 'user_ref' => 'hireach_user_'.$user->getKey()];
         ksort($payload);
         $raw = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
@@ -64,12 +65,17 @@ class McpActorIdentity
             || ($payload['aud'] ?? '') !== config('ai.mcp.hub.source_url')
             || ! is_int($payload['exp'] ?? null) || $payload['exp'] <= time() || $payload['exp'] > time() + 150
             || ! is_string($payload['user_ref'] ?? null)
-            || ! preg_match('/^hireach_user_([1-9][0-9]{0,9})$/D', $payload['user_ref'], $match)) {
+            || ! preg_match('/^hireach_user_([1-9][0-9]{0,9})$/D', $payload['user_ref'], $match)
+            || ! is_string($payload['jti'] ?? null) || ! preg_match('/^[A-Za-z0-9_-]{16,64}$/D', $payload['jti'])) {
             throw new RuntimeException('Hub assertion denied.');
         }
         $user = User::query()->find((int) $match[1]);
         if (! $user || ! self::accountEnabled($user) || ($payload['tenant_id'] ?? '') !== self::tenant($user)) {
             throw new RuntimeException('Hub user access denied.');
+        }
+        // One use only: a captured assertion cannot be replayed while it is still valid (atomic add).
+        if (! Cache::add('hireach.hub.assertion.'.hash('sha256', $payload['jti']), 1, $payload['exp'] - time() + 5)) {
+            throw new RuntimeException('Hub assertion denied.');
         }
         return $user;
     }

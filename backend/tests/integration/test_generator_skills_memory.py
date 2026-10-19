@@ -51,6 +51,24 @@ def test_generator_creates_the_full_tool_set_once(admin, monkeypatch):
         result(call(admin["client"], token, "your_app__projects__summary", {}, delegation()))
 
 
+def test_a_ticked_write_tool_can_be_tested_and_published_without_typing_arguments(admin, monkeypatch):
+    """The connect wizard's tool checklist: a sample test can fill the required inputs itself."""
+
+    helpers.dns(monkeypatch)
+    with helpers.source():
+        app = connect_app(admin, enable={"projects": ["read", "create"]})
+        create = next(item for item in generate(admin, app["connector_id"])["created"] if item["template"] == "create")
+        tested = api(admin, "POST", f"/tools/{create['id']}/test", {"mode": "sample", "fill_required": True}, expect=200).json()["data"]
+        assert tested["passed"] is True, tested
+        assert not any(call.method == "POST" for call in helpers.CALLS)  # nothing was sent to the app
+        assert api(admin, "POST", f"/tools/{create['id']}/publish", expect=200).json()["data"]["status"] == "published"
+        # Without the flag, missing inputs still fail, and typed arguments are validated as typed.
+        assert api(admin, "POST", f"/tools/{create['id']}/test", {"mode": "sample"}, expect=200).json()["data"]["passed"] is False
+        refused = api(admin, "POST", f"/tools/{create['id']}/test", {"mode": "sample", "fill_required": True, "arguments": {}},
+                      expect=200).json()["data"]
+        assert refused["passed"] is False
+
+
 def test_generator_rerun_finishes_drafts_it_left(admin, monkeypatch):
     helpers.dns(monkeypatch)
     with helpers.source():

@@ -19,18 +19,18 @@ export const SECTIONS: GuideSection[] = [
       "You build these routes, and your own chat window if you want one, so you control every line.",
     ],
     list: [
-      "The Hub calls your app with a service API key in the `X-API-Key` header. Your middleware checks it on every route.",
+      "The Hub calls your app with a bearer token: `Authorization: Bearer <token>`. Your middleware checks it on every route.",
       "Your manifest (`/api/ai/v1/capabilities`) lists data sources, readable fields and the exact routes the Hub may call.",
       "For data that belongs to a user, the Hub forwards who is asking in a signed `X-Hub-Assertion` header. Your app verifies it and applies the user's normal permissions.",
       "Create, update and delete are proposals: your route saves the change for the user and returns a receipt with `requires_confirmation`; the user confirms it inside your app, and only then is it applied.",
-      "AI clients (Claude, Cursor or your own AI gateway) call the Hub's MCP endpoint with a client key. They never see your API key.",
+      "AI clients (Claude, Cursor or your own AI gateway) call the Hub's MCP endpoint with a client key, also as a bearer token. They never see your app's token.",
     ],
     table: {
       head: ["File", "Purpose"],
       rows: [
         ["`.env`", "Keys and URLs, kept out of version control"],
         ["`config/mcp_hub.php`", "Reads the settings once, for config caching"],
-        ["`app/Http/Middleware/VerifyHubKey.php`", "Rejects any request without the Hub's API key"],
+        ["`app/Http/Middleware/VerifyHubToken.php`", "Rejects any request without the Hub's bearer token"],
         ["`app/Support/HubToken.php`", "Signs and verifies user context tokens"],
         ["`database/migrations/…_create_hub_proposals_table.php`, `app/Models/HubProposal.php`", "Changes the AI prepared, waiting for the user"],
         ["`app/Http/Controllers/Api/HubController.php`", "Health, manifest, list, get, and prepare create, update and delete"],
@@ -114,7 +114,7 @@ class Order extends Model
     title: "Add the settings",
     step: 1,
     body: [
-      "Generate the API key the Hub will send, and a delegation secret for user context. Each must be at least 8 characters; 64 random hex characters is a good default.",
+      "Generate the bearer token the Hub will send, and a delegation secret for user context. Each must be at least 8 characters; 64 random hex characters is a good default.",
     ],
     files: [
       {
@@ -133,7 +133,7 @@ class Order extends Model
 MCP_HUB_APP_KEY=your_app
 # Exactly the Base URL you enter in the Hub: scheme, host and port, no trailing slash
 MCP_HUB_BASE_URL=https://app.example.com
-MCP_HUB_API_KEY=
+MCP_HUB_APP_TOKEN=
 MCP_HUB_DELEGATION_SECRET=
 
 # Optional: this app calls AI tools through the Hub
@@ -153,11 +153,14 @@ return [
     // Must equal the Base URL entered in MCP Hub. User assertions are signed for this audience.
     'base_url' => rtrim((string) env('MCP_HUB_BASE_URL', env('APP_URL')), '/'),
 
-    // Sent by the Hub as X-API-Key on every request.
-    'api_key' => env('MCP_HUB_API_KEY'),
+    // Sent by the Hub as "Authorization: Bearer <token>" on every request.
+    'app_token' => env('MCP_HUB_APP_TOKEN'),
 
     // Shared with the Hub to sign which user is asking.
     'delegation_secret' => env('MCP_HUB_DELEGATION_SECRET'),
+
+    // Refuse Hub calls over plain HTTP. On by default in production; behind a proxy, configure TrustProxies.
+    'require_https' => (bool) env('MCP_HUB_REQUIRE_HTTPS', env('APP_ENV') === 'production'),
 
     // Optional: calling the Hub's MCP endpoint from this app.
     'mcp_url' => env('MCP_HUB_URL'),
@@ -168,14 +171,15 @@ return [
   },
   {
     id: "authenticate",
-    title: "Check the Hub's API key",
+    title: "Check the Hub's bearer token",
     step: 2,
     body: [
-      "Every Hub request carries the API key. Compare it in constant time and answer with the contract's error shape when it is wrong.",
+      "Every Hub request carries `Authorization: Bearer <token>`. Laravel's `bearerToken()` reads it; compare it in constant time and answer with the contract's error shape when it is missing or wrong.",
+      "The same middleware refuses plain HTTP in production and marks every answer `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`, so user data is never cached or content-sniffed (OWASP ASVS V8 and V9).",
     ],
     files: [
       {
-        path: "app/Http/Middleware/VerifyHubKey.php",
+        path: "app/Http/Middleware/VerifyHubToken.php",
         lang: "php",
         kind: "file",
         code: String.raw`<?php
@@ -186,21 +190,26 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class VerifyHubKey
+class VerifyHubToken
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $expected = (string) config('mcp_hub.api_key');
-        $given = (string) $request->header('X-API-Key', '');
+        $expected = (string) config('mcp_hub.app_token');
+        $given = (string) $request->bearerToken();
+        $secure = $request->isSecure() || ! config('mcp_hub.require_https');
 
-        if (strlen($expected) < 8 || ! hash_equals($expected, $given)) {
-            return response()->json([
+        $response = $secure && strlen($expected) >= 8 && hash_equals($expected, $given)
+            ? $next($request)
+            : response()->json([
                 'success' => false,
-                'error' => ['code' => 'PERMISSION_DENIED', 'message' => 'Invalid service credential'],
+                'error' => ['code' => 'PERMISSION_DENIED', 'message' => $secure ? 'Invalid service credential' : 'HTTPS is required'],
             ], 401);
-        }
 
-        return $next($request);
+        // Answers hold user data: never cached, never content-sniffed.
+        $response->headers->set('Cache-Control', 'no-store');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+
+        return $response;
     }
 }`,
       },
@@ -211,7 +220,7 @@ class VerifyHubKey
         caption: "Laravel 11 and 12: register the alias. On Laravel 10, add it to $middlewareAliases in app/Http/Kernel.php.",
         code: String.raw`->withMiddleware(function (Middleware $middleware) {
     $middleware->alias([
-        'hub.key' => \App\Http\Middleware\VerifyHubKey::class,
+        'hub.token' => \App\Http\Middleware\VerifyHubToken::class,
     ]);
 })`,
       },
@@ -223,6 +232,7 @@ class VerifyHubKey
     step: 3,
     body: [
       "User-scoped routes receive `X-Hub-Assertion`: `base64url(JSON) + \".\" + base64url(HMAC-SHA256)`, signed with the delegation secret. It names the user (`user_ref`) and the account that owns the data (`tenant_id`), has `aud` set to your base URL and expires within 60 seconds.",
+      "Each assertion carries a random `jti` and is accepted once: `Cache::add` records it until it expires, so a captured header cannot be replayed. Use a shared cache (Redis, database or file) when several servers run the app.",
       "The same class signs `X-Hub-Delegation` when your app calls the Hub (step 8). Adjust `subject()` once if your data belongs to teams rather than users.",
     ],
     files: [
@@ -235,6 +245,7 @@ class VerifyHubKey
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 /**
@@ -252,6 +263,7 @@ final class HubToken
     public static function sign(array $claims, int $ttlSeconds = 120): string
     {
         $claims['exp'] = time() + min($ttlSeconds, 120);
+        $claims['jti'] = self::encode(random_bytes(18));
         $raw = json_encode($claims, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
         return self::encode($raw).'.'.self::encode(hash_hmac('sha256', $raw, self::secret(), true));
@@ -275,6 +287,10 @@ final class HubToken
         }
         if (($claims['aud'] ?? null) !== $audience || ($claims['app_key'] ?? null) !== config('mcp_hub.app_key')) {
             throw new RuntimeException('The Hub token was issued for another application.');
+        }
+        if (! is_string($claims['jti'] ?? null) || ! preg_match('/^[A-Za-z0-9_-]{16,64}$/D', $claims['jti'])
+            || ! Cache::add('mcp_hub.jti.'.hash('sha256', $claims['jti']), true, $claims['exp'] - $now + 5)) {
+            throw new RuntimeException('The Hub token was already used.');
         }
 
         return $claims;
@@ -418,7 +434,7 @@ class HubProposal extends Model
         caption: "Add to routes/api.php, which already imports Route. Laravel prefixes these with /api.",
         code: String.raw`use App\Http\Controllers\Api\HubController;
 
-Route::prefix('ai/v1')->middleware(['hub.key', 'throttle:120,1'])->group(function () {
+Route::prefix('ai/v1')->middleware(['hub.token', 'throttle:120,1'])->group(function () {
     Route::get('health', [HubController::class, 'health']);
     Route::get('capabilities', [HubController::class, 'manifest']);
     Route::get('orders/list', [HubController::class, 'index']);
@@ -884,8 +900,7 @@ class HubProposalController extends Controller
         ["App key", "`MCP_HUB_APP_KEY`"],
         ["Base URL", "`MCP_HUB_BASE_URL`"],
         ["Manifest path / Health path", "`/api/ai/v1/capabilities` and `/api/ai/v1/health`"],
-        ["Authentication", "API key header"],
-        ["API key", "`MCP_HUB_API_KEY`"],
+        ["Bearer token", "`MCP_HUB_APP_TOKEN`"],
         ["Permission management", "Set up in Hub"],
         ["Advanced → User delegation secret", "`MCP_HUB_DELEGATION_SECRET`, or leave it blank and copy the generated value into `.env`"],
       ],
@@ -899,7 +914,7 @@ class HubProposalController extends Controller
     ],
     after: [
       "Prefer your app to decide everything? Choose **Follow application permissions automatically** instead, add `'managed_by' => 'application'` to the manifest and a `tool_key` such as `your_app.orders.create` to every route: the Hub then publishes exactly the routes you list, without review.",
-      "To replace the API key or delegation secret later, update `.env` first, then save the new value on the app's API keys tab; the Hub tests the connection right away.",
+      "To replace the bearer token or delegation secret later, update `.env` first, then save the new value on the app's API keys tab; the Hub tests the connection right away.",
     ],
   },
   {
@@ -1191,8 +1206,8 @@ export async function decideProposal(ref, confirm = true) {
         lang: "bash",
         kind: "snippet",
         caption: "Both should answer JSON, not HTML",
-        code: String.raw`curl -s https://app.example.com/api/ai/v1/health -H "X-API-Key: $MCP_HUB_API_KEY"
-curl -s https://app.example.com/api/ai/v1/capabilities -H "X-API-Key: $MCP_HUB_API_KEY"`,
+        code: String.raw`curl -s https://app.example.com/api/ai/v1/health -H "Authorization: Bearer $MCP_HUB_APP_TOKEN"
+curl -s https://app.example.com/api/ai/v1/capabilities -H "Authorization: Bearer $MCP_HUB_APP_TOKEN"`,
       },
       {
         path: "tests/Feature/HubContractTest.php",
@@ -1213,7 +1228,7 @@ class HubContractTest extends TestCase
 {
     use RefreshDatabase;
 
-    private array $key = ['X-API-Key' => 'test-api-key'];
+    private array $token = ['Authorization' => 'Bearer test-app-token'];
 
     protected function setUp(): void
     {
@@ -1222,7 +1237,7 @@ class HubContractTest extends TestCase
         config([
             'mcp_hub.app_key' => 'your_app',
             'mcp_hub.base_url' => 'https://app.test',
-            'mcp_hub.api_key' => 'test-api-key',
+            'mcp_hub.app_token' => 'test-app-token',
             'mcp_hub.delegation_secret' => 'test-delegation-secret',
         ]);
     }
@@ -1232,7 +1247,7 @@ class HubContractTest extends TestCase
     {
         $assertion = HubToken::sign(['app_key' => 'your_app', 'aud' => 'https://app.test'] + HubToken::subject($user), 60);
 
-        return $this->key + ['X-Hub-Assertion' => $assertion] + $extra;
+        return $this->token + ['X-Hub-Assertion' => $assertion] + $extra;
     }
 
     private function order(User $user, array $values = []): Order
@@ -1241,15 +1256,30 @@ class HubContractTest extends TestCase
             'status' => 'open', 'total' => 100]);
     }
 
-    public function test_every_route_requires_the_hub_api_key(): void
+    public function test_every_route_requires_the_hub_bearer_token(): void
     {
         $this->getJson('/api/ai/v1/health')->assertStatus(401);
-        $this->getJson('/api/ai/v1/health', $this->key)->assertOk()->assertJson(['status' => 'ok']);
+        $this->getJson('/api/ai/v1/health', ['X-API-Key' => 'test-app-token'])->assertStatus(401);
+        $this->getJson('/api/ai/v1/health', $this->token)->assertOk()->assertJson(['status' => 'ok'])
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        config(['mcp_hub.require_https' => true]);
+        $this->getJson('/api/ai/v1/health', $this->token)->assertStatus(401);
+        $this->getJson('https://app.test/api/ai/v1/health', $this->token)->assertOk();
+    }
+
+    public function test_a_hub_assertion_works_once(): void
+    {
+        $ana = User::factory()->create();
+        $this->order($ana);
+        $headers = $this->hub($ana);
+
+        $this->getJson('/api/ai/v1/orders/list', $headers)->assertOk();
+        $this->getJson('/api/ai/v1/orders/list', $headers)->assertStatus(403);
     }
 
     public function test_the_manifest_declares_read_and_write_routes(): void
     {
-        $module = $this->getJson('/api/ai/v1/capabilities', $this->key)->assertOk()
+        $module = $this->getJson('/api/ai/v1/capabilities', $this->token)->assertOk()
             ->assertJsonPath('application', 'your_app')->json('modules.0');
 
         $this->assertSame(['read', 'create', 'update', 'delete'], $module['supported_operations']);
@@ -1263,7 +1293,7 @@ class HubContractTest extends TestCase
         $this->order($ana);
         $other = $this->order($budi);
 
-        $this->getJson('/api/ai/v1/orders/list', $this->key)->assertStatus(403);
+        $this->getJson('/api/ai/v1/orders/list', $this->token)->assertStatus(403);
         $this->getJson('/api/ai/v1/orders/list?status=paid', $this->hub($ana))->assertOk()
             ->assertJsonCount(1, 'data')->assertJsonPath('data.0.ref', 'ord_'.$own->id);
         $this->getJson('/api/ai/v1/orders/list?user_id=2', $this->hub($ana))->assertStatus(422);
@@ -1333,7 +1363,7 @@ class HubContractTest extends TestCase
     table: {
       head: ["In the Hub", "Usual cause", "Fix"],
       rows: [
-        ["The application rejected the credential", "`X-API-Key` does not match", "Compare `MCP_HUB_API_KEY` with the key saved on the app's API keys tab, then run `php artisan config:clear`."],
+        ["The application rejected the bearer token", "The `Authorization: Bearer` token does not match, or a proxy drops the header", "Compare `MCP_HUB_APP_TOKEN` with the token saved on the app's API keys tab, then run `php artisan config:clear`. Behind Apache, make sure the `Authorization` header is passed to PHP."],
         ["Answered, but not with {\"status\": \"ok\"}", "The route returned HTML: a redirect to login or a 404 page", "Run `php artisan route:list --path=ai`. On Laravel 11+, run `php artisan install:api`."],
         ["Contract sync fails on the application key", "`MCP_HUB_APP_KEY` differs from the Hub's app key", "Use the same lowercase key in both places."],
         ["`PERMISSION_DENIED` on user data", "Wrong delegation secret, expired token or audience mismatch", "Make `MCP_HUB_BASE_URL` match the Hub's base URL exactly, and keep server clocks in sync (NTP)."],
@@ -1347,7 +1377,7 @@ class HubContractTest extends TestCase
     title: "Security checklist",
     body: ["Before going to production:"],
     list: [
-      "Keep `MCP_HUB_API_KEY` and `MCP_HUB_DELEGATION_SECRET` in `.env` or a secret manager, never in Git. Rotate them from the app's API keys tab.",
+      "Keep `MCP_HUB_APP_TOKEN` and `MCP_HUB_DELEGATION_SECRET` in `.env` or a secret manager, never in Git. Rotate them from the app's API keys tab.",
       "Take the user from `X-Hub-Assertion` only. Ignore any `user_id`, `tenant_id` or role sent as a tool argument.",
       "Check the user's permissions and record ownership on every request, as your own UI does.",
       "Select declared fields explicitly. Never return `Model::all()` or `toArray()` of a whole model.",

@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import AppCredentials from "@/components/AppCredentials.vue";
+import AppSkillsPanel from "@/components/AppSkillsPanel.vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import DataSourcesPanel from "@/components/DataSourcesPanel.vue";
 import ClientKeysPanel from "@/components/ClientKeysPanel.vue";
@@ -28,7 +29,9 @@ const router = useRouter();
 const session = useSession();
 const toast = useToast();
 const id = String(route.params.id);
-const TABS = ["sources", "tools", "chat", "keys", "memory", "connection", "history"];
+const TABS = ["sources", "tools", "skills", "chat", "keys", "memory", "connection", "history"];
+// Skills that are on, reported by the Skills tab once it has loaded.
+const skillsOn = ref<number | undefined>(undefined);
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : "sources");
 const app = ref<AppDetail | null>(null);
 const loadError = ref("");
@@ -186,6 +189,7 @@ async function archive() {
 const tabs = computed(() => [
   { key: "sources", label: "Data sources", count: catalogLoaded.value ? sources.value.length : undefined },
   { key: "tools", label: "Tools", count: catalogLoaded.value ? tools.value.length : undefined },
+  { key: "skills", label: "Skills", count: skillsOn.value },
   { key: "chat", label: "Chat" },
   { key: "keys", label: "API keys" },
   { key: "memory", label: "Memory" },
@@ -326,6 +330,8 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
       </template>
     </section>
 
+    <AppSkillsPanel v-else-if="tab === 'skills'" :app="app" :editable="session.canWrite && !archived" @changed="(count: number) => (skillsOn = count)" />
+
     <ChatPanel v-else-if="tab === 'chat'" :app="app" />
 
     <section v-else-if="tab === 'keys'" class="space-y-8">
@@ -360,7 +366,7 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
       <div class="space-y-6">
         <div class="card card-pad space-y-3">
           <h2 class="section-title">Credential</h2>
-          <p class="text-xs text-subtle">{{ app.auth_type === "api_key" ? "API key header" : "Bearer token" }} ·
+          <p class="text-xs text-subtle">Bearer token ·
             <span :class="app.secret_configured ? 'text-ok' : 'text-bad'">{{ app.secret_configured ? "stored" : "revoked" }}</span>
             <template v-if="app.secret_updated_at"> · updated {{ timeAgo(app.secret_updated_at) }}</template></p>
           <button class="btn-secondary w-full" type="button" @click="tab = 'keys'"><AppIcon name="key" :size="16" /> Manage API keys</button>

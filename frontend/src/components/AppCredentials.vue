@@ -21,10 +21,10 @@ const checking = computed(() => step.value === "verifying" || step.value === "te
 const slow = useSlowFlag(checking);
 
 const editable = computed(() => session.canWrite && props.app.status !== "archived");
-const keyLabel = computed(() => props.app.auth_type === "api_key" ? "API key" : "Bearer token");
-// Mid-sentence form: "API key" keeps its capitals, "bearer token" does not.
-const keyNoun = computed(() => props.app.auth_type === "api_key" ? "API key" : "bearer token");
-const sentAs = computed(() => props.app.auth_type === "api_key" ? "X-API-Key header" : "Authorization: Bearer header");
+// The Hub always calls apps with `Authorization: Bearer <token>`.
+const keyLabel = "Bearer token";
+const keyNoun = "bearer token";
+const sentAs = "Authorization: Bearer header";
 const valid = computed(() => {
   const { secret, delegation_secret: delegation } = form.value;
   return Boolean(secret || delegation) && (!secret || secret.length >= 8) && (!delegation || delegation.length >= 8);
@@ -53,7 +53,7 @@ async function save() {
     await hub.rotateSecret(props.app.id, body);
     saved = true;
     form.value = { secret: "", delegation_secret: "" };
-    toast.ok(body.secret ? `${keyLabel.value} saved` : "Delegation secret saved");
+    toast.ok(body.secret ? `${keyLabel} saved` : "Delegation secret saved");
     if (body.secret) await check(true);
   } catch (exc) {
     toast.error(errorMessage(exc));

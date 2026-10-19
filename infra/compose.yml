@@ -58,7 +58,7 @@ services:
       YOUR_APP_API_KEY: ${YOUR_APP_API_KEY:-dev-your-app-key}
       YOUR_APP_DELEGATION_SECRET: ${YOUR_APP_DELEGATION_SECRET:-dev-delegation-secret}
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8081/api/ai/v1/health', headers={'X-API-Key': os.environ['YOUR_APP_API_KEY']}), timeout=3)"]
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8081/api/ai/v1/health', headers={'Authorization': 'Bearer ' + os.environ['YOUR_APP_API_KEY']}), timeout=3)"]
       interval: 5s
       timeout: 5s
       retries: 20

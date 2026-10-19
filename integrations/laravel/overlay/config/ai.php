@@ -8,13 +8,17 @@ return [
     // Config allows operations; saved admin permissions still decide access per model.
     'crud' => [
         'read' => true,
-        'create' => false,
-        'update' => false,
-        'delete' => false,
+        'create' => true,
+        'update' => true,
+        'delete' => true,
         'allow_hard_delete' => false,
         'proposal_ttl' => 300,
         // Optional business-rule overrides. Fields/rules otherwise follow each model's fillable and schema.
-        'models' => [],
+        // Writes are denied unless a model has a Laravel policy or an authorize rule here (least privilege).
+        'models' => [
+            \App\Models\BillingUser::class => ['operations' => ['update'],
+                'authorize' => [\App\Services\AI\AiToolAccessGuard::class, 'ownBillingProfile']],
+        ],
     ],
 
     // AI model bridge and user-owned data Hub connections.
@@ -34,6 +38,8 @@ return [
             'source_key' => env('MCP_HUB_SOURCE_KEY', ''),
             'delegation_secret' => env('MCP_HUB_DELEGATION_SECRET', ''),
             'timeout' => (int) env('MCP_HUB_TIMEOUT', 12),
+            // Refuse connector calls over plain HTTP; on by default in production (behind a proxy, trust it in TrustProxies).
+            'require_https' => (bool) env('MCP_HUB_REQUIRE_HTTPS', env('APP_ENV') === 'production'),
         ],
     ],
 ];

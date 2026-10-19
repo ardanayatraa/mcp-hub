@@ -5,6 +5,8 @@ namespace App\Services\AI;
 use App\Models\User;
 use App\Services\Mcp\McpClient;
 use App\Services\Mcp\McpHubClient;
+use App\Services\Mcp\McpResourceRegistry;
+use Illuminate\Support\Str;
 
 class AiChatOrchestrator
 {
@@ -36,6 +38,10 @@ class AiChatOrchestrator
 
         if ($this->userCountToolUnavailable($history, $user)) {
             return self::USER_COUNT_UNAVAILABLE_REPLY;
+        }
+
+        if (($denied = $this->unavailableResourceReply($history, $user)) !== null) {
+            return $denied;
         }
 
         $this->reportLinks = [];
@@ -107,6 +113,13 @@ class AiChatOrchestrator
                 'delta' => ['content' => self::USER_COUNT_UNAVAILABLE_REPLY],
             ]]], JSON_UNESCAPED_UNICODE)."\n\ndata: [DONE]\n\n";
 
+            return;
+        }
+
+        if (($denied = $this->unavailableResourceReply($history, $user)) !== null) {
+            yield 'data: '.json_encode(['choices' => [[
+                'index' => 0, 'delta' => ['content' => $denied],
+            ]]], JSON_UNESCAPED_UNICODE)."\n\ndata: [DONE]\n\n";
             return;
         }
 
@@ -354,6 +367,8 @@ class AiChatOrchestrator
             return false;
         }
 
+        if (self::mentionsRegisteredResource($question)) { return false; }
+
         foreach ($this->availableTools($user) as $tool) {
             if (($tool['function']['name'] ?? '') === 'count_users') {
                 return false;
@@ -404,12 +419,69 @@ class AiChatOrchestrator
         return '';
     }
 
-    private function capabilityReply(array $history, User $user): string
+    /** A named unavailable model must never be replaced with another model's tool. */
+    private function unavailableResourceReply(array $history, User $user): ?string
+    {
+        $question = self::latestUserText($history);
+        if (! preg_match('/\b(?:tampilkan|lihat|ambil|sajikan|daftar|data|berapa|jumlah|total|hitung|terakhir|terbaru|list|show|get|fetch|count|latest|last|records?|export|ekspor|download|unduh|buat|tambahkan|ubah|edit|update|hapus|delete|remove)\b/iu', $question)) {
+            return null;
+        }
+
+        $resources = McpResourceRegistry::resources();
+        $models = McpResourceRegistry::modelOptions();
+        foreach ($resources as $spec) { $models[$spec['model']] = class_basename($spec['model']); }
+        $aliases = [];
+        foreach ($models as $class => $name) {
+            $name = str_replace('_', ' ', Str::snake(class_basename($class)));
+            foreach ([$name, Str::plural($name), class_basename($class), Str::plural(class_basename($class))] as $term) {
+                $aliases[mb_strtolower($term)] = $class;
+            }
+        }
+        foreach ($resources as $key => $spec) {
+            foreach ([$key, str_replace('_', ' ', $key), $spec['label'], ...($spec['keywords'] ?? [])] as $term) {
+                $term = trim((string) $term);
+                if ($term !== '') {
+                    foreach ([$term, Str::singular($term), Str::plural($term)] as $alias) {
+                        $aliases[mb_strtolower($alias)] = $spec['model'];
+                    }
+                }
+            }
+        }
+        // Match Billing Users before Users, or Blast Messages before Messages.
+        uksort($aliases, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+        $mentioned = [];
+        foreach ($aliases as $term => $class) {
+            $pattern = '/(?<![\pL\pN_])'.preg_quote($term, '/').'(?![\pL\pN_])/iu';
+            if (preg_match($pattern, $question) === 1) {
+                $mentioned[$class] = true;
+                $question = preg_replace($pattern, ' ', $question) ?? $question;
+            }
+        }
+        if ($mentioned === []) { return null; }
+
+        $available = $this->availableTools($user);
+        $index = McpResourceRegistry::tools();
+        $permitted = [];
+        foreach ($available as $definition) {
+            $tool = $index[$definition['function']['name'] ?? ''] ?? null;
+            if ($tool && isset($resources[$tool['resource']])) {
+                $permitted[$resources[$tool['resource']]['model']] = true;
+            }
+        }
+        if (array_diff_key($mentioned, $permitted) === []) { return null; }
+
+        $english = preg_match('/\b(?:show|list|get|fetch|count|latest|records?|my)\b/i', self::latestUserText($history)) === 1;
+        return ($english ? 'I do not have access to the requested data model.'
+            : 'Saya tidak punya akses ke model data yang Anda minta.')."\n\n"
+            .$this->capabilityReply($history, $user, $available);
+    }
+
+    private function capabilityReply(array $history, User $user, ?array $availableTools = null): string
     {
         $english = preg_match('/\b(?:what|which|can|available|accessible)\b/i', self::latestUserText($history)) === 1;
         $index = \App\Services\Mcp\McpResourceRegistry::tools();
         $resources = [];
-        foreach ($this->availableTools($user) as $available) {
+        foreach ($availableTools ?? $this->availableTools($user) as $available) {
             $tool = $index[$available['function']['name'] ?? ''] ?? null;
             if (! $tool) { continue; }
             $operation = isset($tool['phase']) ? $tool['action'] : 'read';

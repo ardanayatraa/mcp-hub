@@ -1,0 +1,15 @@
+# Use with: docker compose -f infra/compose.yml -f infra/compose.node.yml up --build
+# Point DATABASE_URL at an existing Hub PostgreSQL database and run the Node migrator first.
+services:
+  backend:
+    build:
+      context: ../backend-js
+      dockerfile: Dockerfile
+    environment:
+      HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s

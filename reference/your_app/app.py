@@ -84,10 +84,16 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse({"success": False, "error": {"code": code, "message": message}}, status_code=status)
 
 
-def _guard(request: Request, x_api_key: str | None, x_hub_assertion: str | None, permission: str):
-    """The source re-checks the service key, the signed user and the user's own permission."""
+def _authenticated(authorization: str | None) -> bool:
+    """The Hub sends this app's secret as `Authorization: Bearer <token>`; compare in constant time."""
 
-    if x_api_key != API_KEY:
+    return hmac.compare_digest((authorization or "").encode(), f"Bearer {API_KEY}".encode())
+
+
+def _guard(request: Request, authorization: str | None, x_hub_assertion: str | None, permission: str):
+    """The source re-checks the service token, the signed user and the user's own permission."""
+
+    if not _authenticated(authorization):
         return None, _error(401, "UNAUTHENTICATED", "Authentication is required")
     audience = str(request.base_url).rstrip("/")
     configured = os.environ.get("ASSERTION_AUDIENCE")
@@ -106,15 +112,15 @@ app = FastAPI(title="Your App")
 
 
 @app.get("/api/ai/v1/health")
-def health(x_api_key: str | None = Header(default=None)):
-    if x_api_key != API_KEY:
+def health(authorization: str | None = Header(default=None)):
+    if not _authenticated(authorization):
         return _error(401, "UNAUTHENTICATED", "Authentication is required")
     return {"status": "ok"}
 
 
 @app.get("/api/ai/v1/capabilities")
-def capabilities(x_api_key: str | None = Header(default=None)):
-    if x_api_key != API_KEY:
+def capabilities(authorization: str | None = Header(default=None)):
+    if not _authenticated(authorization):
         return _error(401, "UNAUTHENTICATED", "Authentication is required")
     return MANIFEST
 
@@ -125,10 +131,10 @@ def projects(
     status: Literal["active", "pending", "completed"] | None = None,
     limit: int = Query(default=50, ge=1, le=50),
     cursor: str | None = Query(default=None, max_length=64),
-    x_api_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
     x_hub_assertion: str | None = Header(default=None),
 ):
-    payload, error = _guard(request, x_api_key, x_hub_assertion, "projects.read")
+    payload, error = _guard(request, authorization, x_hub_assertion, "projects.read")
     if error is not None:
         return error
     allowed = payload["user"]["project_refs"]
@@ -166,11 +172,11 @@ class ProjectProposal(BaseModel):
 
 
 @app.post("/api/v1/projects")
-def propose_project(body: ProjectProposal, request: Request, x_api_key: str | None = Header(default=None),
+def propose_project(body: ProjectProposal, request: Request, authorization: str | None = Header(default=None),
                     x_hub_assertion: str | None = Header(default=None)):
     """A create request becomes a proposal; the user confirms it in this app's own UI."""
 
-    payload, error = _guard(request, x_api_key, x_hub_assertion, "projects.create")
+    payload, error = _guard(request, authorization, x_hub_assertion, "projects.create")
     if error is not None:
         return error
     return {
@@ -182,10 +188,10 @@ def propose_project(body: ProjectProposal, request: Request, x_api_key: str | No
 
 
 @app.get("/api/v1/activity")
-def activity(request: Request, x_api_key: str | None = Header(default=None), x_hub_assertion: str | None = Header(default=None)):
+def activity(request: Request, authorization: str | None = Header(default=None), x_hub_assertion: str | None = Header(default=None)):
     """Last-activity stamps only. No names, emails, or phone numbers."""
 
-    payload, error = _guard(request, x_api_key, x_hub_assertion, "activity.read")
+    payload, error = _guard(request, authorization, x_hub_assertion, "activity.read")
     if error is not None:
         return error
     now = datetime.now(timezone.utc)

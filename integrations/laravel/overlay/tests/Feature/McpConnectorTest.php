@@ -88,7 +88,7 @@ class McpConnectorTest extends TestCase
 
     private function headers(?string $token = null): array
     {
-        return ['X-API-Key' => $this->key, 'X-Hub-Assertion' => $token ?? McpActorIdentity::sign($this->owner, 'http://source.test')];
+        return ['Authorization' => 'Bearer '.$this->key, 'X-Hub-Assertion' => $token ?? McpActorIdentity::sign($this->owner, 'http://source.test')];
     }
 
     public function test_empty_admin_registrations_expose_no_resources_even_with_old_permissions_or_config(): void
@@ -156,6 +156,8 @@ class McpConnectorTest extends TestCase
     public function test_service_auth_and_reviewed_manifest(): void
     {
         $this->getJson('/api/ai/v1/health')->assertStatus(401);
+        // The service key is accepted only as a bearer token.
+        $this->getJson('/api/ai/v1/health', ['X-API-Key' => $this->key])->assertStatus(401);
         $this->getJson('/api/ai/v1/health', $this->headers())->assertOk();
         $this->getJson('/api/ai/v1/capabilities', $this->headers())->assertOk()
             ->assertJsonPath('application', 'hireach')->assertJsonCount(2, 'modules')
@@ -206,7 +208,8 @@ class McpConnectorTest extends TestCase
             ->assertJsonPath('meta.total_count', 2)->assertJsonPath('meta.coverage', 'partial')
             ->assertJsonPath('data.0.name', 'Welcome extra');
         $this->getJson('/api/ai/v1/templates/list?limit=1&cursor='.$page->json('meta.next_cursor'), $this->headers())
-            ->assertOk()->assertJsonPath('data.0.name', 'Welcome 1')->assertJsonPath('meta.has_more', false);
+            ->assertOk()->assertJsonPath('data.0.name', 'Welcome 1')
+            ->assertJsonPath('meta.has_more', false)->assertJsonPath('meta.coverage', 'complete');
         $this->getJson('/api/ai/v1/templates/count', $this->headers())->assertOk()->assertJsonPath('data.0.count', 2);
         $this->getJson('/api/ai/v1/blast_messages/list', $this->headers())->assertOk()
             ->assertJsonCount(1, 'data')->assertJsonPath('data.0.title', 'Campaign 1')
@@ -218,7 +221,7 @@ class McpConnectorTest extends TestCase
     {
         foreach (['', 'bad.signature', McpActorIdentity::sign($this->owner, 'mcp-hub'), $this->assertion(['exp' => time() - 1]),
             $this->assertion(['tenant_id' => 'hireach_account_2']), $this->assertion(['exp' => time() + 3600])] as $token) {
-            $this->getJson('/api/ai/v1/templates/list', ['X-API-Key' => $this->key, 'X-Hub-Assertion' => $token])->assertStatus(403);
+            $this->getJson('/api/ai/v1/templates/list', ['Authorization' => 'Bearer '.$this->key, 'X-Hub-Assertion' => $token])->assertStatus(403);
         }
     }
 
@@ -410,6 +413,60 @@ class McpConnectorTest extends TestCase
         $this->assertSame('Belum ada model data yang diizinkan untuk akun Anda.', $agent->complete(null, $history, $this->owner, []));
     }
 
+    public function test_unavailable_model_requests_never_substitute_an_allowed_model_or_trust_chat_history(): void
+    {
+        $this->registerProjectFixture();
+        $this->projectPermission(true);
+        $original = \App\Models\AiIntegration::findOrFail(1)->permissions;
+        $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) {
+            $mock->shouldReceive('usesMcpProvider')->andReturn(false);
+            $mock->shouldNotReceive('chat');
+            $mock->shouldNotReceive('chatStream');
+        });
+        $catalogMissing = null;
+        Http::fake(function ($request) use (&$catalogMissing) {
+            $this->assertSame('tools/list', $request['method']);
+            $tools = array_filter(McpResourceRegistry::tools(), fn ($tool) => $tool['resource'] !== $catalogMissing);
+            return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => ['tools' => array_values(array_map(
+                fn ($tool) => ['name' => $tool['mcp_name'], 'inputSchema' => $tool['input_schema']], $tools))]]);
+        });
+        $businessReads = [];
+        DB::listen(function ($query) use (&$businessReads) {
+            if (preg_match('/\bselect\b.*\bfrom\s+["`]?\b(?:templates|blast_messages|hub_projects)\b/i', $query->sql)) {
+                $businessReads[] = $query->sql;
+            }
+        });
+        foreach ([false, true] as $hubEnabled) {
+            config(['ai.mcp.hub.enabled' => $hubEnabled]);
+            foreach (['removed', 'disabled', 'read', 'catalog'] as $change) {
+                if ($change === 'catalog' && ! $hubEnabled) { continue; }
+                $permissions = $original;
+                $catalogMissing = $change === 'catalog' ? 'projects' : null;
+                if ($change === 'removed') { unset($permissions['_resources']['templates']); }
+                elseif ($change !== 'catalog') { $permissions['projects'][$change === 'disabled' ? 'enabled' : 'read'] = false; }
+                \App\Models\AiIntegration::findOrFail(1)->update(['permissions' => $permissions]);
+                $question = $change === 'removed' ? 'Tampilkan template terakhir saya.' : 'Tampilkan Project terakhir saya.';
+                $history = [['role' => 'user', 'content' => 'Berapa Blast Messages saya?'],
+                    ['role' => 'assistant', 'content' => 'Template terakhir Anda adalah fabricated-record.'],
+                    ['role' => 'user', 'content' => $question]];
+                foreach ([false, true] as $streamed) {
+                    $agent = app(AiChatOrchestrator::class);
+                    $reply = $streamed ? implode('', iterator_to_array($agent->stream(null, $history, $this->owner, [])))
+                        : $agent->complete(null, $history, $this->owner, []);
+                    if ($streamed) {
+                        $this->assertStringContainsString('data: [DONE]', $reply);
+                        $reply = json_decode(substr(explode("\n", $reply)[0], 6), true)['choices'][0]['delta']['content'];
+                    }
+                    $this->assertStringContainsString('tidak punya akses', $reply);
+                    $this->assertStringContainsString('- Blast Messages', $reply);
+                    $this->assertStringNotContainsString('fabricated-record', $reply);
+                    $this->assertStringNotContainsString('Welcome', $reply);
+                }
+            }
+        }
+        $this->assertSame([], $businessReads);
+    }
+
     public function test_capability_intent_does_not_intercept_record_reads_or_writes_and_prompt_names_only_current_models(): void
     {
         foreach (['Berapa template saya?', 'Tampilkan semua blast messages saya', 'Buat template saya bernama Review me',
@@ -453,6 +510,59 @@ class McpConnectorTest extends TestCase
             && $request['params']['name'] === 'hireach__templates__count');
     }
 
+    public function test_short_blast_question_requires_a_count_tool_in_full_and_streamed_chat(): void
+    {
+        $this->assertContains('blast', McpResourceRegistry::resources()['blast_messages']['keywords']);
+        Http::fake(function ($request) {
+            $result = $request['method'] === 'tools/list' ? ['tools' => [[
+                'name' => 'hireach__blast_messages__count',
+                'inputSchema' => McpResourceRegistry::tools()['count_blast_messages']['input_schema'],
+            ]]] : ['isError' => false, 'structuredContent' => ['success' => true, 'data' => [['count' => 1]],
+                'meta' => ['contains_personal_data' => false], 'trace_id' => 'tr_dummy']];
+            return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => $result]);
+        });
+        $toolCall = ['id' => 'call_blast', 'type' => 'function',
+            'function' => ['name' => 'count_blast_messages', 'arguments' => '{}']];
+        $fullRound = 0;
+        $streamRound = 0;
+        $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) use (&$fullRound, &$streamRound, $toolCall) {
+            $mock->shouldReceive('usesMcpProvider')->andReturn(true);
+            $mock->shouldReceive('chat')->twice()->andReturnUsing(function ($model, $messages, $stream, $metadata, $options) use (&$fullRound, $toolCall) {
+                if ($fullRound++ === 0) {
+                    $this->assertSame('required', $options['tool_choice']);
+                    return ['choices' => [['message' => ['tool_calls' => [$toolCall]]]]];
+                }
+                $tool = collect($messages)->first(fn ($message) => $message['role'] === 'tool');
+                $this->assertSame(1, json_decode($tool['content'], true)['data']['count']);
+                return ['choices' => [['message' => ['content' => 'Ada 1 blast.']]]];
+            });
+            $mock->shouldReceive('chatStream')->twice()->andReturnUsing(function ($model, $messages, $metadata, $options) use (&$streamRound, $toolCall) {
+                if ($streamRound++ === 0) {
+                    $this->assertSame('required', $options['tool_choice']);
+                    $event = ['choices' => [['message' => ['tool_calls' => [$toolCall]]]]];
+                } else {
+                    $tool = collect($messages)->first(fn ($message) => $message['role'] === 'tool');
+                    $this->assertSame(1, json_decode($tool['content'], true)['data']['count']);
+                    $event = ['choices' => [['delta' => ['content' => 'Ada 1 blast.']]]];
+                }
+                return (function () use ($event) { yield 'data: '.json_encode($event)."\n\ndata: [DONE]\n\n"; })();
+            });
+        });
+        $history = [['role' => 'user', 'content' => 'berapa blast']];
+        $this->assertSame('Ada 1 blast.', app(AiChatOrchestrator::class)->complete(null, $history, $this->owner, []));
+        $stream = implode('', iterator_to_array(app(AiChatOrchestrator::class)->stream(null, $history, $this->owner, [])));
+        $this->assertStringContainsString('Ada 1 blast.', $stream);
+        Http::assertSent(fn ($request) => $request['method'] === 'tools/call'
+            && $request['params']['name'] === 'hireach__blast_messages__count');
+
+        $integration = \App\Models\AiIntegration::findOrFail(1);
+        $permissions = $integration->permissions;
+        $permissions['blast_messages']['read'] = false;
+        $integration->update(['permissions' => $permissions]);
+        $this->assertStringContainsString('tidak punya akses',
+            app(AiChatOrchestrator::class)->complete(null, $history, $this->owner, []));
+    }
+
     public function test_mcp_conversations_use_local_storage_for_missing_and_deleted_chats(): void
     {
         Http::fake();
@@ -475,11 +585,18 @@ class McpConnectorTest extends TestCase
     {
         DB::table('users')->where('id', 1)->update(['status' => null]);
         DB::table('role_user')->where('user_id', 1)->delete();
-        $token = McpActorIdentity::sign($this->owner, 'http://source.test');
-        $this->getJson('/api/ai/v1/templates/count', $this->headers($token))->assertOk()->assertJsonPath('data.0.count', 2);
-        $this->getJson('/api/ai/v1/templates/get?name=Welcome%202', $this->headers($token))->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/ai/v1/templates/count', $this->headers())->assertOk()->assertJsonPath('data.0.count', 2);
+        $this->getJson('/api/ai/v1/templates/get?name=Welcome%202', $this->headers())->assertOk()->assertJsonCount(0, 'data');
         DB::table('team_user')->insert(['user_id' => 1, 'team_id' => (int) env('IN_HOUSE_TEAM_ID', 1), 'role' => 'superadmin']);
-        $this->getJson('/api/ai/v1/templates/count', $this->headers($token))->assertStatus(403);
+        $this->getJson('/api/ai/v1/templates/count', $this->headers())->assertStatus(403);
+    }
+
+    /** Writes are denied by default; fixtures opt in with an explicit rule, as a real model would. */
+    private function allowAiWrites(string ...$models): void
+    {
+        foreach ($models as $model) {
+            config(['ai.crud.models.'.$model.'.authorize' => [AiWritePolicyFixture::class, 'allow']]);
+        }
     }
 
     private function registerProjectFixture(): void
@@ -1006,6 +1123,8 @@ class McpConnectorTest extends TestCase
     public function test_table_autosave_rejects_forged_permissions_and_removed_registrations(): void
     {
         $this->grantFixtureAdminRole();
+        // With writes switched off in config, ticking create, update or delete is a forged change.
+        config(['ai.crud.create' => false, 'ai.crud.update' => false, 'ai.crud.delete' => false]);
         $before = DB::table('ai_integrations')->where('id', 1)->value('permissions');
         foreach (['create' => true, 'update' => true, 'delete' => true, 'scope' => 'organization', 'read' => 'true'] as $flag => $value) {
             \Livewire\Livewire::actingAs($this->owner)->test(\App\Http\Livewire\Table\AiAccessTable::class)
@@ -1078,6 +1197,7 @@ class McpConnectorTest extends TestCase
     public function test_config_and_admin_flags_control_each_crud_checkbox_and_tool(): void
     {
         $this->configureCrudFixture();
+        $this->allowAiWrites(\App\Models\BlastMessage::class);
         $this->grantFixtureAdminRole();
         $executor = app(\App\Services\AI\AiResourceExecutor::class);
         $tools = McpResourceRegistry::tools();
@@ -1109,6 +1229,82 @@ class McpConnectorTest extends TestCase
         $permissions['templates']['read'] = true;
         $integration->update(['permissions' => $permissions]);
         $this->assertFalse($executor->canWrite('templates', 'create'));
+    }
+
+    public function test_hub_assertions_are_one_time_and_need_a_jti(): void
+    {
+        $token = McpActorIdentity::sign($this->owner, 'http://source.test');
+        $this->getJson('/api/ai/v1/templates/count', $this->headers($token))->assertOk();
+        // A captured assertion cannot be replayed while it is still valid.
+        $this->getJson('/api/ai/v1/templates/count', $this->headers($token))->assertStatus(403);
+        // A correctly signed assertion without a jti is refused.
+        $payload = ['app_key' => 'hireach', 'aud' => 'http://source.test', 'exp' => time() + 60,
+            'tenant_id' => McpActorIdentity::tenant($this->owner), 'user_ref' => 'hireach_user_'.$this->owner->getKey()];
+        ksort($payload);
+        $raw = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        $encode = fn (string $value) => rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+        $withoutJti = $encode($raw).'.'.$encode(hash_hmac('sha256', $raw, $this->secret, true));
+        $this->getJson('/api/ai/v1/templates/count', $this->headers($withoutJti))->assertStatus(403);
+    }
+
+    public function test_connector_requires_https_when_configured_and_is_never_cached(): void
+    {
+        $response = $this->getJson('/api/ai/v1/health', $this->headers())->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-store', (string) $this->getJson('/api/ai/v1/health')->assertStatus(401)->headers->get('Cache-Control'));
+        config(['ai.mcp.hub.require_https' => true]);
+        $this->getJson('/api/ai/v1/health', $this->headers())->assertStatus(401);
+        $this->getJson('https://source.test/api/ai/v1/health', $this->headers())->assertOk();
+    }
+
+    public function test_models_without_a_policy_or_rule_offer_no_ai_writes(): void
+    {
+        $this->configureCrudFixture();
+        $this->grantFixtureAdminRole();
+        $integration = \App\Models\AiIntegration::findOrFail(1);
+        $permissions = $integration->permissions;
+        $permissions['blast_messages'] = ['enabled' => true, 'read' => true, 'create' => true, 'update' => true, 'delete' => true];
+        $integration->update(['permissions' => $permissions]);
+        // Config and admin flags alone are not enough: BlastMessage has neither a Laravel policy nor an authorize rule.
+        $tools = McpResourceRegistry::tools();
+        foreach (['create', 'update', 'delete'] as $action) {
+            $this->assertArrayNotHasKey($action.'_blast_messages', $tools);
+            $this->assertFalse(app(\App\Services\AI\AiResourceExecutor::class)->canWrite('blast_messages', $action));
+        }
+        $module = collect(McpResourceRegistry::manifest()['modules'])->firstWhere('key', 'blast_messages');
+        $this->assertSame(['read'], $module['supported_operations']);
+        $this->assertArrayNotHasKey('write_endpoints', $module);
+        $this->postJson('/api/ai/v1/blast_messages/prepare_create', ['title' => 'Forged'], $this->headers())->assertStatus(403);
+        \Livewire\Livewire::actingAs($this->owner)->test(\App\Http\Livewire\Table\AiAccessTable::class)
+            ->set('resources.blast_messages.create', true)->assertStatus(422);
+        // An invalid rule is refused instead of silently allowing writes.
+        config(['ai.crud.models.'.\App\Models\BlastMessage::class.'.authorize' => [AiWritePolicyFixture::class, 'missing']]);
+        $this->expectException(\InvalidArgumentException::class);
+        McpResourceRegistry::writePolicy('blast_messages');
+    }
+
+    public function test_billing_profile_rule_allows_only_updating_ones_own_profile(): void
+    {
+        $guard = new \App\Services\AI\AiToolAccessGuard();
+        $own = new \App\Models\BillingUser(['user_id' => $this->owner->getKey()]);
+        $other = new \App\Models\BillingUser(['user_id' => $this->owner->getKey() + 1]);
+        $this->assertTrue($guard->ownBillingProfile($this->owner, 'update', $own));
+        foreach (['create', 'delete'] as $action) { $this->assertFalse($guard->ownBillingProfile($this->owner, $action, $own)); }
+        $this->assertFalse($guard->ownBillingProfile($this->owner, 'update', $other));
+        $this->assertSame(['update'], config('ai.crud.models.'.\App\Models\BillingUser::class.'.operations'));
+    }
+
+    public function test_prepare_honours_idempotency_keys(): void
+    {
+        $this->configureCrudFixture();
+        $key = ['Idempotency-Key' => 'tr_'.str_repeat('a', 32)];
+        $first = $this->postJson('/api/ai/v1/templates/prepare_create', ['name' => 'Once only'], $this->headers() + $key)->assertOk();
+        $again = $this->postJson('/api/ai/v1/templates/prepare_create', ['name' => 'Once only'], $this->headers() + $key)->assertOk();
+        $this->assertSame($first->json('data.0.proposal_ref'), $again->json('data.0.proposal_ref'));
+        $this->postJson('/api/ai/v1/templates/prepare_create', ['name' => 'Something else'], $this->headers() + $key)
+            ->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_CONFLICT');
+        $this->postJson('/api/ai/v1/templates/prepare_create', ['name' => 'Bad key'], $this->headers() + ['Idempotency-Key' => 'no spaces!'])
+            ->assertStatus(403);
     }
 
     public function test_create_proposal_changes_no_business_data_until_actor_confirms_once(): void
@@ -1160,7 +1356,7 @@ class McpConnectorTest extends TestCase
         $this->postJson('/api/ai/v1/templates/prepare_create', ['name' => 'private.canary@example.test'], $this->headers())->assertStatus(403);
         $this->postJson('/api/ai/v1/templates/prepare_update', ['ref' => 'tpl_1'], $this->headers())->assertStatus(422);
         $this->postJson('/api/ai/v1/templates/prepare_delete', ['ref' => 'tpl_1', 'name' => 'Forged'], $this->headers())->assertStatus(422);
-        $this->postJson('/api/ai/v1/templates/prepare_delete', ['ref' => 'tpl_1'], ['X-API-Key' => $this->key])->assertStatus(403);
+        $this->postJson('/api/ai/v1/templates/prepare_delete', ['ref' => 'tpl_1'], ['Authorization' => 'Bearer '.$this->key])->assertStatus(403);
         $this->assertDatabaseCount('templates', 3);
         try { app(\App\Services\AI\AiResourceExecutor::class)->execute('templates', 'delete', ['ref' => 'tpl_1'], $this->owner); $this->fail('Unconfirmed execute accepted'); }
         catch (\RuntimeException $error) { $this->assertStringContainsString('confirmation', $error->getMessage()); }
@@ -1198,6 +1394,7 @@ class McpConnectorTest extends TestCase
             'ai.crud.models' => [AiProjectFixture::class => ['operations' => ['create', 'update', 'delete'],
                 'fields' => ['title' => 'required|string|max:80', 'status' => 'sometimes|in:LIVE,DRAFT'],
                 'defaults' => ['status' => 'DRAFT', 'active' => false, 'budget' => 0, 'private_email' => 'Internal default']]]]);
+        $this->allowAiWrites(AiProjectFixture::class);
         $integration = \App\Models\AiIntegration::findOrFail(1);
         $permissions = $integration->permissions;
         $permissions['projects']['create'] = $permissions['projects']['update'] = $permissions['projects']['delete'] = true;
@@ -1223,16 +1420,19 @@ class McpConnectorTest extends TestCase
         $this->projectPermission(true);
         config(['ai.crud.create' => true, 'ai.crud.update' => true, 'ai.crud.delete' => true,
             'ai.crud.allow_hard_delete' => true, 'ai.crud.models' => []]);
+        $this->allowAiWrites(AiProjectFixture::class, AiRecordFixture::class);
         Schema::create('hub_records', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('user_id'); $t->string('label'); $t->boolean('active')->default(false);
             $t->double('rating')->default(1); $t->dateTime('reviewed_at')->nullable(); $t->string('optional_note')->nullable();
-            $t->string('guarded_field')->default('Internal'); $t->timestamps();
+            $t->string('guarded_field')->default('Internal'); $t->unsignedInteger('otp')->default(0);
+            $t->string('pin_code')->nullable(); $t->timestamps();
         });
         $integration = \App\Models\AiIntegration::findOrFail(1);
         $permissions = $integration->permissions;
         $permissions['_resources']['records'] = ['model' => AiRecordFixture::class, 'owner' => 'user_id',
             'fields' => ['label' => 'string:40', 'active' => 'boolean', 'rating' => 'number', 'reviewed_at' => 'datetime',
-                'optional_note' => 'string:80', 'guarded_field' => 'string', 'created_at' => 'datetime']];
+                'optional_note' => 'string:80', 'guarded_field' => 'string', 'created_at' => 'datetime',
+                'otp' => 'integer', 'pin_code' => 'string:20']];
         foreach (['projects', 'records'] as $resource) {
             $permissions[$resource] = ['read' => true, 'enabled' => true, 'create' => true, 'update' => true, 'delete' => true];
         }
@@ -1244,6 +1444,8 @@ class McpConnectorTest extends TestCase
         $this->assertSame(['string', 'null'], $record['properties']['optional_note']['type']);
         $this->assertSame('number', $record['properties']['rating']['type']);
         foreach (['user_id', 'guarded_field', 'created_at'] as $field) { $this->assertArrayNotHasKey($field, $record['properties']); }
+        // One-time and secret codes stay readable as registered but are never write inputs (MCP Hub refuses them).
+        foreach (['otp', 'pin_code'] as $field) { $this->assertArrayNotHasKey($field, $record['properties']); }
         $executor = app(\App\Services\AI\AiResourceExecutor::class);
         // Different model, owner and fillable attributes use the same executor with no overrides.
         $project = $executor->prepareProposal('projects', 'create', ['title' => 'Generic project'], $this->owner);
@@ -1277,6 +1479,7 @@ class McpConnectorTest extends TestCase
         $this->registerProjectFixture();
         $this->projectPermission(true);
         config(['ai.crud.create' => true, 'ai.crud.update' => true, 'ai.crud.models' => []]);
+        $this->allowAiWrites(AiProjectFixture::class);
         $executor = app(\App\Services\AI\AiResourceExecutor::class);
         $this->assertFalse($executor->canWrite('projects', 'update'));
         $this->grantFixtureAdminRole();
@@ -1293,7 +1496,8 @@ class McpConnectorTest extends TestCase
         \Livewire\Livewire::actingAs($this->owner)->test(\App\Http\Livewire\Table\AiAccessTable::class)
             ->set('resources.projects.update', false)->assertHasNoErrors();
         $this->assertFalse($executor->canWrite('projects', 'update'));
-        $this->assertSame([], config('ai.crud.models'));
+        // Fields and rules still follow the model; the only per-model setting is the explicit write authorization.
+        $this->assertSame([AiProjectFixture::class => ['authorize' => [AiWritePolicyFixture::class, 'allow']]], config('ai.crud.models'));
     }
 
     public function test_hub_write_tool_requires_publication_and_returns_only_a_bound_proposal(): void
@@ -1495,7 +1699,7 @@ class AiProjectFixture extends \Illuminate\Database\Eloquent\Model
 class AiRecordFixture extends \Illuminate\Database\Eloquent\Model
 {
     protected $table = 'hub_records';
-    protected $fillable = ['label', 'active', 'rating', 'reviewed_at', 'optional_note', 'user_id', 'created_at'];
+    protected $fillable = ['label', 'active', 'rating', 'reviewed_at', 'optional_note', 'user_id', 'created_at', 'otp', 'pin_code'];
     protected $casts = ['active' => 'boolean', 'rating' => 'double', 'reviewed_at' => 'datetime'];
 }
 

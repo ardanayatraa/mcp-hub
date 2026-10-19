@@ -286,7 +286,7 @@ def test_unknown_tool_name_never_leaks_into_audit(published):
 
 def test_blank_delegation_secret_is_returned_once(admin, monkeypatch):
     _dns(monkeypatch)
-    response = admin["client"].post("/api/admin/v1/connectors", headers=auth_headers(admin), json={"app_key": "your_app", "auth_type": "api_key", "secret": "dev-your-app-key", "delegation_secret": "", "base_url": "http://reviewed.test"})
+    response = admin["client"].post("/api/admin/v1/connectors", headers=auth_headers(admin), json={"app_key": "your_app", "auth_type": "bearer", "secret": "dev-your-app-key", "delegation_secret": "", "base_url": "http://reviewed.test"})
     assert response.status_code == 201
     data = response.json()["data"]
     assert len(data["delegation_secret"]) >= 32
@@ -335,7 +335,7 @@ def test_activity_source_checks_module_and_row_permission():
     from fastapi.testclient import TestClient
     from reference.your_app.app import app
     def headers(user):
-        return {"X-API-Key": "dev-your-app-key", "X-Hub-Assertion": sign_payload("dev-delegation-secret", {"app_key": "your_app", "tenant_id": "tenant_a", "user_ref": user, "aud": "http://testserver"})}
+        return {"Authorization": "Bearer dev-your-app-key", "X-Hub-Assertion": sign_payload("dev-delegation-secret", {"app_key": "your_app", "tenant_id": "tenant_a", "user_ref": user, "aud": "http://testserver"})}
     with TestClient(app) as source:
         assert source.get("/api/v1/activity", headers=headers("user_2")).status_code == 403
         allowed = source.get("/api/v1/activity", headers=headers("user_1"))

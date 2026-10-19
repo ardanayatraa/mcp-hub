@@ -29,6 +29,8 @@
 - Unreviewed routes or weakened authorization in a tool mapping.
 - Malformed, oversized or wrongly-typed upstream responses becoming an empty "success".
 - Replay of MFA codes, long-lived delegation tokens and cross-site admin requests.
+- Replay of a captured `X-Hub-Assertion`: every attempt carries a fresh `jti`, and connected apps built from the guide (and HiReach) accept each one once.
+- Write inputs naming one-time or account codes (`otp`, `pin`, `cvv`, …): the whole manifest is refused, so such a field can never become an AI input.
 
 ## Residual risk
 

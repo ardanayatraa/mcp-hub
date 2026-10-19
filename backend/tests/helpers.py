@@ -65,7 +65,7 @@ def handler(request: httpx.Request, *, leak_other_tenants: bool = False) -> http
 
     CALLS.append(request)
     path = request.url.path
-    if request.headers.get("X-API-Key") != API_KEY:
+    if request.headers.get("Authorization") != f"Bearer {API_KEY}" or "X-API-Key" in request.headers:
         return httpx.Response(401, json={"success": False, "error": {"code": "UNAUTHENTICATED", "message": "no"}})
     if path.endswith("/health"):
         return httpx.Response(200, json={"status": "ok"})
@@ -119,7 +119,7 @@ def connect_app(admin: dict, *, app_key: str = "your_app", enable: dict | None =
 
     created = api(admin, "POST", "/connectors", {
         "name": "Your App", "app_key": app_key, "environment": "dev", "base_url": base_url,
-        "auth_type": "api_key", "secret": API_KEY, "delegation_secret": DELEGATION_SECRET}, expect=201).json()["data"]
+        "auth_type": "bearer", "secret": API_KEY, "delegation_secret": DELEGATION_SECRET}, expect=201).json()["data"]
     assert API_KEY not in json.dumps(created)
     assert api(admin, "POST", f"/connectors/{created['id']}/test", expect=200).json()["data"]["status"] == "ok"
     modules = api(admin, "POST", f"/connectors/{created['id']}/discover", expect=200).json()["data"]["modules"]

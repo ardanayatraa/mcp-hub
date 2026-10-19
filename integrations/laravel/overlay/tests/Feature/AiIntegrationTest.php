@@ -255,9 +255,11 @@ class AiIntegrationTest extends TestCase
 
     public function test_write_actions_require_permission_and_stay_on_owner_rows(): void
     {
+        config(['ai.crud.create' => true, 'ai.crud.update' => true, 'ai.crud.delete' => true]);
         $executor = app(AiResourceExecutor::class);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('AI action is not permitted.');
         $executor->execute('templates', 'create', ['name' => $this->prefix.' Nope'], $this->owner);
     }
 
@@ -275,11 +277,13 @@ class AiIntegrationTest extends TestCase
         ];
         $integration->update(['permissions' => $permissions]);
 
+        config(['ai.crud.create' => true, 'ai.crud.update' => true, 'ai.crud.delete' => true]);
         $executor = app(AiResourceExecutor::class);
         $name = $this->prefix.' AI New';
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('AI action is not available.');
+        // Even with permission, execute() never writes: changes go through a proposal the user confirms.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Write actions require a prepared proposal and user confirmation.');
         $executor->execute('templates', 'create', [
             'name' => $name,
             'type' => 'text',

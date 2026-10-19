@@ -7,7 +7,7 @@ from configure import ROOT, STATE
 
 state = json.loads(STATE.read_text())
 with httpx.Client(timeout=30, trust_env=False) as client:
-    source_headers = {'X-API-Key': state['source_key']}
+    source_headers = {'Authorization': 'Bearer ' + state['source_key']}
     health_url = state['source_url'] + '/api/ai/v1/health'
     health = client.get(health_url, headers=source_headers)
     health.raise_for_status()

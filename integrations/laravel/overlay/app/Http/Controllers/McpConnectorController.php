@@ -7,6 +7,8 @@ use App\Services\Mcp\McpResourceRegistry;
 use App\Services\Mcp\McpActorIdentity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Throwable;
 
@@ -14,25 +16,36 @@ class McpConnectorController extends Controller
 {
     private function authenticated(Request $request): bool
     {
+        // The bearer token and user assertions never travel in clear text (OWASP ASVS V9).
+        if (config('ai.mcp.hub.require_https') && ! $request->isSecure()) {
+            Log::warning('MCP Hub connector call refused: HTTPS is required.');
+            return false;
+        }
         $key = (string) config('ai.mcp.hub.source_key');
         return (bool) config('ai.mcp.hub.enabled') && strlen($key) >= 32
-            && hash_equals($key, (string) $request->header('X-API-Key', ''));
+            && hash_equals($key, (string) $request->bearerToken());
+    }
+
+    /** Connector answers hold user data: never cached, never content-sniffed. */
+    private function json(array $body, int $status = 200): JsonResponse
+    {
+        return response()->json($body, $status, ['Cache-Control' => 'no-store', 'X-Content-Type-Options' => 'nosniff']);
     }
 
     private function denied(int $status = 403): JsonResponse
     {
-        return response()->json(['success' => false, 'error' => ['code' => $status === 401
+        return $this->json(['success' => false, 'error' => ['code' => $status === 401
             ? 'UNAUTHENTICATED' : 'PERMISSION_DENIED', 'message' => 'Connector access denied.']], $status);
     }
 
     public function health(Request $request): JsonResponse
     {
-        return $this->authenticated($request) ? response()->json(['status' => 'ok']) : $this->denied(401);
+        return $this->authenticated($request) ? $this->json(['status' => 'ok']) : $this->denied(401);
     }
 
     public function capabilities(Request $request): JsonResponse
     {
-        return $this->authenticated($request) ? response()->json(McpResourceRegistry::manifest()) : $this->denied(401);
+        return $this->authenticated($request) ? $this->json(McpResourceRegistry::manifest()) : $this->denied(401);
     }
 
     public function read(Request $request, string $resource, string $action, AiResourceExecutor $executor): JsonResponse
@@ -91,14 +104,14 @@ class McpConnectorController extends Controller
             $more = $action === 'list' && $offset + count($rows) < $total;
             // Names/titles can repeat. GET returns the newest matching own record;
             // pagination and repeated titles must never imply complete coverage.
-            $partial = $action !== 'count' && count($rows) < $total;
-            return response()->json(['success' => true, 'data' => $rows, 'meta' => [
+            $partial = $more || ($action === 'get' && count($rows) < $total);
+            return $this->json(['success' => true, 'data' => $rows, 'meta' => [
                 'as_of' => now('UTC')->toIso8601String(), 'timezone' => 'UTC', 'scope' => 'authorized_records',
                 'coverage' => $partial ? 'partial' : 'complete', 'total_count' => $total, 'has_more' => $more,
                 'next_cursor' => $more ? 'page_'.($offset + count($rows)) : null,
             ]]);
         } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['success' => false, 'error' => ['code' => 'VALIDATION_FAILED', 'message' => 'Query is invalid.']], 422);
+            return $this->json(['success' => false, 'error' => ['code' => 'VALIDATION_FAILED', 'message' => 'Query is invalid.']], 422);
         } catch (Throwable $e) {
             return $this->denied();
         }
@@ -110,11 +123,25 @@ class McpConnectorController extends Controller
         try {
             $user = McpActorIdentity::verify((string) $request->header('X-Hub-Assertion', ''));
             if ($request->query() !== []) { return $this->denied(); }
+            // Idempotency-Key: a repeated request returns the first proposal instead of preparing another.
+            $idempotency = (string) $request->header('Idempotency-Key', '');
+            if ($idempotency !== '' && ! preg_match('/^[A-Za-z0-9_-]{8,128}$/D', $idempotency)) { return $this->denied(); }
+            $replayKey = 'hireach.ai.idempotency.'.hash('sha256', $user->getKey().'|'.$idempotency);
+            $fingerprint = hash('sha256', json_encode([$resource, $action, $request->json()->all()]));
+            if ($idempotency !== '' && is_array($seen = Cache::get($replayKey))) {
+                return hash_equals($seen['fingerprint'], $fingerprint) ? $this->json($seen['body'])
+                    : $this->json(['success' => false, 'error' => ['code' => 'IDEMPOTENCY_CONFLICT',
+                        'message' => 'This Idempotency-Key was used for a different request.']], 409);
+            }
             $proposal = $executor->prepareProposal($resource, $action, $request->json()->all(), $user);
-            return response()->json(['success' => true, 'data' => [[...$proposal, 'tenant_id' => McpActorIdentity::tenant($user)]],
-                'meta' => ['contains_personal_data' => false, 'coverage' => 'complete', 'requires_confirmation' => true]]);
+            $body = ['success' => true, 'data' => [[...$proposal, 'tenant_id' => McpActorIdentity::tenant($user)]],
+                'meta' => ['contains_personal_data' => false, 'coverage' => 'complete', 'requires_confirmation' => true]];
+            if ($idempotency !== '') {
+                Cache::put($replayKey, ['fingerprint' => $fingerprint, 'body' => $body], max(30, min(900, (int) config('ai.crud.proposal_ttl', 300))));
+            }
+            return $this->json($body);
         } catch (\Illuminate\Validation\ValidationException $error) {
-            return response()->json(['success' => false, 'error' => ['code' => 'VALIDATION_FAILED', 'message' => 'Write proposal is invalid.']], 422);
+            return $this->json(['success' => false, 'error' => ['code' => 'VALIDATION_FAILED', 'message' => 'Write proposal is invalid.']], 422);
         } catch (Throwable $error) { return $this->denied(); }
     }
 

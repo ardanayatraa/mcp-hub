@@ -3,12 +3,19 @@
 namespace App\Services\AI;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class AiToolAccessGuard
 {
+    /** AI may update a user's own billing profile; creating or deleting one stays in the normal screens. */
+    public function ownBillingProfile(User $user, string $action, Model $model): bool
+    {
+        return $action === 'update' && (string) $model->getAttribute('user_id') === (string) $user->getKey();
+    }
+
     public static function rejectIfTokenLacksTools(Request $request): ?JsonResponse
     {
         $user = $request->user();

@@ -6,6 +6,7 @@ Only GET is retried. Write methods must be requested explicitly and are never re
 import asyncio
 import random
 import time
+from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -56,7 +57,8 @@ async def _execute_request(
     method: str,
     url: str,
     settings: Settings,
-    headers: dict[str, str],
+    # A callable is asked again for every attempt, so one-time values (an assertion's jti) are never resent.
+    headers: dict[str, str] | Callable[[], dict[str, str]],
     params: dict[str, Any] | None = None,
     json_body: dict | None = None,
     timeout_ms: int = 5000,
@@ -93,7 +95,8 @@ async def _execute_request(
         try:
             async with asyncio.timeout(max(0.001, timeout_ms / 1000 - (time.perf_counter() - started))):
                 async with httpx.AsyncClient(**client_kwargs) as client:
-                    async with client.stream(method, url, headers=headers, params=params, json=json_body) as response:
+                    sent = headers() if callable(headers) else headers
+                    async with client.stream(method, url, headers=sent, params=params, json=json_body) as response:
                         if response.status_code in {301, 302, 303, 307, 308}:
                             raise HubError("SSRF_BLOCKED", "Redirects are not allowed for connector calls", 422)
                         content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()

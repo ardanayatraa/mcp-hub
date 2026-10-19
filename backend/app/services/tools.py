@@ -629,7 +629,9 @@ async def test_tool(db: Session, admin: AdminUser, tool: ToolDefinition, payload
     if mode not in {"sample", "live"}:
         raise HubError("VALIDATION_FAILED", "Test mode must be sample or live", 422)
     connector, application, mapping, module = _scoped(db, admin, tool)
-    arguments = body.get("arguments") or {}
+    # The connect wizard's checklist asks a sample test to fill the required inputs itself.
+    fill = mode == "sample" and body.get("fill_required") is True and "arguments" not in body
+    arguments = sample_arguments(tool.input_schema) if fill else body.get("arguments") or {}
     tenant_id = body.get("tenant_id") or "sample_tenant"
     if not isinstance(arguments, dict) or not isinstance(tenant_id, str) or len(tenant_id) > 120:
         raise HubError("VALIDATION_FAILED", "Test arguments must be an object", 422)

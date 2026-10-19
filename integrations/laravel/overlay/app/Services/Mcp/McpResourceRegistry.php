@@ -5,6 +5,7 @@ namespace App\Services\Mcp;
 use App\Models\AiIntegration;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -147,9 +148,12 @@ class McpResourceRegistry
             if (! is_string($prefix) || ! preg_match('/^[a-z][a-z0-9_]{0,23}$/D', $prefix)) {
                 throw new InvalidArgumentException('AI reference prefix is invalid.');
             }
+            $keywords = $config['keywords'] ?? [str_replace('_', ' ', $key), $config['label'] ?? Str::title(str_replace('_', ' ', $key))];
+            if ($key === 'blast_messages') { $keywords[] = 'blast'; }
             $out[$key] = array_merge($config, ['owner' => $owner, 'fields' => $fields, 'lookup' => $lookup,
                 'filters' => $filters, 'ref_prefix' => $prefix,
-                'label' => $config['label'] ?? Str::title(str_replace('_', ' ', $key))]);
+                'label' => $config['label'] ?? Str::title(str_replace('_', ' ', $key)),
+                'keywords' => array_values(array_unique($keywords))]);
         }
         return $out;
     }
@@ -157,6 +161,15 @@ class McpResourceRegistry
     private static function identifier($value): bool
     {
         return is_string($value) && preg_match('/^[a-z][a-z0-9_]{0,47}$/D', $value) === 1;
+    }
+
+    /** One-time and account codes: MCP Hub refuses them as write inputs, so AI writes never offer them. */
+    private static function writeBlocked(string $field): bool
+    {
+        $words = explode('_', strtolower($field));
+        $pairs = array_map(fn ($i) => $words[$i].'_'.$words[$i + 1], array_keys(array_slice($words, 0, -1)));
+        return (bool) array_intersect([...$words, ...$pairs], ['otp', 'pin', 'cvv', 'cvc', 'passport', 'iban', 'dob', 'ssn',
+            'verification_code', 'auth_code', 'security_code', 'card_number', 'credit_card', 'account_number', 'national_id']);
     }
 
     private static function blocked(string $field): bool
@@ -189,6 +202,8 @@ class McpResourceRegistry
         $policy = config('ai.crud.models.'.$spec['model'], []);
         if (! is_array($policy)) { throw new InvalidArgumentException('Write policy is invalid.'); }
         if (isset($policy['operations']) && ! is_array($policy['operations'])) { throw new InvalidArgumentException('Write operations are invalid.'); }
+        if (isset($policy['authorize']) && (! is_array($policy['authorize']) || count($policy['authorize']) !== 2
+            || ! method_exists(...array_values($policy['authorize'])))) { throw new InvalidArgumentException('Write authorization rule is invalid.'); }
         $model = new $spec['model'];
         // Registered fields bound access; fillable and the actual schema bound writes.
         // Optional overrides add business rules; no per-model config is required.
@@ -197,7 +212,7 @@ class McpResourceRegistry
         $inputSchemas = [];
         $managed = [$model->getKeyName(), $spec['owner'], $model->getCreatedAtColumn(), $model->getUpdatedAtColumn(), 'deleted_at'];
         foreach (array_keys($spec['fields']) as $field) {
-            if (! isset($columns[$field]) || in_array($field, $managed, true) || self::blocked($field)
+            if (! isset($columns[$field]) || in_array($field, $managed, true) || self::blocked($field) || self::writeBlocked($field)
                 || in_array($field, $model->getHidden(), true) || ! $model->isFillable($field)) { continue; }
             $column = $columns[$field];
             $schema = self::fieldSchema(self::columnType($model, $field, $column));
@@ -231,6 +246,8 @@ class McpResourceRegistry
         $operations = array_values(array_filter(['create', 'update', 'delete'], fn ($action) =>
             config('ai.crud.'.$action, false) === true && in_array($action, $policy['operations'] ?? ['create', 'update', 'delete'], true)
             && ($action === 'delete' || $fields !== [])));
+        // Deny by default (least privilege): no write without an explicit authorize rule or a Laravel policy.
+        if (! isset($policy['authorize']) && ! Gate::getPolicyFor($model)) { $operations = []; }
         if (in_array('delete', $operations, true) && ! in_array(\Illuminate\Database\Eloquent\SoftDeletes::class, class_uses_recursive($model))
             && ($policy['allow_hard_delete'] ?? config('ai.crud.allow_hard_delete', false)) !== true) {
             $operations = array_values(array_diff($operations, ['delete']));

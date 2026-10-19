@@ -67,7 +67,7 @@ function health(app: AppSummary) {
   </template>
 
   <EmptyState v-else-if="!visible.length" icon="plug" title="No apps connected yet"
-              text="Connect an application using its base URL and the API key it issued for the Hub.">
+              text="Connect an application using its base URL and the bearer token it issued for the Hub.">
     <RouterLink v-if="session.canWrite" to="/apps/new" class="btn-primary">Connect your first app</RouterLink>
   </EmptyState>
 

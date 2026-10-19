@@ -89,6 +89,8 @@ def test_simplification_upgrade_keeps_published_tools_and_is_reversible(tmp_path
         rows = dict(connection.execute(text("SELECT id, status FROM tool_definitions")).all())
         assert rows == {"live": "published", "checked": "draft"}
         assert connection.scalar(text("SELECT template FROM tool_definitions WHERE id = 'live'")) == "read"
+        # X-API-Key connectors now authenticate with the same secret as a bearer token.
+        assert connection.scalar(text("SELECT auth_type FROM connectors WHERE id = 'con'")) == "bearer"
 
     command.downgrade(config, LEGACY)
     with engine.connect() as connection:

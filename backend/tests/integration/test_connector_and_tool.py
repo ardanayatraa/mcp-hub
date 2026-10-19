@@ -125,19 +125,33 @@ def test_contract_change_disables_only_the_changed_data_source(admin, monkeypatc
 
 def test_ssrf_connector_url_is_rejected(admin):
     response = api(admin, "POST", "/connectors", {"name": "Bad", "app_key": "bad_app", "base_url": "http://169.254.169.254",
-                                                  "auth_type": "api_key", "secret": "dev-your-app-key"})
+                                                  "auth_type": "bearer", "secret": "dev-your-app-key"})
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "SSRF_BLOCKED"
     assert "169.254.169.254" not in response.json()["error"]["message"]
+
+
+def test_apps_are_called_with_a_bearer_token_only(admin, monkeypatch):
+    helpers.dns(monkeypatch)
+    refused = api(admin, "POST", "/connectors", {"name": "Old style", "app_key": "old_style", "base_url": "http://projects.test",
+                                                 "auth_type": "api_key", "secret": helpers.API_KEY})
+    assert refused.status_code == 422
+    with helpers.source():
+        created = api(admin, "POST", "/connectors", {"name": "Bearer", "app_key": "bearer_app", "base_url": "http://projects.test",
+                                                     "secret": helpers.API_KEY}, expect=201).json()["data"]
+        assert created["auth_type"] == "bearer"
+        assert api(admin, "POST", f"/connectors/{created['id']}/test", expect=200).json()["data"]["status"] == "ok"
+    sent = helpers.CALLS[-1].headers
+    assert sent["Authorization"] == f"Bearer {helpers.API_KEY}" and "X-API-Key" not in sent
 
 
 def test_connection_test_explains_failures(admin, monkeypatch):
     helpers.dns(monkeypatch)
     with helpers.source():
         created = api(admin, "POST", "/connectors", {"name": "Wrong key", "app_key": "wrong_key", "base_url": "http://projects.test",
-                                                     "auth_type": "api_key", "secret": "not-the-right-key"}, expect=201).json()["data"]
+                                                     "auth_type": "bearer", "secret": "not-the-right-key"}, expect=201).json()["data"]
         tested = api(admin, "POST", f"/connectors/{created['id']}/test", expect=200).json()["data"]
-    assert tested["status"] == "fail" and tested["error_category"] == "authorization" and "credential" in tested["hint"]
+    assert tested["status"] == "fail" and tested["error_category"] == "authorization" and "bearer token" in tested["hint"]
     assert api(admin, "POST", f"/connectors/{created['id']}/activate").status_code == 422
     api(admin, "DELETE", f"/connectors/{created['id']}", expect=200)
     assert all(row["id"] != created["id"] for row in api(admin, "GET", "/connectors").json()["data"])

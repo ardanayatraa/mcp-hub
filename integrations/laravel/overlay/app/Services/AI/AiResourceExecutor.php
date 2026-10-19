@@ -328,6 +328,7 @@ class AiResourceExecutor
 
     private function authorizeWrite(array $policy, Model $model, string $action, User $user): void
     {
+        if (! isset($policy['authorize']) && ! Gate::getPolicyFor($model)) { throw new RuntimeException('AI write access denied.'); }
         if (isset($policy['authorize'])) {
             [$class, $method] = $policy['authorize'];
             if (app($class)->$method($user, $action, $model) !== true) { throw new RuntimeException('AI write access denied.'); }
@@ -852,6 +853,7 @@ class AiResourceExecutor
             'Current permitted data models: '.json_encode(array_values($models), JSON_UNESCAPED_UNICODE).'.',
             'Describe data access using only these current models and listed tools. Never infer access from HiReach features, examples, or earlier assistant messages. Exporting a report is an action on an allowed model, not a separate data model.',
             'If a needed tool is not listed, say you do not have access to that information.',
+            'Never substitute another data model for the one the user requested. A record from one model does not answer a request for another model. Name records using the model label returned by the tool, even when earlier assistant messages mislabeled them.',
             'When asked what data you can access, name only the permitted categories and operations. Do not fetch records or prepare a download.',
             'Format capability answers as short Markdown bullets, with one category per line and a blank line before the list.',
             'Do not call tools for greetings, thanks, or small talk. Reply with one short line only. Do not list tools or say what you can access.',

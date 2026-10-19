@@ -8,6 +8,10 @@ The `overlay/` directory contains reviewed files from the connected Laravel appl
 including its existing chat and settings components. Installation is guarded by source
 hashes; this snapshot must be reviewed before applying it to a different application.
 
+Write tools (prepare create, update, delete) take the model's fillable, registered fields,
+except one-time and account codes such as `otp`, `pin` or `cvv`: MCP Hub refuses those as
+write inputs, and one refused input would hide every tool of the app.
+
 ## Connection
 
 Laravel reads its connection settings from `.env` through `config/ai.php`:
@@ -76,6 +80,8 @@ The source-managed connector refreshes grants on MCP list/call. Open Hub catalog
 also refresh every 10 seconds while visible and when returning to the tab. Empty grants,
 global Off, or an invalid policy response deny access. Chat answers about available data
 use the current permitted registrations and tools, without reading business records.
+Requests naming an unavailable model are rejected before AI completion or data calls;
+the chat cannot substitute another model, even after an incorrect earlier reply.
 
 CRUD tools prepare an actor-bound, expiring proposal. The user confirms in the source
 application, which rechecks permissions, ownership, schema and record state before
@@ -120,7 +126,7 @@ to start on the old schema. The source-managed catalog follows current applicati
 
 ## Verification
 
-The Laravel suite passed 77 tests / 833 assertions using in-memory SQLite. The Hub suite
+The Laravel suite passed 83 tests / 943 assertions using in-memory SQLite. The Hub suite
 passed 153 tests using isolated databases and mocked requests. Frontend type checking
 and production builds passed.
 

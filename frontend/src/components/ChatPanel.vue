@@ -358,7 +358,7 @@ Content-Type: application/json
           </template>
         </div>
         <div v-for="(entry, index) in entries" :key="index" :class="entry.role === 'user' ? 'flex justify-end' : ''">
-          <p v-if="entry.role === 'user'" class="max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-3.5 py-2 text-sm text-white">{{ entry.text }}</p>
+          <p v-if="entry.role === 'user'" class="max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-3.5 py-2 text-sm text-brand-ink">{{ entry.text }}</p>
           <div v-else class="space-y-2">
             <div v-if="entry.tools.length" class="flex flex-wrap gap-1.5">
               <span v-for="tool in entry.tools" :key="tool.id" class="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-xs"

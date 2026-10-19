@@ -116,6 +116,30 @@ def test_report_stops_at_the_record_cap_and_says_so(reporting, monkeypatch):
     assert "partial data" in body["summary"]
 
 
+def test_large_report_pages_to_cap_without_crossing_tenants(reporting, monkeypatch):
+    own = [{"ref": f"prj_{i}", "name": f"Project {i}", "status": "active",
+            "created_at": "2026-10-01T09:00:00+08:00", "budget": 1.0,
+            "tenant_id": "tenant_a", "owner_email": CANARY} for i in range(1200)]
+    other = [{**row, "ref": f"other_{i}", "tenant_id": "tenant_b"}
+             for i, row in enumerate(own[:300])]
+    monkeypatch.setattr(helpers, "PROJECT_ROWS", own + other)
+    monkeypatch.setattr(get_settings(), "max_records", 50)
+    monkeypatch.setattr(get_settings(), "report_max_records", 1000)
+
+    capped = result(report(reporting, {"source": "projects", "metrics": [{"fn": "count"}]}))
+    assert capped["data"]["totals"]["count"] == 1000
+    assert capped["meta"]["records_read"] == 1000
+    assert capped["meta"]["pages"] == 20
+    assert capped["meta"]["coverage"] == "partial" and capped["meta"]["truncated"] is True
+
+    monkeypatch.setattr(get_settings(), "report_max_records", 1500)
+    complete = result(report(reporting, {"source": "projects", "metrics": [{"fn": "count"}]}))
+    assert complete["data"]["totals"]["count"] == 1200
+    assert complete["meta"]["records_read"] == 1200
+    assert complete["meta"]["pages"] == 24
+    assert complete["meta"]["coverage"] == "complete" and complete["meta"]["truncated"] is False
+
+
 def test_saved_report_tool_lifecycle(reporting):
     admin = reporting["admin"]
     tool = create_tool(admin, reporting["app"]["connector_id"], template="report", tool_key="projects.by_status",

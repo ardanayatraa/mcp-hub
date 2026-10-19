@@ -142,7 +142,7 @@ def test_unassigned_admin_cannot_view_mutate_or_issue_other_app_tokens(published
 def test_cross_app_discovery_and_direct_call_are_both_denied(published):
     admin = published["admin"]
     created = api(admin, "POST", "/connectors", {"name": "Other", "app_key": "other_app", "base_url": "http://other.test",
-                                                 "auth_type": "api_key", "secret": "dummy-secret-123"})
+                                                 "auth_type": "bearer", "secret": "dummy-secret-123"})
     assert created.status_code == 201
     token = issue_key(admin, app_key="other_app")
     request_headers = {"Authorization": "Bearer " + token, "Origin": "http://testserver"}
@@ -227,12 +227,12 @@ def test_complete_backup_restore_preserves_secrets_tests_and_runtime(published):
 def test_reference_source_reauthorizes_known_active_user(user, tenant):
     assertion = sign_payload("dev-delegation-secret", {"app_key": "your_app", "user_ref": user, "tenant_id": tenant, "aud": "http://testserver"})
     with TestClient(source_app) as client:
-        assert client.get("/api/v1/projects", headers={"X-API-Key": "dev-your-app-key", "X-Hub-Assertion": assertion}).status_code == 403
+        assert client.get("/api/v1/projects", headers={"Authorization": "Bearer dev-your-app-key", "X-Hub-Assertion": assertion}).status_code == 403
 
 
 def test_reference_source_record_permissions_and_pagination():
     def headers(user):
-        return {"X-API-Key": "dev-your-app-key", "X-Hub-Assertion": sign_payload("dev-delegation-secret", {
+        return {"Authorization": "Bearer dev-your-app-key", "X-Hub-Assertion": sign_payload("dev-delegation-secret", {
             "app_key": "your_app", "user_ref": user, "tenant_id": "tenant_a", "aud": "http://testserver"})}
     with TestClient(source_app) as client:
         body = client.get("/api/v1/projects?limit=1", headers=headers("user_1")).json()
@@ -253,7 +253,7 @@ def test_source_denies_long_lived_signed_assertion():
     assertion = sign_payload("dev-delegation-secret", {"app_key": "your_app", "user_ref": "user_1", "tenant_id": "tenant_a",
                                                        "aud": "http://testserver"}, ttl_seconds=86400)
     with TestClient(source_app) as client:
-        assert client.get("/api/v1/projects", headers={"X-API-Key": "dev-your-app-key", "X-Hub-Assertion": assertion}).status_code == 403
+        assert client.get("/api/v1/projects", headers={"Authorization": "Bearer dev-your-app-key", "X-Hub-Assertion": assertion}).status_code == 403
 
 
 def test_official_sdk_client_discovers_and_executes_protocol_target(published):

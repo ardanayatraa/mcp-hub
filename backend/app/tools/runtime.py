@@ -11,6 +11,7 @@ on sample data that production runs on live data.
 """
 
 import json
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -136,15 +137,19 @@ async def call_source(source: Source, route: Route, arguments: dict, delegation:
     url = join_url(base_url, path)
     if urlsplit(url).netloc != urlsplit(base_url).netloc:
         raise HubError("SSRF_BLOCKED", "Resolved URL escaped the connector origin", 422)
-    headers = {"Accept": "application/json", **auth_headers(source.connector.auth_type, source.api_secret),
-               "X-Request-ID": new_request_id()}
-    if delegation is not None:
-        headers["X-Hub-Assertion"] = sign_payload(source.delegation_secret, {
-            "app_key": source.application.key, "tenant_id": delegation["tenant_id"],
-            "user_ref": delegation["user_ref"], "aud": base_url}, ttl_seconds=60)
+    base_headers = {"Accept": "application/json", **auth_headers(source.connector.auth_type, source.api_secret),
+                    "X-Request-ID": new_request_id()}
     if write:
         # Lets the application de-duplicate; the Hub itself never retries a write.
-        headers["Idempotency-Key"] = trace_id
+        base_headers["Idempotency-Key"] = trace_id
+
+    def headers() -> dict[str, str]:
+        if delegation is None:
+            return base_headers
+        # A fresh assertion per attempt: its jti lets the application refuse any replay.
+        return {**base_headers, "X-Hub-Assertion": sign_payload(source.delegation_secret, {
+            "app_key": source.application.key, "tenant_id": delegation["tenant_id"],
+            "user_ref": delegation["user_ref"], "aud": base_url, "jti": secrets.token_urlsafe(18)}, ttl_seconds=60)}
     in_query = route.method in {"GET", "DELETE"}
     status, raw, _elapsed = await execute_request(
         method=route.method, url=url, settings=settings, headers=headers,

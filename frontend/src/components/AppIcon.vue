@@ -22,6 +22,7 @@ const PATHS: Record<string, string> = {
   "chevron-right": "M9 6l6 6-6 6",
   "chevron-left": "M15 6l-6 6 6 6",
   "chevron-down": "M6 9l6 6 6-6",
+  "chevron-up": "M6 15l6-6 6 6",
   database: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   chart: "M4 20V11M10 20V5M16 20v-6M3 20h18",
   table: "M3 5h18v14H3zM3 10h18M3 15h18M9 10v9",
@@ -50,6 +51,9 @@ const PATHS: Record<string, string> = {
   "chevrons-up-down": "M8 9l4-4 4 4M8 15l4 4 4-4",
   layers: "M12 3 2.5 8 12 13l9.5-5zM2.5 12 12 17l9.5-5M2.5 16 12 21l9.5-5",
   chat: "M4 5h16v11H9l-5 4zM8 9.5h8M8 12.5h5",
+  sun: "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4",
+  moon: "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z",
+  monitor: "M3 4.5h18v12H3zM8 20.5h8M12 16.5v4",
   send: "M4 12 20 4l-4 16-4-7zM12 13l8-9",
   power: "M12 3v8M7 6.3a7 7 0 1 0 10 0",
 };

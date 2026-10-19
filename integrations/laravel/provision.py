@@ -30,7 +30,7 @@ def request(method, path, body=None):
 login = request('POST', '/auth/login', {'email': os.environ.get('HUB_ADMIN_EMAIL', 'admin@localhost'),
                                       'password': os.environ['HUB_ADMIN_PASSWORD']})
 client.headers['X-CSRF-Token'] = login['csrf_token']
-source = httpx.Client(base_url=state['source_url'], headers={'X-API-Key': state['source_key']},
+source = httpx.Client(base_url=state['source_url'], headers={'Authorization': 'Bearer ' + state['source_key']},
                      timeout=15, trust_env=False)
 assert source.get('/api/ai/v1/health').status_code == 200, 'Source health check failed'
 manifest_response = source.get('/api/ai/v1/capabilities')
@@ -44,7 +44,7 @@ connector = next((c for c in existing if c['app_key'] == app_key and c['environm
 if connector is None:
     connector = request('POST', '/connectors', {
         'name': state.get('app_name', 'Laravel application'), 'app_key': app_key, 'environment': 'dev', 'connector_type': 'source_managed',
-        'base_url': state['source_url'], 'auth_type': 'api_key', 'secret': state['source_key'],
+        'base_url': state['source_url'], 'auth_type': 'bearer', 'secret': state['source_key'],
         'delegation_secret': state['delegation_secret'], 'timeout_ms': 5000,
     })
 cid = connector['id']

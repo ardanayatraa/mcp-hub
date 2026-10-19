@@ -45,8 +45,8 @@
     "client_key_permissions_unchanged": true,
     "business_mutations": false,
     "tests_use_isolated_sqlite_and_mocked_upstream": true,
-    "laravel_tests": 77,
-    "laravel_assertions": 833,
+    "laravel_tests": 83,
+    "laravel_assertions": 943,
     "hub_tests": 153,
     "frontend_typecheck_and_build": "passed",
     "browser_errors_and_warnings": [],
@@ -55,8 +55,8 @@
     "installed_files_verified": 26
   },
   "verification": {
-    "laravel_tests": 77,
-    "laravel_assertions": 833,
+    "laravel_tests": 83,
+    "laravel_assertions": 943,
     "hub_tests": 153,
     "frontend_typecheck": "passed",
     "frontend_build": "passed",
@@ -74,12 +74,64 @@
     "operations": [
       "read"
     ],
-    "chat_uses_current_admin_and_mcp_catalog": true
+    "chat_uses_current_admin_and_mcp_catalog": true,
+    "live_chat_test": {
+      "date": "2026-10-12",
+      "user_scope": "Current User",
+      "ai_model": "GPT 4.1",
+      "available_models": [
+        "Billing Users",
+        "Blast Messages"
+      ],
+      "available_operations": [
+        "read"
+      ],
+      "capability_reply_matches_catalog": true,
+      "blast_messages_count": 2,
+      "count_tool_audit_result": "success",
+      "unregistered_template_access_denied": true,
+      "business_mutations": false,
+      "model_bridge_restarted_with_existing_configuration": true,
+      "screenshot": "docs/LARAVEL_CHAT_CURRENT_ACCESS.jpg",
+      "unregistered_template_access_denied_in_fresh_chat": true,
+      "resource_substitution_regression": "fixed",
+      "unavailable_model_guard_before_ai_and_data_calls": true,
+      "read_after_refusal_succeeds": true,
+      "regression_coverage": [
+        "removed registration",
+        "disabled resource",
+        "read revoked",
+        "Hub catalog missing",
+        "normal response",
+        "SSE response",
+        "native tools",
+        "MCP tools"
+      ],
+      "laravel_tests": 83,
+      "laravel_assertions": 943,
+      "billing_users_count": 1,
+      "billing_users_not_mistaken_for_user_model": true,
+      "live_read_audit": [
+        {
+          "model": "billing_users",
+          "action": "count",
+          "result": "success",
+          "error_code": null
+        },
+        {
+          "model": "blast_messages",
+          "action": "count",
+          "result": "success",
+          "error_code": null
+        }
+      ],
+      "fresh_chat_test_completed": true
+    }
   },
   "source_health": "ok",
   "published_tool_count": 4,
   "live_catalog": {
-    "checked_at": "2026-10-10T16:01:40.919997+00:00",
+    "checked_at": "2026-10-13T07:37:00.890132+00:00",
     "source_health": "ok",
     "source_models": [
       "billing_users",

@@ -25,13 +25,13 @@ issue keys) and `auditor` (read-only on assigned apps).
 
 | Method | Path | Notes |
 |---|---|---|
-| GET, POST | `/connectors` | List with health and counts; create (`name, app_key, environment, base_url, auth_type, secret`, optional `delegation_secret`, `manifest_path`, `health_path`, `timeout_ms`, `tls_verify`). A blank delegation secret is generated and returned once. |
+| GET, POST | `/connectors` | List with health and counts; create (`name, app_key, environment, base_url, secret`, optional `delegation_secret`, `manifest_path`, `health_path`, `timeout_ms`, `tls_verify`). A blank delegation secret is generated and returned once. `secret` is the bearer token the Hub sends as `Authorization: Bearer <token>`; `auth_type` may be left out and only `bearer` is accepted. |
 | GET, PATCH, DELETE | `/connectors/{id}` | Detail with health and contract history; edit settings (changing the address returns the app to setup); delete only draft or archived apps. |
 | POST | `/connectors/{id}/test` | Health check: `{status, latency_ms, error_category, hint}`. |
 | POST | `/connectors/{id}/discover` | Sync the manifest; returns each data source with `change` (`new`, `changed`, `unchanged`, `removed`). |
 | POST | `/connectors/{id}/activate` | Needs a passing test and a synced contract. Also resumes a paused app. |
 | POST | `/connectors/{id}/pause` | Blocks every tool of the app immediately. |
-| POST | `/connectors/{id}/rotate` | `{secret?, delegation_secret?}`: replace the app's API key, its delegation secret, or both (at least one). The detail and list views report `secret_updated_at`; secrets are never returned. |
+| POST | `/connectors/{id}/rotate` | `{secret?, delegation_secret?}`: replace the app's bearer token, its delegation secret, or both (at least one). The detail and list views report `secret_updated_at`; secrets are never returned. |
 | POST | `/connectors/{id}/archive` | Permanent: revokes credentials and client keys, archives tools. |
 
 ### Data sources (modules)
@@ -58,13 +58,14 @@ See [the source-managed contract](CONNECTOR_CONTRACT.md#permissions-managed-by-t
 |---|---|---|
 | GET | `/tools` | Custom tools with status, `stale`, `tested`, last test and the exact MCP definition. `?include_archived=true`. |
 | GET | `/tools/templates` | `read`, `report`, `create`, `update`, `delete`. |
+| GET | `/tools/capabilities` | What the Hub can do for the apps you may see: `version`, `protocol` (endpoint, transport, methods, auth), `summary` (apps, live tools by kind, skills, memory, chat, keys), `report` (filter operators, metrics, intervals, limits), `limits`, an `apps` matrix and 7-day `usage` by tool key or name. Scoped admins see only their apps and their calls. |
 | GET | `/tools/builtins` | Definitions of `list_data_sources`, `run_report` and the memory tools (`requires: "memory"`). |
 | POST | `/tools/generate` | `{connector_id, publish?}`. Creates tools for every published route of the app's allowed data sources; returns `{created, skipped, published}`. |
 | GET | `/tools/agent-view` | `?connector_id=&key_id=` or `&write=true`. What `tools/list` and `prompts/list` return for that key, plus the server instructions. |
 | POST | `/tools/builtins/{name}/test` | Preview a built-in for one app: `{connector_id, mode: sample\|live, arguments, delegation?}`. |
 | POST | `/tools` | Create a draft: `{connector_id, module_key, template, tool_key, title?, description?}` plus, for read/write, `method`, `path_template`, `input_schema?`, `allow_fields?`; for report, `report: {group_by, time_bucket, metrics, filters, sort, limit, columns, allow_filters}`. Omitted values default from the source contract. |
 | GET, PATCH, DELETE | `/tools/{id}` | Edit (a live tool goes back to draft); delete when not live. |
-| POST | `/tools/{id}/test` | `{mode: sample\|live, arguments, tenant_id?, sample?, delegation?}`. Returns `{passed, preview, checks, request?, error_code, error_message, trace_id}`. |
+| POST | `/tools/{id}/test` | `{mode: sample\|live, arguments, tenant_id?, sample?, delegation?}`; in sample mode, `fill_required: true` without `arguments` fills the required inputs. Returns `{passed, preview, checks, request?, error_code, error_message, trace_id}`. |
 | POST | `/tools/{id}/publish` | Needs a passing test of the current configuration, an active app and the operation enabled. |
 | POST | `/tools/{id}/disable` | |
 

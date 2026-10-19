@@ -1,3 +1,56 @@
+# What changed after 1.0
+
+## Bearer tokens everywhere
+
+- **The Hub calls apps with `Authorization: Bearer <token>` only.** `X-API-Key` is gone.
+  Existing apps keep their saved secret: the upgrade (migration `f3a8d2c6b1e4`) switches
+  every connector to bearer, so only the app has to read the other header. In Laravel,
+  replace `$request->header('X-API-Key')` with `$request->bearerToken()`; the Laravel guide
+  now uses `VerifyHubToken` and `MCP_HUB_APP_TOKEN`.
+- AI clients already used `Authorization: Bearer <client key>` for the MCP endpoint; nothing
+  changes for them.
+
+## Security hardening (OWASP API Security Top 10 2023, ASVS)
+
+- **One-time user assertions.** Every request the Hub sends an app, retries included,
+  carries a fresh `X-Hub-Assertion` with a random `jti`. Apps accept each `jti` once, so a
+  captured header cannot be replayed (API2). The Laravel guide's `HubToken` does this.
+- **Laravel guide middleware** refuses plain HTTP in production (`MCP_HUB_REQUIRE_HTTPS`) and
+  answers with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` (API8).
+- **HiReach adapter:** writes are denied by default (a model needs a Laravel policy or an
+  explicit authorize rule, API3/API5); the only AI write today is a user updating their own
+  billing profile; blast message writes are off; `Idempotency-Key` returns the first
+  proposal instead of preparing another (API6); one-time assertions, HTTPS and no-store as above.
+
+## Checklists for tools and skills
+
+- **Connect wizard → Choose tools.** Every tool of the new app, grouped by data source, with a
+  tick box. Reading tools start ticked; create, update and delete start unticked and are greyed
+  out, with the reason, where the app's API offers no such route. Unticked tools are switched
+  off; ticked write tools get a sample test (nothing reaches the app) and are published on
+  **Activate app**.
+- **App → Skills tab.** The ready-made skills and the app's own as a checklist; ticking a
+  ready-made skill adds it. Skills that need an unavailable tool (for example memory while it
+  is off) cannot be ticked.
+- **Client keys.** On a read-only key, tools that change data cannot be ticked under **Only
+  selected tools**.
+- `POST /tools/{id}/test` accepts `fill_required: true` (sample mode, no `arguments`) to fill the
+  required inputs itself; without it, missing inputs still fail as before.
+
+## Tools page
+
+- **All tools**: every tool (Hub tools, memory tools and each app's tools) in one table with
+  search, filters by app, kind and status, sortable columns, 7-day calls and pages of 10 to
+  100 rows.
+- **Capabilities**: what this MCP can do right now, with the technical detail (report filter
+  operators, totals, time buckets and limits; confirmation for writes; skills; memory; chat;
+  switches; safety limits), how AI clients connect, and a per-app matrix. Backed by
+  `GET /tools/capabilities`.
+
+## Light and dark mode
+
+- Light, Dark or System from the top bar or the account menu; the choice is remembered.
+
 # What changed in 1.0
 
 1.0 is the first stable release. The Hub now covers the whole path from an app's data to an

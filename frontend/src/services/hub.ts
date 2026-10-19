@@ -363,6 +363,40 @@ export interface ToolCard {
   status: string;
 }
 
+export interface CapabilityApp {
+  connector_id: string;
+  name: string;
+  app_key: string;
+  status: string;
+  mode: string;
+  sources_on: number;
+  tools_total: number;
+  tools_live: number;
+  switched_off: number;
+  /** Live tools per kind: list, count, get, read, report, create, update, delete. */
+  kinds: Record<string, number>;
+  skills: number;
+  memory: boolean;
+  chat: boolean;
+  chat_model: string | null;
+}
+
+export interface Capabilities {
+  version: string;
+  protocol: { endpoint: string; transport: string; methods: string[]; auth: string; user_context: string; app_auth: string; chat: string; sdk: string };
+  summary: {
+    apps: number; apps_active: number; data_sources_on: number; tools_total: number; tools_live: number;
+    by_kind: Record<string, number>; skills: number; memory_apps: number; chat_apps: number; switched_off: number;
+    client_keys: number; write_keys: number;
+  };
+  report: { filters: string[]; metrics: string[]; intervals: string[]; max_group_by: number; max_metrics: number;
+            max_filters: number; max_rows: number; max_records_read: number; timeout_seconds: number };
+  limits: { tool_calls: string; page_size: number; chat_messages: string; payload_bytes: number };
+  apps: CapabilityApp[];
+  /** Calls in the last 7 days, by tool key (app tools) or name (Hub tools). */
+  usage: Record<string, number>;
+}
+
 export interface ToolUsage {
   days: number;
   calls: number;
@@ -451,6 +485,7 @@ export const hub = {
   tool: (id: string) => api<Tool>(`/tools/${id}`),
   templates: () => api<Template[]>("/tools/templates"),
   builtins: () => api<BuiltinTool[]>("/tools/builtins"),
+  capabilities: () => api<Capabilities>("/tools/capabilities"),
   createTool: (body: Record<string, unknown>) => post<Tool>("/tools", body),
   updateTool: (id: string, body: Record<string, unknown>) => patch<Tool>(`/tools/${id}`, body),
   deleteTool: (id: string) => remove(`/tools/${id}`),

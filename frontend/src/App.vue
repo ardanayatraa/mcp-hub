@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import ThemeSwitch from "@/components/ThemeSwitch.vue";
 import ToastHost from "@/components/ToastHost.vue";
 import { useSession } from "@/stores/session";
 
@@ -136,18 +137,24 @@ async function signOut() {
 
         <div class="ml-auto flex items-center gap-1">
           <RouterLink to="/docs/guide" class="btn-ghost btn-sm"><AppIcon name="book" :size="16" /><span class="hidden sm:inline">Docs</span></RouterLink>
+          <ThemeSwitch variant="toggle" />
           <div ref="menu" class="relative">
             <button type="button" class="flex items-center gap-2 rounded-md p-1 hover:bg-muted" aria-haspopup="menu" :aria-expanded="menuOpen"
                     aria-label="Account" @click="menuOpen = !menuOpen">
               <span class="avatar">{{ initials }}</span>
             </button>
-            <div v-if="menuOpen" role="menu" class="card absolute right-0 top-11 z-40 w-60 p-1 shadow-pop">
+            <div v-if="menuOpen" role="menu" class="card absolute right-0 top-11 z-40 w-72 p-1 shadow-pop">
               <div class="flex items-center gap-2.5 px-2 py-2">
                 <span class="avatar">{{ initials }}</span>
                 <div class="min-w-0">
                   <p class="truncate text-sm font-medium">{{ session.user?.email }}</p>
                   <p class="text-xs text-subtle">{{ roleLabel }}</p>
                 </div>
+              </div>
+              <div class="my-1 h-px bg-line" />
+              <div class="px-2 py-1.5">
+                <p class="mb-1.5 text-xs text-subtle">Theme</p>
+                <ThemeSwitch />
               </div>
               <div class="my-1 h-px bg-line" />
               <button type="button" role="menuitem" class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted" @click="signOut">

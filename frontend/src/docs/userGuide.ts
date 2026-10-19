@@ -17,11 +17,11 @@ export const USER_SECTIONS: GuideSection[] = [
       "MCP Hub sits between AI clients and your business apps. An AI client asks through the Hub; the Hub checks the request and calls only the routes your app published; your app checks the user again and answers. The Hub never connects to the app's database and never stores its business records.",
     ],
     figure: "hub-flow",
-    figureText: "An AI client calls the Hub with a client key (and a signed user token for a user's data). The Hub calls only the app's reviewed routes, with the app's API key. The app re-checks the user and keeps its data.",
+    figureText: "An AI client calls the Hub with a client key (and a signed user token for a user's data). The Hub calls only the app's reviewed routes, with the app's bearer token. The app re-checks the user and keeps its data.",
     table: {
       head: ["In the Hub", "What it is"],
       rows: [
-        ["App", "A connected application, such as HiReach, with the API key it issued for the Hub."],
+        ["App", "A connected application, such as HiReach, with the bearer token it issued for the Hub."],
         ["Data source", "One kind of record the app publishes, such as orders. Off until you allow it, with per-field visibility."],
         ["Tool", "Something an AI client can call: built-in tools that work on every data source, and tools you generate or create."],
         ["Skill", "A saved instruction, such as Weekly report, that AI clients show like a slash command."],
@@ -37,17 +37,17 @@ export const USER_SECTIONS: GuideSection[] = [
     title: "Quick start",
     body: ["The shortest path from nothing to an AI client answering a question. The step numbers match the sections below."],
     steps: [
-      "Open **Apps → Connect app**, enter the app's name, key, base URL and API key, and save. The Hub tests the connection and reads the app's manifest. (Step 1)",
-      "Allow the data sources AI may read and check which fields stay hidden, then activate the app. (Step 2)",
+      "Open **Apps → Connect app**, enter the app's name, key, base URL and bearer token, and save. The Hub tests the connection and reads the app's manifest. (Step 1)",
+      "Allow the data sources AI may read, tick the tools AI clients may use, then activate the app. (Step 2)",
       "Open **Tools → Generate tools** to create the list, lookup and report tools in one go. (Step 3)",
-      "Optional: add a skill from a template under **Tools → Skills**, and turn on memory on the app's **Memory** tab. (Steps 4 and 5)",
+      "Optional: tick ready-made skills on the app's **Skills** tab, and turn on memory on its **Memory** tab. (Steps 4 and 5)",
       "Create a client key on the app's **API keys** tab and copy it. It is shown once. (Step 6)",
       "Add the Hub to your AI client with that key and ask: \"What data can you use?\" (Step 7)",
     ],
   },
   {
     id: "connect",
-    title: "Connect an app and store its API key",
+    title: "Connect an app and store its bearer token",
     step: 1,
     body: [
       "The app must publish the Hub's small JSON contract: a health check, a capability manifest and the routes AI may use. For Laravel apps, the Laravel guide has every file. Then fill in the connect form:",
@@ -59,17 +59,17 @@ export const USER_SECTIONS: GuideSection[] = [
         ["App key", "Lowercase id that matches `application` in the app's manifest, for example `hireach`. It cannot change later."],
         ["Base URL", "The app's address, for example `https://app.example.com`. The Hub calls only routes under it."],
         ["Environment", "Development, Test, Staging or Production. Production apps allow live tests only for public totals."],
-        ["Authentication", "API key header (`X-API-Key`) or bearer token, whichever the app expects."],
-        ["API key", "The key the app issued for the Hub. Stored encrypted and never shown again."],
+        ["Bearer token", "The token the app issued for the Hub. The Hub sends it as `Authorization: Bearer <token>` on every call. Stored encrypted and never shown again."],
         ["Permission management", "Set up in Hub (you choose data sources and tools), or follow the app's own permissions automatically."],
         ["Advanced", "Manifest and health paths, timeout (100 to 30,000 ms), TLS check, and the user delegation secret. Leave the secret blank and the Hub generates one and shows it once."],
       ],
     },
     list: [
       "**Save and check** tests the connection, then syncs the manifest. A slow app shows a \"still waiting\" note, not a frozen screen.",
-      "**API keys tab** on the app page is where the app's key lives: see when it was last updated, paste a replacement (it is tested right away), change the delegation secret or test the saved key.",
+      "**Choose tools**, the wizard's last step, lists every tool by data source with a tick box. Reading tools are ticked; tools that create, update or delete start unticked, and where the app's API is read-only their boxes are greyed out with the reason. Unticked tools are switched off. Ticked write tools are tested with sample data (nothing is sent to the app) and published when you press **Activate app**.",
+      "**API keys tab** on the app page is where the app's bearer token lives: see when it was last updated, paste a replacement (it is tested right away), change the delegation secret or test the saved token.",
       "**Edit** connection settings on the **Connection** tab. Changing the base URL or manifest path returns the app to setup, so test and sync again.",
-      "**Pause** blocks every tool of the app at once. **Archive** revokes its API key and client keys. **Delete** removes it from the Hub after you type its key; audit history is kept.",
+      "**Pause** blocks every tool of the app at once. **Archive** revokes its bearer token and client keys. **Delete** removes it from the Hub after you type its key; audit history is kept.",
     ],
   },
   {
@@ -112,6 +112,8 @@ export const USER_SECTIONS: GuideSection[] = [
       "**Generate tools** (Tools page) creates a tool for every route the app published on its allowed data sources: list and lookup tools, a summary report, and write requests. Read tools that pass a sample test are published; write tools stay drafts for you to review. Running it again adds only what is new.",
       "**New tool** builds one by hand from a template: Read records, Report, Create, Update or Delete.",
       "Every tool goes draft → test → live. A test runs the real pipeline on sample data (or live data in non-production apps) plus privacy checks. Editing a live tool takes it offline until it passes again.",
+      "**All tools** (Tools page) lists every tool in one table: the Hub's own tools and each app's tools, with kind, status, calls in the last 7 days and the last test. Search, filter by app, kind or status, sort by any column and page through 10 to 100 rows at a time.",
+      "**Capabilities** (Tools page) describes what this MCP can do right now: live tools by kind, reading, reports (filter operators, totals, time buckets and limits), create/update/delete with confirmation, skills, memory, AI chat, switches and safety limits, how AI clients connect, and what each app allows.",
       "**Report playground** previews `run_report` on an app without an AI client.",
       "**What the agent sees** shows the exact tools, inputs, skills and instructions an AI client gets for any app and client key.",
       "**Switches**: on the app's **Tools** tab every tool has an on/off switch, including the built-in and memory tools. Off hides the tool from every client key of that app and from the chat, refuses calls to it, and hides any skill that needs it. Use **All shown on / off** with the filters to switch many at once.",
@@ -124,8 +126,11 @@ export const USER_SECTIONS: GuideSection[] = [
     body: [
       "A skill is a saved instruction that AI clients show like a slash command, for example `/periodic_report`. In MCP terms it is a prompt. Skills are text only: nothing runs on the Hub, and the AI uses tools the key may call anyway.",
     ],
+    list: [
+      "The app's **Skills** tab is a checklist: the five ready-made skills and the app's own. Tick one to offer it (a ready-made skill is added on the first tick), untick it to hide it. A box is greyed out when the skill needs a tool the app cannot offer, for example Personal briefing while memory is off.",
+    ],
     steps: [
-      "Open **Tools → Skills → New skill** and pick the app.",
+      "Open **Tools → Skills → New skill** (or **New skill** on the app's Skills tab) and pick the app.",
       "Start from a template (Data overview, Periodic report, Records needing attention, Explain a number or Personal briefing) or write your own.",
       "Write the instructions as the user's request. Use `{{name}}` where a value goes, and add an argument with that name (up to 5, each required or optional).",
       "Tick the tools the skill uses. A client key that cannot call all of them does not see the skill.",
@@ -194,7 +199,7 @@ export const USER_SECTIONS: GuideSection[] = [
         ["Name", "Who uses it, for example Support assistant. Shown in the activity log."],
         ["Expires after", "30, 90, 180 or 365 days."],
         ["Allow write tools", "Lets the key call published create, update and delete tools. The app still checks the user and may ask for confirmation."],
-        ["Only selected tools", "Limits the key to the tools you tick. Built-in and memory tools must be ticked too."],
+        ["Only selected tools", "Limits the key to the tools you tick. Built-in and memory tools must be ticked too. On a read-only key, tools that create, update or delete are greyed out; tick Allow write tools first."],
       ],
     },
     after: [
@@ -304,7 +309,7 @@ export const USER_SECTIONS: GuideSection[] = [
     table: {
       head: ["You see", "Usual cause", "Fix"],
       rows: [
-        ["The application rejected the credential", "The API key saved in the Hub differs from the app's", "Paste the current key on the app's API keys tab; it is tested right away."],
+        ["The application rejected the bearer token", "The token saved in the Hub differs from the app's, or the app reads another header", "Paste the current token on the app's API keys tab (it is tested right away), and check that the app reads `Authorization: Bearer`."],
         ["Answered, but not with {\"status\": \"ok\"}", "The health route returned HTML, a redirect or a 404", "Check the health path on the Connection tab and the app's route list."],
         ["The AI sees no tools", "The app is paused or in setup, the data source is off, or the key's tool list excludes them", "Open What the agent sees for that key; it shows what is missing."],
         ["`PERMISSION_DENIED` on a user's data", "No valid signed user token: missing, expired, or signed with another secret", "Call through your app's assistant; keep the delegation secret the same in the app and the Hub."],
@@ -342,6 +347,7 @@ export const USER_SECTIONS: GuideSection[] = [
         ["Custom tool names", "The tool key with dots as double underscores, for example `hireach__orders__list`; apps outside dev get an environment suffix"],
         ["Skills", "Served through `prompts/list` and `prompts/get`"],
         ["Roles", "Super admin (everything, users and backups), App admin (assigned apps, tools and keys), Auditor (read-only)"],
+        ["Light or dark", "The sun or moon button at the top switches the look. The account menu also offers **System**, which follows your computer. The choice is kept in this browser."],
         ["Deeper docs", "In the repository: `docs/TOOLS.md`, `docs/API.md`, `docs/SECURITY.md`, `docs/CONNECTOR_CONTRACT.md`"],
       ],
     },

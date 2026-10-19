@@ -46,8 +46,10 @@ in the manifest.
 
 ## Authentication
 
-Every request carries the app's service credential: `X-API-Key: <key>` or
-`Authorization: Bearer <token>`, as chosen when connecting. The Hub stores it encrypted.
+Every request carries the app's service credential as a bearer token:
+`Authorization: Bearer <token>`. The Hub stores the token encrypted and never sends
+`X-API-Key`; apps should reject requests without a matching bearer token. In Laravel,
+`$request->bearerToken()` reads it.
 
 A service credential proves the Hub may call the app. It does not prove which user is
 asking. For user-scoped routes:
@@ -58,9 +60,16 @@ asking. For user-scoped routes:
    `{"app_key", "tenant_id", "user_ref", "aud": "mcp-hub", "exp"}` and `exp` is at most
    150 seconds ahead (mint for 120 s or less).
 2. The Hub verifies it, then sends the app `X-Hub-Assertion`. This is a 60-second token
-   signed with the same secret, with `aud` set to the connector's base URL.
-3. The app verifies the assertion and re-checks the user, tenant, permissions and records
-   on **every** request.
+   signed with the same secret, with `aud` set to the connector's base URL and a random
+   `jti`. The Hub signs a new assertion for every HTTP attempt, retries included.
+3. The app verifies the assertion, accepts each `jti` **once** (an atomic cache add until
+   `exp`, so a captured header cannot be replayed), and re-checks the user, tenant,
+   permissions and records on **every** request.
+
+Apps should also refuse plain HTTP in production and answer with `Cache-Control: no-store`
+and `X-Content-Type-Options: nosniff`; the Laravel guide's middleware does both. Writes
+should be denied by default: a model offers create, update or delete only when an explicit
+rule (a policy) allows it.
 
 Model-supplied arguments named `user_id`, `tenant_id`, `role`, `approved`, `url`, `path`,
 `method`, `token` and similar are rejected and can never establish authorization.
@@ -116,7 +125,7 @@ Rules the Hub enforces when it syncs the manifest:
 - **Schemas** are closed (`additionalProperties: false`). Inputs are scalars with bounds or small string enums. Outputs are arrays of flat records with scalar (optionally nullable) fields that come from `readable_fields`. No `$ref`.
 - **User-scoped routes** set `requires_user_context: true` and `tenant_field`. Every returned row must contain the tenant field. The Hub drops rows for other tenants (and marks the answer `partial`), then removes the field before anything reaches the AI.
 - **Public routes** (no user context) must say `"public_aggregate": true` and return only data that anyone with the client key may see.
-- **Write routes** are optional. `operation` must be in `supported_operations`; inputs must be declared readable or writable fields and never personal data; user context is mandatory; the output is a small receipt. A write is enableable only when its route is declared.
+- **Write routes** are optional. `operation` must be in `supported_operations`; inputs must be declared readable or writable fields and never personal or secret data, including one-time and account codes (`otp`, `pin`, `cvv`, `verification_code`, `card_number`, …); user context is mandatory; the output is a small receipt. A write is enableable only when its route is declared. One refused input rejects the whole manifest, so the Hub keeps the app's tools hidden until the manifest is fixed: leave such fields out of write inputs.
 - Pagination: a list route that accepts `limit` (integer) and `cursor` (string) and returns `meta.has_more` + `meta.next_cursor` can be read page by page by `run_report`.
 
 A changed module is switched off in the Hub until an admin reviews it, and its tools need

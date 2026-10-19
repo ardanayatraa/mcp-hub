@@ -76,3 +76,31 @@ def test_generator_publishes_a_get_one_route(admin, monkeypatch):
         made = api(admin, "POST", "/tools/generate", {"connector_id": app["connector_id"]}, expect=201).json()["data"]
         get = next(item for item in made["created"] if item["tool_key"] == "your_app.projects.get")
         assert get["status"] == "published" and get["title"] == "Get one project"
+
+
+def test_capabilities_describe_what_the_hub_can_do(admin, monkeypatch):
+    helpers.dns(monkeypatch)
+    with helpers.source():
+        app = connect_app(admin, enable={"projects": ["read", "create"]})
+        api(admin, "POST", "/tools/generate", {"connector_id": app["connector_id"]}, expect=201)
+        api(admin, "PUT", f"/connectors/{app['connector_id']}/tool-switches", {"tools": {"your_app__projects__summary": False}},
+            expect=200)
+        token = issue_key(admin)
+        result(call(admin["client"], token, "your_app__projects__list", {}, delegation()))
+        result(call(admin["client"], token, "run_report", {"source": "projects"}, delegation()))
+
+        data = api(admin, "GET", "/tools/capabilities", expect=200).json()["data"]
+        assert data["version"] and "tools/call" in data["protocol"]["methods"] and data["protocol"]["endpoint"].endswith("/mcp")
+        assert data["summary"]["apps"] == 1 and data["summary"]["switched_off"] == 1 and data["summary"]["client_keys"] == 1
+        assert data["report"]["metrics"] == ["count", "sum", "avg", "min", "max"] and "between" in data["report"]["filters"]
+        row = data["apps"][0]
+        assert row["name"] == "Your App" and row["kinds"]["list"] == 1 and row["kinds"]["report"] == 0  # summary is switched off
+        assert row["memory"] is False and row["chat"] is False and row["switched_off"] == 1
+        assert data["usage"] == {"your_app.projects.list": 1, "run_report": 1}
+
+        client = admin["client"]
+        api(admin, "POST", "/users", {"email": "scoped@localhost", "password": "ChangeMe-Now-12", "role": "app_admin"}, expect=201)
+        client.cookies.clear()
+        login = client.post("/api/admin/v1/auth/login", json={"email": "scoped@localhost", "password": "ChangeMe-Now-12"}).json()["data"]
+        scoped = client.get("/api/admin/v1/tools/capabilities", headers={"X-CSRF-Token": login["csrf_token"]}).json()["data"]
+        assert scoped["apps"] == [] and scoped["usage"] == {}  # nothing from apps outside this admin's scope

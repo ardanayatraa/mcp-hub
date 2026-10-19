@@ -43,7 +43,7 @@ from app.security.authorization import (
 from app.security.crypto import decrypt_secret, encrypt_secret
 
 HINTS = {
-    "authorization": "The application rejected the credential. Check the API key or bearer token.",
+    "authorization": "The application rejected the bearer token. Check that the app reads the Authorization header and expects this token.",
     "dns": "The host name could not be resolved. Check the base URL.",
     "timeout": "The application did not answer in time. Check that it is running or raise the timeout.",
     "network": "The application could not be reached or the address is blocked by the egress policy.",

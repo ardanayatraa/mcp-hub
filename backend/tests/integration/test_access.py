@@ -39,7 +39,7 @@ def managed_manifest(document=None):
 def connect_managed(admin, app_key="your_app"):
     app = api(admin, "POST", "/connectors", {
         "name": "Source managed", "app_key": app_key, "environment": "dev", "connector_type": "source_managed",
-        "base_url": "http://projects.test", "auth_type": "api_key", "secret": helpers.API_KEY,
+        "base_url": "http://projects.test", "auth_type": "bearer", "secret": helpers.API_KEY,
         "delegation_secret": helpers.DELEGATION_SECRET}, expect=201).json()["data"]
     api(admin, "POST", f"/connectors/{app['id']}/test", expect=200)
     api(admin, "POST", f"/connectors/{app['id']}/discover", expect=200)
@@ -296,7 +296,7 @@ def test_generated_laravel_contract_works_with_crud_templates_and_actor_permissi
         helpers.CALLS.append(request)
         assert request.method == "POST"
         assert request.url.path == f"/api/ai/v1/templates/prepare_{operation}"
-        assert request.headers["X-API-Key"] == helpers.API_KEY
+        assert request.headers["Authorization"] == f"Bearer {helpers.API_KEY}" and "X-API-Key" not in request.headers
         assert request.headers["Idempotency-Key"].startswith("tr_")
         return httpx.Response(200, json={"success": True,
             "data": [{**proposal, "tenant_id": helpers._assertion_tenant(request)}],
@@ -367,3 +367,33 @@ def test_last_super_admin_cannot_be_removed(admin):
     assert api(admin, "PATCH", f"/users/{me['id']}", {"is_active": False}).status_code == 409
     weak = api(admin, "POST", "/users", {"email": "weak@localhost", "role": "auditor", "password": "short"})
     assert weak.status_code == 422
+
+
+def test_every_attempt_carries_a_fresh_one_time_assertion(admin, monkeypatch):
+    """The app can refuse a replayed assertion: each request, retries included, gets its own jti."""
+
+    from base64 import urlsafe_b64decode
+
+    def claims(request):
+        raw = request.headers["X-Hub-Assertion"].split(".", 1)[0]
+        return json.loads(urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+
+    seen = []
+
+    def flaky(request):
+        if request.url.path == "/api/v1/projects" and request.method == "GET" and "X-Hub-Assertion" in request.headers:
+            seen.append(claims(request))
+            if len(seen) == 1:
+                helpers.CALLS.append(request)
+                return httpx.Response(503, json={"success": False, "error": {"code": "UNAVAILABLE", "message": "busy"}})
+        return helpers.handler(request)
+
+    helpers.dns(monkeypatch)
+    with helpers.source(flaky):
+        connect_app(admin, enable={"projects": ["read"]})
+        token = issue_key(admin)
+        result(call(admin["client"], token, "run_report", {"source": "projects"}, delegation()))
+    assert len(seen) >= 2, "the first attempt was retried"
+    jtis = [item["jti"] for item in seen]
+    assert len(set(jtis)) == len(jtis) and all(len(jti) >= 16 for jti in jtis)
+    assert all(item["exp"] and item["aud"] == "http://projects.test" for item in seen)

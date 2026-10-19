@@ -63,7 +63,7 @@ pnpm dev                              # http://127.0.0.1:5173
 Then, in the UI (about five minutes):
 
 1. **Apps → Connect app**: name `Your App`, key `your_app`, base URL `http://127.0.0.1:8081`,
-   API key `dev-your-app-key`, delegation secret `dev-delegation-secret` (under *Advanced*).
+   bearer token `dev-your-app-key`, delegation secret `dev-delegation-secret` (under *Advanced*).
    The wizard tests the connection, syncs the contract and lets you allow data sources.
 2. **Access → Create client key** for the app. Copy the key and the MCP client snippet.
 3. Point an AI client at `http://127.0.0.1:8000/mcp` with `Authorization: Bearer <key>`.
@@ -138,4 +138,5 @@ pnpm build      # type-checks with vue-tsc
 - [Backup, upgrade and rollback](docs/BACKUP.md)
 - [What changed in 1.0](docs/CHANGES.md)
 - [Laravel integration](integrations/laravel/README.md)
+- [JavaScript backend SDK](backend-js/README.md)
 - [Product requirements](PRD.md)

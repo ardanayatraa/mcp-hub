@@ -32,7 +32,7 @@ const app = 564;
       <text :x="(left + W + hub) / 2" :y="lineY - 10" text-anchor="middle" font-size="11.5" :fill="quiet">MCP call + key</text>
       <text :x="(left + W + hub) / 2" :y="lineY + 20" text-anchor="middle" font-size="11.5" :fill="quiet">+ user token</text>
       <text :x="(hub + W + app) / 2" :y="lineY - 10" text-anchor="middle" font-size="11.5" :fill="quiet">reviewed route</text>
-      <text :x="(hub + W + app) / 2" :y="lineY + 20" text-anchor="middle" font-size="11.5" :fill="quiet">+ API key</text>
+      <text :x="(hub + W + app) / 2" :y="lineY + 20" text-anchor="middle" font-size="11.5" :fill="quiet">+ bearer token</text>
 
       <g>
         <rect :x="left" :y="y0" :width="W" :height="H" rx="8" fill="none" :stroke="edge" stroke-width="1.25" />
@@ -52,7 +52,7 @@ const app = 564;
       <g>
         <rect :x="app" :y="y0" :width="W" :height="H" rx="8" fill="none" :stroke="edge" stroke-width="1.25" />
         <text :x="app + 16" :y="y0 + 28" font-size="15" font-weight="600" :fill="ink">Your app</text>
-        <text :x="app + 16" :y="y0 + 56" :fill="quiet">checks its API key</text>
+        <text :x="app + 16" :y="y0 + 56" :fill="quiet">checks the bearer token</text>
         <text :x="app + 16" :y="y0 + 76" :fill="quiet">re-checks the user</text>
         <text :x="app + 16" :y="y0 + 96" :fill="quiet">keeps all its data</text>
       </g>

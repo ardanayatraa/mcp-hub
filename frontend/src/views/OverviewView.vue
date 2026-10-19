@@ -54,7 +54,7 @@ watch(period, load);
 const steps = computed(() => {
   const done = data.value?.checklist;
   return [
-    { done: done?.app_connected, title: "Connect an app", text: "Add the app's base URL and API key, then test it.", to: "/apps/new", action: "Connect app" },
+    { done: done?.app_connected, title: "Connect an app", text: "Add the app's base URL and bearer token, then test it.", to: "/apps/new", action: "Connect app" },
     { done: done?.source_enabled, title: "Allow a data source", text: "Choose which data the AI may read and which fields stay hidden.", to: "/apps", action: "Open apps" },
     { done: done?.key_created, title: "Create a client key", text: "Give your AI client a key. It can use run_report right away.", to: "/access", action: "Create key" },
     { done: done?.tool_published, title: "Publish a custom tool (optional)", text: "Turn a list, lookup or saved report into a named tool.", to: "/tools/new", action: "New tool" },
@@ -115,7 +115,7 @@ function actorIcon(ref_: string) {
     <ol class="grid gap-3 px-6 pb-6 md:grid-cols-2 xl:grid-cols-4">
       <li v-for="(step, index) in steps" :key="step.title" class="flex flex-col rounded-lg border border-line p-4" :class="step.done ? 'bg-muted/50' : ''">
         <span class="mb-3 grid h-6 w-6 place-items-center rounded-full text-xs font-semibold"
-              :class="step.done ? 'bg-ok text-white' : 'bg-muted text-subtle'">
+              :class="step.done ? 'bg-ok text-canvas' : 'bg-muted text-subtle'">
           <AppIcon v-if="step.done" name="check" :size="14" /><template v-else>{{ index + 1 }}</template>
         </span>
         <p class="font-medium">{{ step.title }}</p>
