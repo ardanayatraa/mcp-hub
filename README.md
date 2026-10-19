@@ -7,6 +7,10 @@ Each connected app keeps ownership of its data and decides, per request, what th
 signed-in user may see. The Hub stores configuration, encrypted credentials and an
 audit log. It never receives database credentials and never stores business records.
 
+This branch, `mcp-py`, is the Python edition: a FastAPI server (`backend/`) and a Vue admin UI
+(`frontend/`). The JavaScript edition, one Nuxt app with the same API and database schema, is on
+the `mcp-js` branch.
+
 ## Concepts
 
 | In the admin UI | What it is |
@@ -138,5 +142,4 @@ pnpm build      # type-checks with vue-tsc
 - [Backup, upgrade and rollback](docs/BACKUP.md)
 - [What changed in 1.0](docs/CHANGES.md)
 - [Laravel integration](integrations/laravel/README.md)
-- [JavaScript backend SDK](backend-js/README.md)
 - [Product requirements](PRD.md)
