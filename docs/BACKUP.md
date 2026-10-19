@@ -42,7 +42,7 @@ npm run migrate
 with `DATABASE_URL` pointing at the target database. An empty database gets the whole
 schema; an older one is upgraded to the current revision, `f3a8d2c6b1e4`. SQLite gets a
 `.pre-node-*.bak` copy first; PostgreSQL relies on your dump. The revision ids are the
-Python edition's Alembic ids (the `mcp-py` branch), so either edition can open the
+Python edition's Alembic ids (the `main` branch), so either edition can open the
 database. The Hub checks the revision and answers `503 NOT_READY` until it is current.
 Containers set `HUB_AUTO_MIGRATE=true` to run this on start.
 

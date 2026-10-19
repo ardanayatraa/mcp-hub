@@ -9,7 +9,7 @@ audit log. It never receives database credentials and never stores business reco
 
 This branch, `mcp-js`, is the JavaScript edition: one [Nuxt](https://nuxt.com) app (`hub/`)
 that serves the admin UI, the admin API, the MCP endpoint and the chat API, plus a small SDK
-for app servers (`sdk/`). The Python edition (FastAPI + Vue) is on the `mcp-py` branch. Both
+for app servers (`sdk/`). The Python edition (FastAPI + Vue) is on the `main` branch. Both
 use the same API, database schema and revision ids, so a database works with either.
 
 | Path | What it is |

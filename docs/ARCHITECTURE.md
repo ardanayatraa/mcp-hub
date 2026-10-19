@@ -1,6 +1,6 @@
 # Architecture
 
-This is the JavaScript edition (`mcp-js` branch). The Python edition (`mcp-py`) has the same
+This is the JavaScript edition (`mcp-js` branch). The Python edition (`main`) has the same
 API, schema and behaviour with FastAPI, SQLAlchemy and Alembic.
 
 ```text

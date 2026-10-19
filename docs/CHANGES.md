@@ -4,7 +4,7 @@
 
 - **One Nuxt app.** `hub/` serves the admin UI (Nuxt pages and layout, rendered in the
   browser), the admin API, `/mcp` and `/chat/v1/*`. The Python edition (FastAPI + Vue) is
-  on the `mcp-py` branch. Both use the same API, schema and revision ids.
+  on the `main` branch. Both use the same API, schema and revision ids.
 - **No Python needed to start.** `npm run migrate` creates an empty SQLite or PostgreSQL
   database (and still upgrades older ones); `npm run bootstrap` creates the first admin.
   The container does both on start (`HUB_AUTO_MIGRATE=true`).
