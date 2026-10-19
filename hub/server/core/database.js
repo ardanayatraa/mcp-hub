@@ -17,6 +17,9 @@ function pgSql(sql) {
   return sql.replace(/\?/g, () => `$${++index}`);
 }
 
+// node:sqlite cannot bind booleans or undefined; pg sends undefined as NULL, so SQLite does too.
+const sqliteValue = (value) => typeof value === "boolean" ? Number(value) : value === undefined ? null : value;
+
 export class HubDatabase {
   constructor(url) {
     this.url = url;
@@ -32,18 +35,15 @@ export class HubDatabase {
   }
 
   sqliteAll(sql, params = []) {
-    return this.sqlite.prepare(sql).all(...params.map((value) =>
-      typeof value === "boolean" ? Number(value) : value));
+    return this.sqlite.prepare(sql).all(...params.map(sqliteValue));
   }
 
   sqliteOne(sql, params = []) {
-    return this.sqlite.prepare(sql).get(...params.map((value) =>
-      typeof value === "boolean" ? Number(value) : value)) ?? null;
+    return this.sqlite.prepare(sql).get(...params.map(sqliteValue)) ?? null;
   }
 
   sqliteRun(sql, params = []) {
-    return this.sqlite.prepare(sql).run(...params.map((value) =>
-      typeof value === "boolean" ? Number(value) : value)).changes;
+    return this.sqlite.prepare(sql).run(...params.map(sqliteValue)).changes;
   }
 
   async all(sql, params = [], connection) {

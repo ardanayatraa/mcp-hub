@@ -34,14 +34,30 @@ function fail(response, error) {
   } }));
 }
 
-async function readJson(request, limit) {
+// An oversized body is refused without destroying the request stream: destroying it
+// detaches req.socket before the response finishes, which crashes socket-tracking
+// listeners such as Nitro's graceful shutdown. The connection closes after the answer.
+async function readJson(request, response, limit) {
+  const tooLarge = () => {
+    response.setHeader("Connection", "close");
+    return new HubError("Request body is too large", "PAYLOAD_TOO_LARGE", 413);
+  };
+  if (Number(request.headers["content-length"] ?? 0) > limit) throw tooLarge();
   let length = 0;
   const chunks = [];
-  for await (const chunk of request) {
-    length += chunk.length;
-    if (length > limit) throw new HubError("Request body is too large", "PAYLOAD_TOO_LARGE", 413);
-    chunks.push(chunk);
-  }
+  await new Promise((resolve, reject) => {
+    const onData = (chunk) => {
+      length += chunk.length;
+      if (length <= limit) return chunks.push(chunk);
+      request.off("data", onData);
+      request.off("end", resolve);
+      request.pause();
+      reject(tooLarge());
+    };
+    request.on("data", onData);
+    request.once("end", resolve);
+    request.once("error", reject);
+  });
   if (!length) return {};
   try {
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -93,7 +109,7 @@ export function createHubHandler({ db, config }) {
         return;
       }
       if (url.pathname.startsWith("/chat/v1/")) {
-        const body = request.method === "POST" ? await readJson(request, config.maxPayloadBytes) : {};
+        const body = request.method === "POST" ? await readJson(request, response, config.maxPayloadBytes) : {};
         const handled = await handleChat({ db, config, request, response,
           path: url.pathname, body, send });
         if (!handled) throw new HubError("Request was rejected", "HTTP_ERROR", 404);
@@ -101,7 +117,7 @@ export function createHubHandler({ db, config }) {
       }
       if (url.pathname.startsWith("/api/admin/v1/auth/")) {
         const body = ["POST", "PATCH", "PUT"].includes(request.method)
-          ? await readJson(request, config.maxPayloadBytes) : {};
+          ? await readJson(request, response, config.maxPayloadBytes) : {};
         const handled = await handleAuth({ db, config, request, response,
           path: url.pathname.slice("/api/admin/v1".length), body, send });
         if (handled === false) throw new HubError("Request was rejected", "HTTP_ERROR", 404);
@@ -109,7 +125,7 @@ export function createHubHandler({ db, config }) {
       }
       if (url.pathname.startsWith("/api/admin/v1/")) {
         const body = ["POST", "PATCH", "PUT"].includes(request.method)
-          ? await readJson(request, config.maxPayloadBytes) : {};
+          ? await readJson(request, response, config.maxPayloadBytes) : {};
         const adminPath = url.pathname.slice("/api/admin/v1".length);
         if (await handleAdminChatTry({ db, config, request, response,
           path: adminPath, body })) return;

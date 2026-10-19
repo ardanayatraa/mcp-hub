@@ -112,11 +112,25 @@ export function readMfa(config, value) {
   } catch { throw new HubError("MFA challenge expired", "UNAUTHENTICATED", 401); }
 }
 
+// In-process limits, as in Python: idle buckets are dropped every minute and the number of
+// buckets is capped, so unique keys (one per client address) cannot grow memory without end.
 const rateBuckets = new Map();
+const MAX_BUCKETS = 10000;
+let lastCleanup = 0;
 export function hit(key, limit, seconds) {
   const time = Date.now();
-  const remaining = (rateBuckets.get(key) ?? []).filter((when) => time - when < seconds * 1000);
-  if (remaining.length >= limit) throw new HubError("Too many requests", "RATE_LIMITED", 429);
-  remaining.push(time);
-  rateBuckets.set(key, remaining);
+  if (time - lastCleanup >= 60_000 || rateBuckets.size >= MAX_BUCKETS) {
+    for (const [name, bucket] of rateBuckets) {
+      if (!bucket.events.length || time - bucket.events.at(-1) > bucket.window) rateBuckets.delete(name);
+    }
+    lastCleanup = time;
+  }
+  if (!rateBuckets.has(key) && rateBuckets.size >= MAX_BUCKETS) {
+    throw new HubError("Request budget is exhausted", "RATE_LIMITED", 429);
+  }
+  const bucket = rateBuckets.get(key) ?? { events: [], window: seconds * 1000 };
+  bucket.events = bucket.events.filter((when) => time - when < seconds * 1000);
+  if (bucket.events.length >= limit) throw new HubError("Too many requests", "RATE_LIMITED", 429);
+  bucket.events.push(time);
+  rateBuckets.set(key, bucket);
 }
