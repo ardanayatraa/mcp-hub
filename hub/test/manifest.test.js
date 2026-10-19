@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { validateManifest } from "../server/core/manifest.js";
 import { isSensitivePath, treeContainsPii, projectRecord } from "../server/core/privacy.js";
@@ -19,6 +20,17 @@ test("source-managed manifest is normalized and rejects cross-app routes", () =>
   assert.match(normalized.manifest_hash, /^[a-f0-9]{64}$/);
   manifest.modules[0].read_endpoints[0].tool_key = "other.projects.list";
   assert.throws(() => validateManifest(manifest, "your_app", true), { code: "SCHEMA_MISMATCH" });
+});
+
+test("contract manifests need no tool keys and hash exactly like the Python edition", () => {
+  // Served by reference/your_app; the expected hash is what the Python edition stores for it.
+  const manifest = JSON.parse(readFileSync(new URL("./fixtures/your-app-manifest.json", import.meta.url), "utf8"));
+  const normalized = validateManifest(manifest, "your_app");
+  assert.equal(normalized.manifest_hash, "93661c95a0cf75e46c6281e2d9ea5451097435932ffa35a5b4f8484d2a784e91");
+  const route = normalized.modules.find((module) => module.key === "projects").read_endpoints[0];
+  assert.equal("tool_key" in route, false);
+  assert.equal(route.output_schema.items.properties.status.maxLength, 200);
+  assert.equal("maxLength" in route.input_schema.properties.status, false);
 });
 
 test("privacy guard recognizes sensitive names and values before exposing records", () => {

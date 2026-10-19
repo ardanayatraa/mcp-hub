@@ -41,7 +41,8 @@ function scalar(spec, input) {
     if (spec[key] !== undefined && !Number.isInteger(spec[key])) fail("Schema bound is invalid");
   }
   const result = { ...spec };
-  if (types.includes("string") && !result.enum) result.maxLength ??= 200;
+  // As in Python: input enums need no length; every output string gets one.
+  if (types.includes("string") && (!input || !result.enum)) result.maxLength ??= 200;
   if (input && result.maxLength > 200) fail("String inputs are limited to 200 characters");
   if (!input && types.includes("string") && (result.maxLength < 1 || result.maxLength > 2000)) fail("Output string length is invalid");
   if (input && types.some((type) => type === "number" || type === "integer")) {
@@ -101,7 +102,7 @@ function validatePath(path, schema) {
   return path;
 }
 
-function endpoint(raw, readable, writable, page, operations, write) {
+function endpoint(raw, readable, writable, page, operations, write, sourceManaged) {
   if (!object(raw)) fail("Endpoint definition is invalid");
   const method = raw.method ?? "GET";
   if (write ? !["POST", "PUT", "PATCH", "DELETE"].includes(method)
@@ -122,14 +123,16 @@ function endpoint(raw, readable, writable, page, operations, write) {
   if (!fields.length || (!write && fields.some((field) => !readable.includes(field))) ||
       (write && fields.some(isSensitivePath))) fail("Output fields are outside source policy");
   const output = validateOutputSchema(raw.output_schema ?? {}, fields, write ? 50 : page);
+  const route = { ...(write ? { operation: raw.operation } : {}), method, path_template: path,
+    input_schema: input, output_schema: output, requires_user_context: requiresUser,
+    tenant_field: tenant, safe_query: !write && method === "POST", public_aggregate: !requiresUser };
+  // Only source-managed apps name their own tools; contract routes keep the Python shape and hash.
+  if (!sourceManaged) return route;
   if (typeof raw.tool_key !== "string" || !toolKeyPattern.test(raw.tool_key)) fail("Source tool key is invalid");
   const description = String(raw.description ?? `Use the reviewed ${path} route.`).trim();
   if (description.length < 3 || description.length > 300 || treeContainsPii(description) ||
       /ignore previous|ignore all previous|system prompt|disregard|<\||```/i.test(description)) fail("Tool description is invalid");
-  return { ...(write ? { operation: raw.operation } : {}), method, path_template: path,
-    input_schema: input, output_schema: output, requires_user_context: requiresUser,
-    tenant_field: tenant, safe_query: !write && method === "POST", public_aggregate: !requiresUser,
-    tool_key: raw.tool_key, description };
+  return { ...route, tool_key: raw.tool_key, description };
 }
 
 function quote(value) {
@@ -171,15 +174,17 @@ export function validateManifest(document, appKey, sourceManaged = false) {
     if (!Number.isInteger(page) || page < 1 || page > 50) fail("Module page limit is invalid");
     if (!Array.isArray(raw.read_endpoints ?? []) || !Array.isArray(raw.write_endpoints ?? []) ||
         (raw.read_endpoints ?? []).length > 100 || (raw.write_endpoints ?? []).length > 50) fail("Endpoint list is invalid");
-    const reads = (raw.read_endpoints ?? []).map((item) => endpoint(item, readable, writable, page, operations, false));
-    const writes = (raw.write_endpoints ?? []).map((item) => endpoint(item, readable, writable, page, operations, true));
+    const reads = (raw.read_endpoints ?? []).map((item) => endpoint(item, readable, writable, page, operations, false, sourceManaged));
+    const writes = (raw.write_endpoints ?? []).map((item) => endpoint(item, readable, writable, page, operations, true, sourceManaged));
     const seenRoutes = new Set();
     for (const route of [...reads, ...writes]) {
-      if (!route.tool_key.startsWith(`${appKey}.${raw.key}.`) || seenTools.has(route.tool_key)) fail("Tool key is outside source module");
+      if (sourceManaged && (!route.tool_key.startsWith(`${appKey}.${raw.key}.`) || seenTools.has(route.tool_key))) {
+        fail("Tool key is outside source module");
+      }
       const key = `${route.method} ${route.path_template}`;
       if (seenRoutes.has(key)) fail("Duplicate source endpoint");
       seenRoutes.add(key);
-      seenTools.add(route.tool_key);
+      if (sourceManaged) seenTools.add(route.tool_key);
     }
     const policies = object(raw.field_policies) ? raw.field_policies : {};
     const entry = { key: raw.key, name: String(raw.name || raw.key).slice(0, 200),
