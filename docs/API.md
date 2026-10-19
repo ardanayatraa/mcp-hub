@@ -169,7 +169,7 @@ Each turn is audited as `chat.turn`; its tool calls are audited as `tool.execute
 
 ## MCP endpoint
 
-`POST /mcp` (Streamable HTTP, official MCP Python SDK). Headers:
+`POST /mcp` (Streamable HTTP, official MCP TypeScript SDK, stateless JSON responses). Headers:
 
 - `Authorization: Bearer <client key>` (required)
 - `X-Hub-Delegation: <token signed by the app>` for user-scoped data

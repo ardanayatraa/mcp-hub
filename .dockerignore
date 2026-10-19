@@ -1,0 +1,9 @@
+.git
+.verification
+**/node_modules
+**/.nuxt
+**/.output
+**/.data
+**/.env
+**/*.db
+**/*.db-*

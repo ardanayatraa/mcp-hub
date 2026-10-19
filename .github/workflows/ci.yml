@@ -4,11 +4,8 @@ permissions:
   contents: read
 
 jobs:
-  backend:
+  hub:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        database: [sqlite, postgres]
     services:
       postgres:
         image: postgres:16-alpine
@@ -22,60 +19,48 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 20
     defaults:
       run:
-        working-directory: backend
+        working-directory: hub
     env:
       ENVIRONMENT: test
       SECRET_ENCRYPTION_KEY: WyzcJBTgZUDuBhqKXe8GWpoJSvp2nR5J9ag3X5fMf5g=
       SESSION_SIGNING_KEY: ci-only-session-signing-key
-      DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://hub:ci-only-password@localhost:5432/hub_test' || 'sqlite+pysqlite:///hub-ci.db' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
-      - run: uv sync --frozen --group dev
-      - run: uv run --frozen ruff check app tests ../reference/your_app
-      - name: Migration round-trip on a disposable database
-        run: |
-          uv run --frozen alembic upgrade head
-          uv run --frozen alembic downgrade base
-          uv run --frozen alembic upgrade head
-      - name: Contract, security, reporting, official MCP client and migration tests
+          node-version: 24
+          cache: npm
+          cache-dependency-path: hub/package-lock.json
+      - run: npm ci
+      - name: Contract, security, reporting, MCP and migration tests
+        run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Fresh PostgreSQL schema, repeat migration and first admin
         env:
-          HUB_TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://hub:ci-only-password@localhost:5432/hub_test' || 'sqlite+pysqlite:///:memory:' }}
-        run: uv run --frozen pytest -q --junitxml=results.xml
-      - name: Dependency vulnerability audit
-        if: matrix.database == 'sqlite'
-        run: uv run --frozen pip-audit --format json --output dependency-audit.json
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-evidence-${{ matrix.database }}
-          path: |
-            backend/results.xml
-            backend/dependency-audit.json
+          DATABASE_URL: postgresql+psycopg://hub:ci-only-password@localhost:5432/hub_test
+          ADMIN_INITIAL_PASSWORD: ChangeMe-Now-12
+        run: |
+          npm run migrate
+          npm run migrate
+          npm run bootstrap
+      - name: Dependency vulnerability audit (shipped packages)
+        run: npm audit --omit=dev --audit-level high
 
-  frontend:
+  sdk:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: sdk
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm audit --prod --audit-level high
+      - run: npm test
 
   docker-smoke:
-    needs: [backend, frontend]
+    needs: [hub, sdk]
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: ci-only-database-password
@@ -90,9 +75,9 @@ jobs:
         run: |
           curl --fail --silent --insecure https://localhost:8443/ready
           curl --fail --silent --insecure https://localhost:8443/ | grep 'MCP Hub'
-      - name: Restart backend with its PostgreSQL configuration preserved
+      - name: Restart the hub with its PostgreSQL configuration preserved
         run: |
-          docker compose -f infra/compose.yml restart backend
+          docker compose -f infra/compose.yml restart hub
           for attempt in $(seq 1 30); do
             if curl --fail --silent --insecure https://localhost:8443/ready; then exit 0; fi
             sleep 2

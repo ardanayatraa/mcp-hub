@@ -1,5 +1,19 @@
 # What changed after 1.0
 
+## JavaScript edition (`mcp-js` branch)
+
+- **One Nuxt app.** `hub/` serves the admin UI (Nuxt pages and layout, rendered in the
+  browser), the admin API, `/mcp` and `/chat/v1/*`. The Python edition (FastAPI + Vue) is
+  on the `mcp-py` branch. Both use the same API, schema and revision ids.
+- **No Python needed to start.** `npm run migrate` creates an empty SQLite or PostgreSQL
+  database (and still upgrades older ones); `npm run bootstrap` creates the first admin.
+  The container does both on start (`HUB_AUTO_MIGRATE=true`).
+- **Contract apps sync.** Apps that publish an ordinary manifest (no `tool_key` on each
+  route) now sync; only source-managed apps name their tools. Output string fields get a
+  200-character limit even with an enum. The manifest hash now matches the Python edition.
+- The Node SDK for app servers moved to `sdk/` (`@mcp-hub/backend-sdk`).
+- Local development runs on port 3000; allowed hosts, origins and the MCP URL default to it.
+
 ## Bearer tokens everywhere
 
 - **The Hub calls apps with `Authorization: Bearer <token>` only.** `X-API-Key` is gone.

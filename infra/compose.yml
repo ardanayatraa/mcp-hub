@@ -17,10 +17,10 @@ services:
     volumes:
       - hub-pg:/var/lib/postgresql/data
 
-  backend:
+  hub:
     build:
       context: ..
-      dockerfile: infra/Dockerfile.backend
+      dockerfile: infra/Dockerfile.hub
     environment:
       ENVIRONMENT: dev
       DATABASE_URL: postgresql+psycopg://hub:${POSTGRES_PASSWORD}@postgres:5432/hub
@@ -34,7 +34,7 @@ services:
       EGRESS_ALLOW_PRIVATE: "true"
       EGRESS_ALLOWED_PORTS: "80,443,8081"
       EGRESS_ALLOWED_HOSTS: "your-app"
-      ALLOWED_HOSTS: "localhost,127.0.0.1,localhost:8443,127.0.0.1:8443"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,localhost:8443,127.0.0.1:8443,127.0.0.1:3000"
       ALLOWED_ORIGINS: "https://localhost:8443,https://127.0.0.1:8443"
       MCP_PUBLIC_URL: "https://localhost:8443/mcp"
       MCP_ISSUER_URL: "https://localhost:8443"
@@ -42,7 +42,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -66,12 +66,12 @@ services:
   edge:
     build:
       context: ..
-      dockerfile: infra/Dockerfile.frontend
+      dockerfile: infra/Dockerfile.edge
     ports:
       - "8443:443"
       - "8080:80"
     depends_on:
-      backend:
+      hub:
         condition: service_healthy
 
 volumes:

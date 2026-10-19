@@ -1,11 +1,4 @@
-FROM node:22-alpine AS build
-WORKDIR /src
-RUN corepack enable
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
-COPY frontend/ ./
-RUN pnpm build
-
+# TLS in front of the hub. The hub serves the admin UI itself.
 FROM nginx:1.27-alpine
 RUN apk add --no-cache openssl \
     && mkdir -p /etc/nginx/certs \
@@ -15,5 +8,4 @@ RUN apk add --no-cache openssl \
         -subj "/CN=localhost" \
         -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 COPY infra/nginx.conf /etc/nginx/nginx.conf
-COPY --from=build /src/dist /usr/share/nginx/html
 EXPOSE 80 443

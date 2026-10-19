@@ -7,6 +7,19 @@ Each connected app keeps ownership of its data and decides, per request, what th
 signed-in user may see. The Hub stores configuration, encrypted credentials and an
 audit log. It never receives database credentials and never stores business records.
 
+This branch, `mcp-js`, is the JavaScript edition: one [Nuxt](https://nuxt.com) app (`hub/`)
+that serves the admin UI, the admin API, the MCP endpoint and the chat API, plus a small SDK
+for app servers (`sdk/`). The Python edition (FastAPI + Vue) is on the `mcp-py` branch. Both
+use the same API, database schema and revision ids, so a database works with either.
+
+| Path | What it is |
+|---|---|
+| `hub/app/` | Admin UI: pages, layout, components (Vue, rendered in the browser) |
+| `hub/server/core/` | The Hub: auth, connectors, policy, tools, MCP, chat, migrations |
+| `hub/server/routes/`, `hub/server/api/` | Nitro routes that hand `/mcp`, `/chat/v1/*` and `/api/admin/v1/*` to the core |
+| `hub/scripts/` | `npm run migrate` and `npm run bootstrap` |
+| `sdk/` | `@mcp-hub/backend-sdk` for Node app servers ([README](sdk/README.md)) |
+
 ## Concepts
 
 | In the admin UI | What it is |
@@ -31,34 +44,25 @@ it and may ask the user to confirm). Details: [docs/TOOLS.md](docs/TOOLS.md).
 
 ## Quick start (local development)
 
-Requires Python 3.12, [uv](https://docs.astral.sh/uv/), Node 22 and pnpm.
+Requires Node 24. The reference app needs Python 3.12 with `fastapi` and `uvicorn`.
 
 ```powershell
-# 1. Hub API + MCP endpoint
-cd backend
-uv sync --frozen --group dev
-$env:ENVIRONMENT = "dev"
-$env:DATABASE_URL = "sqlite+pysqlite:///./hub.db"
-$env:SECRET_ENCRYPTION_KEY = "<fernet key>"   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-$env:SESSION_SIGNING_KEY = "<long random string>"
-$env:ADMIN_INITIAL_PASSWORD = "ChangeMe-Now-12"
-$env:COOKIE_SECURE = "false"
-$env:ALLOW_INSECURE_HTTP = "true"
-$env:EGRESS_ALLOW_LOOPBACK = "true"
-$env:EGRESS_ALLOWED_PORTS = "80,443,8081"
-$env:ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
-uv run --frozen alembic upgrade head
-uv run python -m app.bootstrap        # creates admin@localhost
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+# 1. The Hub: admin UI, API and MCP endpoint in one process
+cd hub
+npm install
+Copy-Item ..\.env.example .env       # then set the secrets and uncomment the local section
+npm run migrate                       # creates the SQLite database
+npm run bootstrap                     # creates admin@localhost from ADMIN_INITIAL_PASSWORD
+npm run dev                           # http://localhost:3000
 
 # 2. Reference app (another shell): a sample connected application on :8081
-uv run --project backend python reference/your_app/app.py
-
-# 3. Admin UI (another shell)
-cd frontend
-pnpm install --frozen-lockfile
-pnpm dev                              # http://127.0.0.1:5173
+python -m pip install fastapi uvicorn
+python reference/your_app/app.py
 ```
+
+`hub/.env` needs at least `SECRET_ENCRYPTION_KEY`, `SESSION_SIGNING_KEY`,
+`ADMIN_INITIAL_PASSWORD`, and for the reference app `COOKIE_SECURE=false`,
+`ALLOW_INSECURE_HTTP=true`, `EGRESS_ALLOW_LOOPBACK=true` and `EGRESS_ALLOWED_PORTS=80,443,8081`.
 
 Then, in the UI (about five minutes):
 
@@ -66,15 +70,18 @@ Then, in the UI (about five minutes):
    bearer token `dev-your-app-key`, delegation secret `dev-delegation-secret` (under *Advanced*).
    The wizard tests the connection, syncs the contract and lets you allow data sources.
 2. **Access → Create client key** for the app. Copy the key and the MCP client snippet.
-3. Point an AI client at `http://127.0.0.1:8000/mcp` with `Authorization: Bearer <key>`.
+3. Point an AI client at `http://localhost:3000/mcp` with `Authorization: Bearer <key>`.
    It can call `list_data_sources` and `run_report` immediately.
 4. Optional: **Tools → New tool** to publish named tools (create, test with sample data, publish).
    **Tools → Report playground** previews `run_report` without an AI client.
 
 The reference app's data is user-scoped, so calls also need an `X-Hub-Delegation` header
 that the app gateway signs for the signed-in user (see the connector contract). The Hub
-never accepts a user id from the model.
+never accepts a user id from the model. The [SDK](sdk/README.md) signs it for you.
 
+For production, `npm run build` and `npm start` (`node .output/server/index.mjs`).
+`.output` is self-contained; set `HUB_AUTO_MIGRATE=true` to create or upgrade the schema and
+the first admin on start, as the container does.
 ## Connecting an AI client
 
 ```json
@@ -89,7 +96,7 @@ never accepts a user id from the model.
 }
 ```
 
-Transport is Streamable HTTP, served by the official MCP Python SDK. `tools/list` only shows
+Transport is Streamable HTTP (stateless, JSON responses), served by the official MCP TypeScript SDK. `tools/list` only shows
 what the key may call, and every `tools/call` is authorized again from scratch.
 
 ## Giving an app its own AI chat
@@ -106,28 +113,29 @@ small browser helper.
 Copy `.env.example` to `.env`, fill in the secrets, then run
 `docker compose --env-file .env -f infra/compose.yml up --build`. The UI is at
 `https://localhost:8443` (development certificate). The Compose file is a development
-stack: it allows private HTTP egress so the Hub can reach the reference app.
+stack: it allows private HTTP egress so the Hub can reach the reference app. Services:
+PostgreSQL, the hub (`infra/Dockerfile.hub`, migrates on start), the reference app and an
+nginx TLS edge.
 
 Production refuses to start without PostgreSQL, HTTPS-only cookies, MFA, an egress
-allowlist and disabled insecure HTTP/TLS. Run one worker process: rate limits are kept in
+allowlist and disabled insecure HTTP/TLS. Run one process: rate limits are kept in
 memory.
-
 ## Upgrading
 
-Back up the database, then run `uv run --frozen alembic upgrade head`. Published tools keep
-working, and the Hub refuses to start until the schema is current. See
+Back up the database, then run `npm run migrate` in `hub/` (SQLite gets an automatic copy
+first). It also accepts a database created by the Python edition. Published tools keep
+working, and the Hub answers `503 NOT_READY` until the schema is current. See
 [What changed in 1.0](docs/CHANGES.md).
-
 ## Tests
 
 ```powershell
-cd backend
-uv run ruff check app tests ../reference/your_app
-uv run pytest
-cd ../frontend
-pnpm build      # type-checks with vue-tsc
+cd hub
+npm test             # contract, security, reporting, MCP and migration tests
+npm run typecheck    # vue-tsc over the UI and server
+npm run build
+cd ../sdk
+npm test
 ```
-
 ## Documentation
 
 - [Tools and reporting](docs/TOOLS.md): templates, lifecycle, `run_report` reference
@@ -138,5 +146,6 @@ pnpm build      # type-checks with vue-tsc
 - [Backup, upgrade and rollback](docs/BACKUP.md)
 - [What changed in 1.0](docs/CHANGES.md)
 - [Laravel integration](integrations/laravel/README.md)
+- [JavaScript SDK for app servers](sdk/README.md)
 - [JavaScript backend SDK](backend-js/README.md)
 - [Product requirements](PRD.md)

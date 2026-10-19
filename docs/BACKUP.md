@@ -32,16 +32,21 @@ manager that injects the environment; losing it makes stored credentials unreada
 
 ## Upgrading
 
-Releases ship forward Alembic migrations. Stop writes, take a dump, then run:
+Stop writes, take a dump, then run:
 
 ```powershell
-cd backend
-uv run --frozen alembic upgrade head
+cd hub
+npm run migrate
 ```
 
-with `DATABASE_URL` pointing at the target database. The current head is `e5b1c3d7f902`.
-The Hub checks the revision at startup and refuses to serve an older migrated database,
-naming this command.
+with `DATABASE_URL` pointing at the target database. An empty database gets the whole
+schema; an older one is upgraded to the current revision, `f3a8d2c6b1e4`. SQLite gets a
+`.pre-node-*.bak` copy first; PostgreSQL relies on your dump. The revision ids are the
+Python edition's Alembic ids (the `mcp-py` branch), so either edition can open the
+database. The Hub checks the revision and answers `503 NOT_READY` until it is current.
+Containers set `HUB_AUTO_MIGRATE=true` to run this on start.
+
+The notes below describe what each revision changed.
 
 `e5b1c3d7f902` adds OpenAI-compatible model providers (keys stored encrypted) and allows chat
 model names up to 120 characters. Downgrading drops the providers and moves apps that used one
@@ -64,10 +69,8 @@ disables report and write tools (which 0.1 cannot run).
 
 ## Rolling back
 
-Prefer restoring the pre-upgrade dump with the previous release. `alembic downgrade` is
-tested on populated SQLite databases, but some steps refuse to run when the data cannot be
-represented in the older schema. Never delete data just to force a downgrade.
-`alembic downgrade base` drops every table and is only for disposable CI databases.
+Restore the pre-upgrade dump with the previous release. `npm run migrate` only moves
+forward. Never delete data just to force a downgrade.
 
 ## Operational rollback
 

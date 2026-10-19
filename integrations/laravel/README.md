@@ -120,7 +120,7 @@ search, sorting, pagination and immediate permission updates.
 
 ## Upgrading the Hub to 0.2
 
-Back up the local database before migration. Run `alembic upgrade head` from `backend`
+Back up the local database before migration. Run `npm run migrate` from `hub`
 using the same database URL and encryption key as the local launcher. The Hub refuses
 to start on the old schema. The source-managed catalog follows current application grants.
 
@@ -137,5 +137,5 @@ neutral application key, used by the Hub regression tests. Its private generator
 - [Integration verification report](../../docs/evidence/LARAVEL_INTEGRATION_EVIDENCE.json)
 
 From the repository root, run
-`backend/.venv/Scripts/python.exe integrations/laravel/verify.py` to verify the existing
+`python integrations/laravel/verify.py` (Python 3.12 with `httpx`) to verify the existing
 read-only catalog. Credentials and access permissions are preserved.
