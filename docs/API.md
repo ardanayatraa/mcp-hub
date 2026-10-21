@@ -190,7 +190,7 @@ error text is logged with the trace id (personal data withheld). Each call is au
 `model.chat` (model, result, duration) and counted per app, model and month (calls, errors, tokens);
 messages are never stored.
 
-Model ids name their provider: `anthropic/claude-opus-5-5`, `openai/gpt-4.1`, `telixcel/gh/gpt-4o-mini`
+Model ids name their provider: `anthropic/claude-opus-5-5`, `openai/gpt-4.1`, `openrouter/meta-llama/llama-3.1-8b-instruct`
 (provider key, `/`, the provider's model id). The list holds every ready provider under **AI
 providers**: Claude when its key is set, the environment gateway, and each enabled OpenAI-compatible
 provider, with model lists fetched from the providers.
@@ -199,7 +199,7 @@ provider, with model lists fetched from the providers.
 |---|---|---|
 | GET | `/gateway/v1/models` | `{object: "list", default, data: [{id, object: "model", owned_by, name}]}`. `default` is the app's Chat model when it is listed. |
 | POST | `/gateway/v1/chat/completions` | OpenAI chat completions: `{model, messages, tools?, tool_choice?, temperature?, top_p?, max_tokens?, metadata?}`. Function calling works with every provider; Claude turns are converted both ways. `"stream": true` returns the answer as one SSE chunk and `[DONE]`. |
-| POST | `/gateway/mcp` | JSON-RPC (plain JSON, no session): `tools/list`, and `tools/call` with `list_ai_models` (`{data: [{id, provider, name}], default}`) or `chat_ai` (the completion body above, answered as `structuredContent.result`). The model bridge HiReach speaks: set `MCP_BRIDGE_URL` to this address and `MCP_BRIDGE_TOKEN` to a client key. |
+| POST | `/gateway/mcp` | JSON-RPC (plain JSON, no session): `tools/list`, and `tools/call` with `list_ai_models` (`{data: [{id, provider, name}], default}`) or `chat_ai` (the completion body above, answered as `structuredContent.result`). The model bridge for apps that run their own chat: set `MCP_BRIDGE_URL` to this address and `MCP_BRIDGE_TOKEN` to a client key. |
 
 ## MCP endpoint
 
@@ -214,7 +214,7 @@ the skill names.
 
 Tool names: built-ins `list_data_sources` and `run_report`; memory tools `recall_memory`,
 `save_memory` and `forget_memory` when the app turned memory on; custom tools use the tool key
-with dots replaced by `__` (for example `telixmart__orders__list`). Apps outside the `dev`
+with dots replaced by `__` (for example `your_app__orders__list`). Apps outside the `dev`
 environment get an environment suffix.
 
 Results arrive as `structuredContent`, with the same JSON as text content:

@@ -148,8 +148,8 @@ def test_chat_settings_are_validated(admin, monkeypatch):
         assert api(admin, "PATCH", path, {"unknown": 1}).status_code == 422
         saved = enable_chat(admin, app["connector_id"], model="claude-haiku-5-5", suggestions=["How many projects?"])
         assert saved["enabled"] is True and saved["fallbacks"] is False  # Haiku has no server-side fallback
-        gateway = api(admin, "PATCH", path, {"provider": "openai_compatible", "model": "telixcell/chat-1"}, expect=200)
-        assert gateway.json()["data"]["model"] == "telixcell/chat-1"
+        gateway = api(admin, "PATCH", path, {"provider": "openai_compatible", "model": "gateway/chat-1"}, expect=200)
+        assert gateway.json()["data"]["model"] == "gateway/chat-1"
 
 
 def test_chat_turn_streams_answer_and_tool_calls(admin, monkeypatch, model):
@@ -363,7 +363,7 @@ async def test_openai_compatible_conversation(monkeypatch):
 
     monkeypatch.setattr(providers.registry, "open_client", open_client)
     settings = SimpleNamespace(chat_timeout_seconds=30, chat_max_tokens=1000)
-    config = ChatSetting(model="telixcell/chat-1", provider="openai_compatible")
+    config = ChatSetting(model="gateway/chat-1", provider="openai_compatible")
     endpoint = providers.Endpoint("Gateway", "http://gateway.test/v1", {"Authorization": "Bearer g"}, streaming=False)
     tool = Tool(name="run_report", description="Report", input_schema={"type": "object"})
     conversation = providers.OpenAICompatibleConversation(settings, config, endpoint, "system",

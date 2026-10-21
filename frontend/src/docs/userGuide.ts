@@ -21,7 +21,7 @@ export const USER_SECTIONS: GuideSection[] = [
     table: {
       head: ["In the Hub", "What it is"],
       rows: [
-        ["App", "A connected application, such as HiReach, with the bearer token it issued for the Hub."],
+        ["App", "A connected application, such as a shop or a CRM, with the bearer token it issued for the Hub."],
         ["Data source", "One kind of record the app publishes, such as orders. Off until you allow it, with per-field visibility."],
         ["Tool", "Something an AI client can call: built-in tools that work on every data source, and tools you generate or create."],
         ["Skill", "A saved instruction, such as Weekly report, that AI clients show like a slash command."],
@@ -55,8 +55,8 @@ export const USER_SECTIONS: GuideSection[] = [
     table: {
       head: ["Field", "What to enter"],
       rows: [
-        ["App name", "The name people know, for example HiReach."],
-        ["App key", "Lowercase id that matches `application` in the app's manifest, for example `hireach`. It cannot change later."],
+        ["App name", "The name people know, for example Your App."],
+        ["App key", "Lowercase id that matches `application` in the app's manifest, for example `your_app`. It cannot change later."],
         ["Base URL", "The app's address, for example `https://app.example.com`. The Hub calls only routes under it."],
         ["Environment", "Development, Test, Staging or Production. Production apps allow live tests only for public totals."],
         ["Bearer token", "The token the app issued for the Hub. The Hub sends it as `Authorization: Bearer <token>` on every call. Stored encrypted and never shown again."],
@@ -181,7 +181,7 @@ export const USER_SECTIONS: GuideSection[] = [
       "Write instructions in your users' words, a welcome message and up to six suggested questions. The Hub's safety rules always apply on top.",
       "Check it with **Try it** on the same tab (read-only, without a signed-in app user).",
       "In the app, build the chat window your way. The app's server calls the Hub's chat API with a client key and the signed-in user, and streams the answer to the page. The **Laravel guide** under Docs (Add an AI chat) has the server route and a small browser helper.",
-      "If the app runs its own chat and only borrows the Hub's models (the model gateway, as HiReach does), use **Model gateway access** on the same tab: **Choose models** to allow only the ones it needs (all are open while the list is empty), set **Tokens per month** as a budget, and watch this month's calls and tokens per model there.",
+      "If the app runs its own chat and only borrows the Hub's models (the model gateway), use **Model gateway access** on the same tab: **Choose models** to allow only the ones it needs (all are open while the list is empty), set **Tokens per month** as a budget, and watch this month's calls and tokens per model there.",
     ],
     after: [
       "Skills show up in the chat as `/` commands. Changes the assistant prepares appear as cards the user confirms. Each answer and every tool call it made are recorded in **Activity** under one trace.",
@@ -345,7 +345,7 @@ export const USER_SECTIONS: GuideSection[] = [
         ["MCP endpoint", "The Hub's address followed by `/mcp`, Streamable HTTP. The Overview page shows it with a copy button."],
         ["Required header", "`Authorization: Bearer hub_…`"],
         ["User token header", "`X-Hub-Delegation`, signed by the app, valid up to 150 seconds"],
-        ["Custom tool names", "The tool key with dots as double underscores, for example `hireach__orders__list`; apps outside dev get an environment suffix"],
+        ["Custom tool names", "The tool key with dots as double underscores, for example `your_app__orders__list`; apps outside dev get an environment suffix"],
         ["Skills", "Served through `prompts/list` and `prompts/get`"],
         ["Roles", "Super admin (everything, users and backups), App admin (assigned apps, tools and keys), Auditor (read-only)"],
         ["Light or dark", "The sun or moon button at the top switches the look. The account menu also offers **System**, which follows your computer. The choice is kept in this browser."],

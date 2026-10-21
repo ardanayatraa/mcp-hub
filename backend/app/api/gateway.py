@@ -2,8 +2,8 @@
 
 GET  /gateway/v1/models            the models the app may pick, OpenAI style, plus "default"
 POST /gateway/v1/chat/completions  one completion, OpenAI style; "stream": true sends it as one SSE chunk
-POST /gateway/mcp                  JSON-RPC: tools list_ai_models and chat_ai, the model bridge apps such as
-                                   HiReach speak (plain JSON answers, no session)
+POST /gateway/mcp                  JSON-RPC: tools list_ai_models and chat_ai, the model bridge apps with
+                                   their own chat speak (plain JSON answers, no session)
 """
 
 import json

@@ -5,7 +5,7 @@ enabled OpenAI-compatible provider) and OpenAI-style chat completions, including
 so its own chat keeps its own tools and its own model picker. Two surfaces share this module:
 
 - /gateway/v1/models and /gateway/v1/chat/completions, for any OpenAI-style client;
-- /gateway/mcp with the tools list_ai_models and chat_ai, the model bridge apps such as HiReach speak.
+- /gateway/mcp with the tools list_ai_models and chat_ai, the model bridge apps with their own chat speak.
 
 An app may use it while its Chat is on in the Hub, and only the models its admin allowed (all of
 them while the list is empty). The chat rate limit applies per end user and GATEWAY_APP_RATE_LIMIT
@@ -47,7 +47,7 @@ RETRY_DELAY = 0.5
 
 
 def gateway_id(provider: str, model: str) -> str:
-    """Model ids name their provider: anthropic/claude-opus-5-5, openai/gpt-4.1, telixcel/gh/gpt-4o-mini."""
+    """Model ids name their provider: anthropic/claude-opus-5-5, openai/gpt-4.1, openrouter/meta-llama/llama-3.1-8b-instruct."""
 
     return f"{provider}{SEPARATOR}{model}"
 

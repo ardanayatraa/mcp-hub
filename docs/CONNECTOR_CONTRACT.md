@@ -79,7 +79,7 @@ Model-supplied arguments named `user_id`, `tenant_id`, `role`, `approved`, `url`
 ```json
 {
   "contract_version": "1.0",
-  "application": "telixmart",
+  "application": "your_app",
   "manifest_version": "2026-10-10.1",
   "modules": [{
     "key": "orders",

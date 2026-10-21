@@ -6,7 +6,7 @@
   Claude and every ready OpenAI-compatible provider (ids such as `openai/gpt-4.1`);
   `/gateway/v1/chat/completions` answers in the OpenAI shape with function calling, converting
   Claude both ways. `/gateway/mcp` serves the same as the tools `list_ai_models` and `chat_ai`, so an
-  app that used a separate model bridge (HiReach) only changes `MCP_BRIDGE_URL` and `MCP_BRIDGE_TOKEN`.
+  app that used a separate model bridge only changes `MCP_BRIDGE_URL` and `MCP_BRIDGE_TOKEN`.
 - Allowed while the app's Chat is on; chat rate and daily limits apply per user and
   `GATEWAY_APP_RATE_LIMIT` per app; each call is audited as `model.chat`. Messages are never stored.
 - PHP's empty arrays in tool schemas (`"properties": []`) are repaired before they reach a provider.
@@ -74,7 +74,7 @@
   captured header cannot be replayed (API2). The Laravel guide's `HubToken` does this.
 - **Laravel guide middleware** refuses plain HTTP in production (`MCP_HUB_REQUIRE_HTTPS`) and
   answers with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` (API8).
-- **HiReach adapter:** writes are denied by default (a model needs a Laravel policy or an
+- **Laravel adapter:** writes are denied by default (a model needs a Laravel policy or an
   explicit authorize rule, API3/API5); the only AI write today is a user updating their own
   billing profile; blast message writes are off; `Idempotency-Key` returns the first
   proposal instead of preparing another (API6); one-time assertions, HTTPS and no-store as above.

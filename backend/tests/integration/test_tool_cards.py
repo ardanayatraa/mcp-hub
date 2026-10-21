@@ -6,10 +6,10 @@ from tests.helpers import api, call, connect_app, delegation, issue_key, result
 
 
 def test_key_titles_read_naturally():
-    assert key_title("hireach.templates.count") == "Count templates"
-    assert key_title("hireach.blast_messages.list") == "List blast messages"
-    assert key_title("hireach.templates.get") == "Get one template"
-    assert key_title("hireach.billing_users.prepare_create") == "Create a billing user"
+    assert key_title("shop.templates.count") == "Count templates"
+    assert key_title("shop.blast_messages.list") == "List blast messages"
+    assert key_title("shop.templates.get") == "Get one template"
+    assert key_title("shop.billing_users.prepare_create") == "Create a billing user"
     assert key_title("shop.companies.summary") == "Companies summary"
     assert key_title("shop.activity.weekly") == "Activity: weekly"
 

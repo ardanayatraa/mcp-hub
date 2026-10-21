@@ -205,12 +205,12 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
 
   <form v-if="!done && step === 1" class="card card-pad max-w-3xl space-y-5" @submit.prevent="save">
     <div class="grid gap-4 sm:grid-cols-2">
-      <label><span class="label">App name</span><input v-model="form.name" class="input" placeholder="Telixmart" required /></label>
+      <label><span class="label">App name</span><input v-model="form.name" class="input" placeholder="Your App" required /></label>
       <label><span class="label">App key</span>
         <input v-model="form.app_key" class="input font-mono" pattern="[a-z][a-z0-9_]*" required :disabled="!!app" @input="keyEdited = true" />
         <span class="hint">Lowercase id. Must match <span class="code">application</span> in the app's manifest.</span></label>
       <label class="sm:col-span-2"><span class="label">Base URL</span>
-        <input v-model="form.base_url" class="input" placeholder="https://telixmart.example.com" required />
+        <input v-model="form.base_url" class="input" placeholder="https://app.example.com" required />
         <span class="hint">The Hub only calls routes under this address that the app lists in its manifest.</span></label>
       <label><span class="label">Environment</span>
         <select v-model="form.environment" class="input" :disabled="!!app">

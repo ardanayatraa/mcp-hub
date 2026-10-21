@@ -71,7 +71,8 @@ and scan the QR code. If the window passed, run on the server:
 ## 5. Connect apps
 
 For each app: **Apps → Connect** (its address and keys), enable its data sources, then
-issue a client key under **Access**. For HiReach, set in its `.env`:
+issue a client key under **Access**. For a Laravel app with the adapter from
+`integrations/laravel`, set in its `.env`:
 
 ```
 MCP_HUB_URL=https://hub.example.com/mcp

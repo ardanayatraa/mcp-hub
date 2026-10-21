@@ -169,7 +169,7 @@ ACTION_TITLES = {
 
 
 def key_title(tool_key: str) -> str:
-    """A readable name from a tool key: "hireach.templates.count" reads "Count templates"."""
+    """A readable name from a tool key: "shop.templates.count" reads "Count templates"."""
 
     parts = tool_key.split(".")[1:]
     if len(parts) < 2:

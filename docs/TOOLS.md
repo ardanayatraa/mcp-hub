@@ -61,7 +61,7 @@ Answer shape:
   "success": true,
   "data": {"mode": "groups", "columns": ["status", "count", "sum_total"],
            "rows": [{"status": "paid", "count": 41, "sum_total": 18230.5}], "totals": {"count": 57, "sum_total": 21011}, "groups": 3},
-  "summary": "Telixmart · Orders: 57 record(s). 3 group(s) by status; count: paid: 41 (72%); open: 12 (21%); void: 4 (7%).",
+  "summary": "Your App · Orders: 57 record(s). 3 group(s) by status; count: paid: 41 (72%); open: 12 (21%); void: 4 (7%).",
   "chart": {"type": "bar", "x": "status", "y": ["count", "sum_total"]},
   "notes": [],
   "meta": {"coverage": "complete", "records_read": 57, "pages": 2, "truncated": false,

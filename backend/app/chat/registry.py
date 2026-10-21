@@ -68,7 +68,7 @@ PRESETS = [
     {"key": "lmstudio", "name": "LM Studio (local)", "base_url": "http://127.0.0.1:1234/v1", "auth_style": "none",
      "hint": "LM Studio's local server."},
     {"key": "custom", "name": "Other OpenAI-compatible", "base_url": "",
-     "hint": "Any gateway that serves /chat/completions, for example Telixcell, vLLM or LiteLLM."},
+     "hint": "Any gateway that serves /chat/completions, for example vLLM, LiteLLM or a self-hosted gateway."},
 ]
 
 
