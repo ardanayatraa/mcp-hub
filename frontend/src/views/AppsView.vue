@@ -66,6 +66,9 @@ function health(app: AppSummary) {
     </p>
   </template>
 
+  <div v-else-if="error" class="text-sm text-subtle">
+    The app list is unavailable. <button type="button" class="link" @click="load">Try again</button>
+  </div>
   <EmptyState v-else-if="!visible.length" icon="plug" title="No apps connected yet"
               text="Connect an application using its base URL and the bearer token it issued for the Hub.">
     <RouterLink v-if="session.canWrite" to="/apps/new" class="btn-primary">Connect your first app</RouterLink>

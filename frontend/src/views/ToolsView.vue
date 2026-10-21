@@ -30,19 +30,25 @@ const TABS = ["tools", "capabilities", "skills", "agent"];
 const requested = route.query.tab === "catalog" ? "tools" : String(route.query.tab);
 const tab = ref(TABS.includes(requested) ? requested : "tools");
 const allApps = ref<AppSummary[]>([]);
+const appsLoaded = ref(false);
+const appsError = ref("");
 const skillCount = ref<number | undefined>(undefined);
 const generating = ref(false);
 
 watch(tab, (value) => { void router.replace({ query: { ...route.query, tab: value === "tools" ? undefined : value } }); });
 
 // Apps load on their own: the generator, skills and agent view need them, the table does not.
-onMounted(async () => {
+async function loadApps() {
   try {
     allApps.value = await hub.apps();
-  } catch {
-    allApps.value = [];
+    appsError.value = "";
+  } catch (exc) {
+    appsError.value = errorMessage(exc);
+  } finally {
+    appsLoaded.value = true;
   }
-});
+}
+onMounted(loadApps);
 
 async function loadCapabilities() {
   try {
@@ -90,8 +96,17 @@ const canGenerate = computed(() => allApps.value.some((app) => app.status !== "a
 
   <TabBar v-model="tab" :tabs="tabs" />
 
+  <div v-if="appsError" class="mb-5 flex flex-wrap items-center gap-3 rounded-lg bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">
+    <span class="mr-auto">Could not load apps: {{ appsError }}</span>
+    <button type="button" class="btn-secondary btn-sm" @click="loadApps">Try again</button>
+  </div>
+  <div v-else-if="appsLoaded && !canGenerate" class="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
+    <span class="mr-auto">No app is connected to this Hub yet. Connect one to generate tools and preview what AI clients can use.</span>
+    <RouterLink v-if="session.canWrite" to="/apps/new" class="btn-primary btn-sm">Connect app</RouterLink>
+  </div>
+
   <SkillsPanel v-if="tab === 'skills'" :apps="allApps" @changed="(count: number) => (skillCount = count)" />
-  <AgentViewPanel v-else-if="tab === 'agent'" :apps="allApps" />
+  <AgentViewPanel v-else-if="tab === 'agent'" :apps="allApps" :apps-loaded="appsLoaded" :apps-error="appsError" />
 
   <template v-else>
     <p v-if="error" class="mb-4 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>

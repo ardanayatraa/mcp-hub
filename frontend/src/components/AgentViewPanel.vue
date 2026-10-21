@@ -9,7 +9,7 @@ import { byReadiness, errorMessage } from "@/utils/format";
 import { useSlowFlag } from "@/utils/loading";
 
 // Exactly what an AI client receives from tools/list and prompts/list for one app and key.
-const props = defineProps<{ apps: AppSummary[] }>();
+const props = defineProps<{ apps: AppSummary[]; appsLoaded: boolean; appsError: string }>();
 const activeApps = computed(() => byReadiness(props.apps.filter((app) => app.status !== "archived")));
 const appId = ref("");
 const keyChoice = ref("read");
@@ -21,7 +21,9 @@ const error = ref("");
 const showJson = ref(false);
 const open = ref<Record<string, boolean>>({});
 
-watch(activeApps, (apps) => { if (!appId.value && apps.length) appId.value = apps[0].id; }, { immediate: true });
+watch(activeApps, (apps) => {
+  if (!apps.some((app) => app.id === appId.value)) appId.value = apps[0]?.id ?? "";
+}, { immediate: true });
 
 watch(appId, async (id) => {
   keyChoice.value = "read";
@@ -38,7 +40,12 @@ watch(appId, async (id) => {
 // Switching app resets the key, so two requests can overlap; only the latest one may land.
 let latest = 0;
 watch([appId, keyChoice], async ([id, choice]) => {
-  if (!id) return;
+  if (!id) {
+    ++latest;
+    view.value = null;
+    loading.value = false;
+    return;
+  }
   const request = ++latest;
   loading.value = true;
   error.value = "";
@@ -75,9 +82,12 @@ function inputs(schema: JsonSchema) {
   <section>
     <div class="mb-5 flex flex-wrap items-end gap-3">
       <label class="w-full sm:w-64"><span class="label">App</span>
-        <select v-model="appId" class="input"><option v-for="app in activeApps" :key="app.id" :value="app.id">{{ app.name }} · {{ app.environment }}</option></select></label>
+        <select v-model="appId" class="input" :disabled="!activeApps.length">
+          <option v-if="!activeApps.length" value="">{{ !appsLoaded ? "Loading apps…" : appsError ? "Apps unavailable" : "No apps connected" }}</option>
+          <option v-for="app in activeApps" :key="app.id" :value="app.id">{{ app.name }} · {{ app.environment }}</option>
+        </select></label>
       <label class="w-full sm:w-72"><span class="label">As seen by</span>
-        <select v-model="keyChoice" class="input">
+        <select v-model="keyChoice" class="input" :disabled="!activeApps.length">
           <option value="read">A new read-only key</option>
           <option value="write">A new key with write permission</option>
           <optgroup v-if="keys.length" label="Existing client keys">
@@ -88,7 +98,11 @@ function inputs(schema: JsonSchema) {
         <AppIcon name="code" :size="16" /> {{ showJson ? "Hide JSON" : "Show JSON" }}</button>
     </div>
 
-    <EmptyState v-if="!activeApps.length" icon="apps" title="No apps yet" text="Connect an app to see what an AI client can use." />
+    <LoadingSkeleton v-if="!appsLoaded" label="Loading apps" />
+    <p v-else-if="appsError && !activeApps.length" class="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad" role="alert">Could not load apps: {{ appsError }}</p>
+    <EmptyState v-else-if="!activeApps.length" icon="apps" title="No apps connected" text="Connect an app to preview the tools and skills an AI client can use.">
+      <RouterLink to="/apps" class="btn-secondary">View apps</RouterLink>
+    </EmptyState>
     <template v-else-if="loading && !view">
       <LoadingSkeleton variant="rows" :count="4" label="Loading what the agent sees" />
       <p v-if="slow" class="mt-3 text-xs text-subtle">Asking the app for its current permissions…</p>
