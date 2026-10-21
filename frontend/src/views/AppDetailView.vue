@@ -105,7 +105,9 @@ function sourceSaved(updated: DataSource) {
 const BUILT_IN = "__built_in";
 const KIND_ORDER = Object.keys(TOOL_KINDS);
 const toolGroups = computed(() => {
-  const groups = new Map<string, { key: string; name: string; tools: Tool[] }>();
+  // Every data source gets a card, also one whose tools do not exist yet.
+  const groups = new Map<string, { key: string; name: string; source?: DataSource; tools: Tool[] }>(
+    sources.value.map((source) => [source.module_key, { key: source.module_key, name: source.name, source, tools: [] }]));
   for (const tool of tools.value) {
     if (!groups.has(tool.module_key)) groups.set(tool.module_key, { key: tool.module_key, name: tool.module_name, tools: [] });
     groups.get(tool.module_key)?.tools.push(tool);
@@ -117,8 +119,27 @@ const toolGroups = computed(() => {
 const isOn = (name: string) => switchFor.value.get(name)?.enabled ?? true;
 const groupKinds = (group: { tools: Tool[] }) => [...new Set(group.tools.map((tool) => toolKind(tool.template, tool.tool_key)))]
   .sort((a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b));
-const notLive = (group: { tools: Tool[] }) => group.tools.filter((tool) => toolStatus(tool).label !== "Live").length;
+// Tools that are not live, by status: "Needs re-test: 5 · Draft: 1".
+function statusNote(group: { tools: Tool[] }) {
+  const counts = new Map<string, number>();
+  for (const label of group.tools.map((tool) => toolStatus(tool).label).filter((label) => label !== "Live")) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, count]) => `${label}: ${count}`).join(" · ");
+}
 const openGroup = ref("");
+const openSource = computed(() => toolGroups.value.find((group) => group.key === openGroup.value));
+const emptyHint = computed(() => {
+  if (sourceManaged.value) return `${app.value?.name} has no tools for it yet. They appear here by themselves once it publishes them.`;
+  if (openSource.value?.source && !openSource.value.source.enabled) return "AI may not read it yet. Allow it on the Data sources tab, then generate its tools.";
+  return "Generate its tools so AI clients can use it by name. run_report can already read it.";
+});
+
+async function showSource(key: string) {
+  openGroup.value = "";
+  await router.replace({ query: { ...route.query, source: key, tab: undefined } });
+  tab.value = "sources";
+}
 const modalTitle = computed(() => openGroup.value === BUILT_IN ? "Built-in tools"
   : toolGroups.value.find((group) => group.key === openGroup.value)?.name ?? "");
 const modalRows = computed<{ name: string; title: string; detail: string; kind: string; status: ReturnType<typeof toolStatus>;
@@ -284,14 +305,17 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
                 class="card card-pad flex flex-col text-left transition hover:border-brand/50" @click="openGroup = group.key">
           <span class="flex items-center justify-between gap-2">
             <span class="truncate font-medium">{{ group.name }}</span>
-            <span :class="group.tools.some((tool) => isOn(tool.mcp_name)) ? 'badge-ok' : 'badge-neutral'">
+            <span v-if="!group.tools.length" class="badge-neutral">No tools</span>
+            <span v-else :class="group.tools.some((tool) => isOn(tool.mcp_name)) ? 'badge-ok' : 'badge-neutral'">
               {{ group.tools.filter((tool) => isOn(tool.mcp_name)).length }}/{{ group.tools.length }} on</span>
           </span>
-          <span class="mt-3 flex flex-wrap gap-1.5">
+          <span v-if="group.tools.length" class="mt-3 flex flex-wrap gap-1.5">
             <span v-for="kind in groupKinds(group)" :key="kind" class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
                   :class="kindStyle(kind).tile"><AppIcon :name="kindStyle(kind).icon" :size="12" /> {{ kindStyle(kind).label }}</span>
           </span>
-          <span v-if="notLive(group)" class="mt-2 block text-xs text-subtle">{{ notLive(group) }} not live yet</span>
+          <span v-if="!group.tools.length" class="mt-3 block text-xs text-subtle">
+            {{ group.source && !group.source.enabled && !sourceManaged ? "Not allowed for AI yet" : "No tools yet" }}</span>
+          <span v-else-if="statusNote(group)" class="mt-2 block text-xs text-subtle">{{ statusNote(group) }}</span>
         </button>
         <button v-if="hubTools.length" type="button" class="card card-pad flex flex-col text-left transition hover:border-brand/50"
                 @click="openGroup = BUILT_IN">
@@ -310,8 +334,12 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
                   :text="sourceManaged ? 'Allow a model in the application to make its tools available.' : 'AI clients can already use run_report on allowed data sources. Generate named tools for every published route, or add one by hand.'" />
 
       <ModalDialog v-if="openGroup" :title="modalTitle" @close="openGroup = ''">
-        <p class="mb-2 text-xs text-subtle">A switched-off tool is hidden and refused for every key of {{ app.name }} and its chat.</p>
-        <ul class="divide-y divide-line">
+        <div v-if="!modalRows.length" class="rounded-lg bg-muted p-4">
+          <p class="text-sm font-medium">No tools for {{ modalTitle }} yet</p>
+          <p class="mt-1 text-xs text-subtle">{{ emptyHint }}</p>
+        </div>
+        <p v-else class="mb-2 text-xs text-subtle">A switched-off tool is hidden and refused for every key of {{ app.name }} and its chat.</p>
+        <ul v-if="modalRows.length" class="divide-y divide-line">
           <li v-for="row in modalRows" :key="row.name" class="flex items-center gap-3 py-3">
             <ToggleSwitch v-if="switches" :model-value="isOn(row.name)" :label="`${row.title} on or off`" :disabled="!session.canWrite || archived || busy"
                           @update:model-value="(on: boolean) => setSwitches({ [row.name]: on }, `${row.title} switched ${on ? 'on' : 'off'}`)" />
@@ -327,7 +355,13 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
           </li>
         </ul>
         <template #footer>
-          <template v-if="switches && session.canWrite && !archived">
+          <template v-if="!modalRows.length && !sourceManaged && session.canWrite && !archived">
+            <button v-if="openSource?.source && !openSource.source.enabled" type="button" class="btn-secondary" @click="showSource(openGroup)">
+              Open in Data sources</button>
+            <button v-else type="button" class="btn-secondary" @click="openGroup = ''; generating = true">
+              <AppIcon name="sparkles" :size="16" /> Generate tools</button>
+          </template>
+          <template v-if="modalRows.length && switches && session.canWrite && !archived">
             <button type="button" class="btn-ghost" :disabled="busy" @click="switchGroup(false)">All off</button>
             <button type="button" class="btn-ghost" :disabled="busy" @click="switchGroup(true)"><AppIcon name="power" :size="16" /> All on</button>
           </template>
