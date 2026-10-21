@@ -113,9 +113,6 @@ async function signOut() {
         </div>
       </nav>
 
-      <div class="shrink-0 border-t border-line p-3 text-xs text-subtle" :class="collapsed ? 'lg:hidden' : ''">
-        Connected apps keep ownership of their data. The Hub stores configuration only.
-      </div>
     </aside>
     <div v-if="open" class="fixed inset-0 z-20 bg-ink/40 lg:hidden" @click="open = false" />
 

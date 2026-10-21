@@ -7,6 +7,7 @@ import ResultView from "@/components/ResultView.vue";
 import { hub, type AppSummary, type ChatSettings, type ChatToolEvent, type ModelCatalog } from "@/services/hub";
 import { postStream } from "@/services/stream";
 import { errorMessage } from "@/utils/format";
+import { useVisibleModelRefresh } from "@/utils/modelRefresh";
 
 // Try it: ask as an admin, read-only and with no signed-in app user, on any model the Hub has, and see
 // what each tool returned. Nothing is saved; the model picked here applies to this page only.
@@ -19,6 +20,9 @@ const model = ref("");
 const catalog = ref<ModelCatalog | null>(null);
 const catalogLoading = ref(false);
 let catalogRequest = 0;
+const markCatalogRequested = useVisibleModelRefresh(() => {
+  if (provider.value && !catalogLoading.value && !streaming.value) void loadModels(provider.value);
+});
 
 interface Entry { role: "user" | "assistant"; text: string; tools: ChatToolEvent[]; notices: string[]; error?: string; model?: string }
 const entries = ref<Entry[]>([]);
@@ -51,23 +55,28 @@ onMounted(async () => {
 });
 
 // Model lists come from the providers themselves; switching provider starts from its default model.
-watch(provider, async (providerId) => {
-  if (!providerId) return;
+async function loadModels(providerId: string) {
+  markCatalogRequested();
   const request = ++catalogRequest;
   catalogLoading.value = true;
   try {
-    const list = await hub.providerModels(providerId);
+    const list = await hub.providerModels(providerId, true);
     if (request !== catalogRequest) return;
     catalog.value = list;
-    if (!list.models.some((item) => item.id === model.value)) {
-      model.value = providerId === settings.value?.provider ? settings.value.model
-        : list.models.some((item) => item.id === list.default_model) ? list.default_model : list.models[0]?.id ?? "";
+    if (!streaming.value && !list.error && list.models.length && !list.models.some((item) => item.id === model.value)) {
+      model.value = list.models.some((item) => item.id === list.default_model) ? list.default_model : list.models[0].id;
     }
-  } catch {
-    if (request === catalogRequest) catalog.value = null;
+  } catch (exc) {
+    if (request === catalogRequest) catalog.value = catalog.value?.provider === providerId
+      ? { ...catalog.value, error: errorMessage(exc) }
+      : { provider: providerId, models: [], source: "cache", fetched_at: null, default_model: "", error: errorMessage(exc) };
   } finally {
     if (request === catalogRequest) catalogLoading.value = false;
   }
+}
+watch(provider, (providerId, previous) => {
+  if (previous && providerId !== previous) model.value = providerId === settings.value?.provider ? settings.value.model : "";
+  if (providerId) void loadModels(providerId);
 });
 
 async function scroll() {
@@ -77,7 +86,7 @@ async function scroll() {
 
 async function send(text = draft.value) {
   const message = text.trim();
-  if (!message || streaming.value || !model.value) return;
+  if (!message || streaming.value || !model.value || catalog.value?.provider !== provider.value) return;
   const history = entries.value.filter((entry) => entry.text && !entry.error).map(({ role, text: body }) => ({ role, text: body }));
   entries.value.push({ role: "user", text: message, tools: [], notices: [] });
   entries.value.push({ role: "assistant", text: "", tools: [], notices: [], model: modelLabel.value });
@@ -127,7 +136,7 @@ function clear() {
     <header class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
       <div class="min-w-0">
         <h2 class="card-title">Try it</h2>
-        <p class="text-xs text-subtle">Read-only, as you, with no signed-in {{ app.name }} user. The model you pick here is not saved.</p>
+        <p class="text-xs text-subtle">Test the chat here. Account-specific data is available in {{ app.name }}.</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <span v-if="!saved" class="badge-warn" title="The app's chat still uses the model saved on the Chat tab">Trying another model</span>
@@ -140,6 +149,9 @@ function clear() {
         <button v-if="entries.length" type="button" class="btn-ghost text-xs" :disabled="streaming" @click="clear">Clear</button>
       </div>
     </header>
+    <p v-if="catalog?.error && catalog.provider === provider" class="border-b border-warn/40 bg-warn-soft px-5 py-2 text-xs text-warn" role="status">
+      Could not refresh models: {{ catalog.error }}
+    </p>
 
     <div ref="log" class="flex-1 space-y-6 overflow-y-auto p-5" aria-live="polite">
       <div v-if="!entries.length" class="mx-auto max-w-xl space-y-4 pt-6 text-center">
@@ -154,8 +166,6 @@ function clear() {
             <button v-for="text in settings.suggestions" :key="text" type="button" class="badge-outline cursor-pointer hover:bg-muted"
                     @click="send(text)">{{ text }}</button>
           </div>
-          <p class="text-xs text-subtle">Each tool's answer opens under the reply: tables, totals and charts. Data that only a signed-in
-            {{ app.name }} user may read answers inside {{ app.name }} only.</p>
         </template>
       </div>
 
@@ -196,7 +206,7 @@ function clear() {
       <textarea v-model="draft" rows="1" class="input max-h-32 min-h-[40px] flex-1 resize-none" :disabled="!settings.enabled"
                 :placeholder="`Ask about ${app.name}'s data`" aria-label="Message" @keydown.enter.exact.prevent="send()" />
       <button v-if="streaming" type="button" class="btn-secondary" @click="stop"><AppIcon name="pause" :size="16" /> Stop</button>
-      <button v-else type="submit" class="btn-primary" :disabled="!settings.enabled || !draft.trim() || !model" aria-label="Send">
+      <button v-else type="submit" class="btn-primary" :disabled="!settings.enabled || !draft.trim() || !model || catalog?.provider !== provider" aria-label="Send">
         <AppIcon name="send" :size="16" /></button>
     </form>
   </section>

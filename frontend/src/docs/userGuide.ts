@@ -176,7 +176,7 @@ export const USER_SECTIONS: GuideSection[] = [
     ],
     steps: [
       "Make sure there is a model under **AI providers** (super admins): paste the Claude key on the **Claude** card, or **Add provider**, pick a preset such as OpenAI, OpenRouter, Groq, Gemini or Ollama, paste the key, and the Hub tests it and loads its models. Keys are stored encrypted and work without a restart.",
-      "Model names are never typed: the Chat tab loads each provider's model list by itself (Claude's from Anthropic) and keeps it for a few hours. Use **Refresh list** after a provider adds models.",
+      "The Chat, Try it and Assistant model lists come from each provider. They refresh when opened and about once a minute while the page is visible. Returning to a tab checks again. Use **Refresh list** on the Chat tab to fetch immediately. If a provider is unavailable, the last fetched list remains visible with an error.",
       "Open the app's **Chat** tab and switch the chat on. Choose the provider and model (Claude Opus 5.5 by default; with other providers pick a model that supports tool calling), the effort, tool steps per answer and messages per user per day.",
       "Write instructions in your users' words, a welcome message and up to six suggested questions. The Hub's safety rules always apply on top.",
       "Check it on the app's **Try it** tab: pick any model the Hub has (only for that page), ask, and open each tool's answer as a table, totals or a chart. It is read-only and has no signed-in app user.",

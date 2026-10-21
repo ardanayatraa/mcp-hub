@@ -242,11 +242,14 @@ def test_provider_models_load_by_themselves_and_stay_cached(admin, upstream, fre
     assert first["source"] == "live" and [m["id"] for m in first["models"]] == ["acme-large", "acme-small"]
     again = api(admin, "GET", "/model-providers/acme/models", expect=200).json()["data"]
     assert again["source"] == "cache" and len(upstream.fake.requests) == 1  # no second call within a few hours
+    upstream.fake = Upstream(httpx.Response(200, json={"data": [{"id": "acme-new"}]}))
+    refreshed = api(admin, "GET", "/model-providers/acme/models?refresh=true", expect=200).json()["data"]
+    assert refreshed["source"] == "live" and [m["id"] for m in refreshed["models"]] == ["acme-new"]
     listing = api(admin, "GET", "/model-providers", expect=200).json()["data"]["providers"][0]
-    assert listing["models"] == ["acme-large", "acme-small"] and listing["status"] == "ok"
+    assert listing["models"] == ["acme-new"] and listing["status"] == "ok"
     upstream.fake = Upstream(httpx.Response(503, json={"error": {"message": "maintenance"}}))
     failed = api(admin, "GET", "/model-providers/acme/models?refresh=true", expect=200).json()["data"]
-    assert "maintenance" in failed["error"] and len(failed["models"]) == 2  # the last good list stays
+    assert "maintenance" in failed["error"] and [m["id"] for m in failed["models"]] == ["acme-new"]  # the last good list stays
     assert api(admin, "GET", "/model-providers/nope/models").status_code == 404
 
 

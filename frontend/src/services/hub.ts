@@ -563,7 +563,8 @@ export const hub = {
   updateProvider: (id: string, body: ProviderDraft) => patch<ModelProvider>(`/model-providers/${id}`, body),
   testProvider: (id: string) => post<ModelProvider>(`/model-providers/${id}/test`),
   providerModels: (key: string, refresh = false) =>
-    api<ModelCatalog>(`/model-providers/${encodeURIComponent(key)}/models${refresh ? "?refresh=true" : ""}`),
+    api<ModelCatalog>(`/model-providers/${encodeURIComponent(key)}/models${refresh ? "?refresh=true" : ""}`,
+      refresh ? { cache: "no-store" } : {}),
   deleteProvider: (id: string) => remove(`/model-providers/${id}`),
   saveClaudeKey: (apiKey: string) =>
     api<BuiltinProvider>("/model-providers/anthropic/key", { method: "PUT", ...json({ api_key: apiKey }) }),

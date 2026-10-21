@@ -9,6 +9,7 @@ import { hub, type AppSummary, type ChatSettings, type ChatSettingsUpdate, type 
 import { useSession } from "@/stores/session";
 import { useToast } from "@/stores/toast";
 import { errorMessage, timeAgo } from "@/utils/format";
+import { useVisibleModelRefresh } from "@/utils/modelRefresh";
 
 // The Hub-hosted chat: the Hub is the kitchen (model, tools, rules); the app brings the user and the data.
 const props = defineProps<{ app: AppSummary }>();
@@ -36,7 +37,7 @@ async function load() {
   try {
     fill(await hub.chat(props.app.id));
     error.value = "";
-    void loadModels();
+    void loadModels(true);
     hub.system().then((info) => { hubUrl.value = info.mcp_url.replace(/\/mcp\/?$/, ""); }).catch(() => undefined);
   } catch (exc) {
     error.value = errorMessage(exc);
@@ -68,33 +69,43 @@ const listedModels = computed(() => {
   const words = modelFilter.value.toLowerCase().split(/\s+/).filter(Boolean);
   const models = catalog.value?.models ?? [];
   const shown = models.filter((model) => words.every((word) => `${model.id} ${model.label}`.toLowerCase().includes(word)));
-  // Keep the saved model visible even when a filter or a stale list leaves it out.
+  // Keep the saved model visible even when a filter or refreshed list leaves it out.
   return form.value.model && !shown.some((model) => model.id === form.value.model)
-    ? [{ id: form.value.model, label: form.value.model }, ...shown] : shown;
+    ? [{ id: form.value.model, label: selectedModelMissing.value ? `${form.value.model} (no longer listed)` : form.value.model }, ...shown] : shown;
 });
 
 function pickDefault(list: ModelCatalog) {
-  if (list.provider === "anthropic" || !list.models.length) return;
+  if (list.provider === "anthropic" || !list.models.length || list.error) return;
   if (!form.value.model || form.value.model.startsWith("claude-") || !list.models.some((model) => model.id === form.value.model)) {
     // Start from the provider's default model, or its first listed one.
     form.value.model = list.models.some((model) => model.id === list.default_model) ? list.default_model : list.models[0].id;
   }
 }
 
-async function loadModels(refresh = false) {
+const markCatalogRequested = useVisibleModelRefresh(() => {
+  if (form.value.provider && !catalogLoading.value) void loadModels(true);
+});
+const selectedModelMissing = computed(() => !!catalog.value && !catalog.value.error && !!form.value.model
+  && !catalog.value.models.some((item) => item.id === form.value.model));
+
+async function loadModels(refresh = false, resetMissing = false) {
   const request = ++catalogRequest;
   const providerId = form.value.provider;
+  markCatalogRequested();
   catalogLoading.value = true;
   try {
     const list = await hub.providerModels(providerId, refresh);
     if (request !== catalogRequest) return;
+    const firstList = catalog.value?.provider !== providerId;
     catalog.value = list;
-    typeModel.value = !list.models.length && providerId !== "anthropic";
-    pickDefault(list);
+    if (resetMissing || firstList) typeModel.value = !list.models.length && providerId !== "anthropic";
+    if (resetMissing) pickDefault(list);
   } catch (exc) {
     if (request !== catalogRequest) return;
-    catalog.value = { provider: providerId, models: [], source: "cache", fetched_at: null, default_model: "", error: errorMessage(exc) };
-    typeModel.value = providerId !== "anthropic";
+    catalog.value = catalog.value?.provider === providerId
+      ? { ...catalog.value, error: errorMessage(exc) }
+      : { provider: providerId, models: [], source: "cache", fetched_at: null, default_model: "", error: errorMessage(exc) };
+    typeModel.value = !catalog.value.models.length && providerId !== "anthropic";
   } finally {
     if (request === catalogRequest) catalogLoading.value = false;
   }
@@ -104,8 +115,9 @@ function chooseProvider(id: string) {
   form.value.provider = id;
   modelFilter.value = "";
   if (id === "anthropic" && !form.value.model.startsWith("claude-")) form.value.model = "claude-opus-5-5";
+  else if (id !== "anthropic") form.value.model = "";
   catalog.value = null;
-  void loadModels();
+  void loadModels(true, true);
 }
 
 async function save(body: ChatSettingsUpdate, action: "toggle" | "save", message: string) {
@@ -235,6 +247,7 @@ Content-Type: application/json
               <button type="button" class="btn-ghost h-6 px-2 text-xs" :disabled="catalogLoading" @click="loadModels(true)">
                 <AppIcon name="refresh" :size="12" /> Refresh list</button>
             </p>
+            <p v-if="selectedModelMissing" class="-mt-2 text-xs text-warn">{{ form.model }} is not in the latest provider list. Check the name or choose another model.</p>
             <p v-if="fallbackModel" class="flex items-start gap-2 text-xs text-subtle">
               <AppIcon name="shield" :size="14" class="mt-0.5 shrink-0" />
               Server-side fallback is on: if Claude declines a request, Anthropic retries it on a fallback model within the same answer.
