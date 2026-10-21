@@ -392,6 +392,7 @@ export interface AdminUserRow {
   mfa_enabled: boolean; is_active: boolean; app_ids: string[]; created_at: string;
   /** While MFA is required, the time by which this admin must set it up; null once set up. */
   mfa_enroll_until: string | null;
+  activation_expires_at: string | null;
 }
 
 export interface AdminInvitation extends AdminUserRow {
@@ -586,7 +587,8 @@ export const hub = {
   users: () => api<AdminUserRow[]>("/users"),
   createUser: (body: Record<string, unknown>) => post<AdminInvitation>("/users", body),
   updateUser: (id: string, body: Record<string, unknown>) => patch<AdminUserRow>(`/users/${id}`, body),
-  resendInvite: (id: string) => post<{ activation_url: string }>(`/users/${id}/resend-invite`),
+  resendInvite: (id: string, invite_expiry: string) =>
+    post<{ activation_url: string; activation_expires_at: string | null }>(`/users/${id}/resend-invite`, { invite_expiry }),
 
   activity: (query: URLSearchParams) => api<AuditRow[]>(`/executions?${query.toString()}`),
   exportBackup: () => post<unknown>("/operations/export"),

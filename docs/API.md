@@ -25,10 +25,11 @@ configure, test, publish, issue keys), and `auditor` (read-only on assigned apps
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | Current admin and CSRF token. |
 
-Root and hub admins can create a Team user with `POST /users` and `{role, app_ids}`. The response shows
+Root and hub admins can create a Team user with `POST /users` and `{role, app_ids, invite_expiry}`. The
+expiry is `1_day` (default), `1_week`, `1_month` (30 days), or `never`. The response shows
 `activation_url` once; no email is collected or sent at creation. The inviter shares the link
 privately. The recipient enters their email, verifies the code, and sets a password. Root can issue
-a replacement link with `POST /users/{id}/resend-invite`; it invalidates the previous
+a replacement link with `POST /users/{id}/resend-invite` and optional `{invite_expiry}`; it invalidates the previous
 link and activation challenges. Hub admins can list members but never see the root account.
 Password-based creation by root is accepted only for non-production
 compatibility and requires `email`; production requires activation.
@@ -137,7 +138,7 @@ Claude and the OpenAI-compatible model providers the chat can use. Listing is op
 
 | Method | Path | Notes |
 |---|---|---|
-| GET, POST | `/service-identities` | Client keys. Create: `{name, app_key, environment, ttl_days, write, allowed_tools}`. The token is returned once and stored hashed. |
+| GET, POST | `/service-identities` | Client keys. Create: `{name, app_key, environment, ttl_days, write, allowed_tools}`. Use `ttl_days` 1, 7, or 30 for the UI choices, or `null` for no expiry. The token is returned once and stored hashed. |
 | PATCH | `/service-identities/{id}` | `{name?, write?, allowed_tools?}` (null means all tools). |
 | POST | `/service-identities/{id}/revoke` | Immediate. |
 | GET, POST | `/users` | Root and hub admins. Hub admins cannot see root or create a member with a preset password. Create: `{role, app_ids}`. |

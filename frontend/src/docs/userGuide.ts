@@ -198,7 +198,7 @@ export const USER_SECTIONS: GuideSection[] = [
       head: ["Setting", "Effect"],
       rows: [
         ["Name", "Who uses it, for example Support assistant. Shown in the activity log."],
-        ["Expires after", "30, 90, 180 or 365 days."],
+        ["Expires after", "1 day, 1 week, 1 month, or Never. A key with no expiry stays active until revoked or its app is removed."],
         ["Allow write tools", "Lets the key call published create, update and delete tools. The app still checks the user and may ask for confirmation."],
         ["Only selected tools", "Limits the key to the tools you tick. Built-in and memory tools must be ticked too. On a read-only key, tools that create, update or delete are greyed out; tick Allow write tools first."],
       ],

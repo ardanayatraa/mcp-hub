@@ -25,9 +25,12 @@ const mailerReady = ref(false);
 const busy = ref(false);
 const oneTimeLink = ref("");
 const oneTimeInviteId = ref("");
+const oneTimeExpiry = ref<string | null>(null);
 
-const userForm = ref({ open: false, role: "hub_admin", app_ids: [] as string[] });
+const userForm = ref({ open: false, role: "hub_admin", app_ids: [] as string[], invite_expiry: "1_day" });
 const editingUser = ref<AdminUserRow | null>(null);
+const renewingUser = ref<AdminUserRow | null>(null);
+const renewalExpiry = ref("1_day");
 
 async function load() {
   const [appResult, userResult, systemResult] = await Promise.allSettled([
@@ -64,12 +67,16 @@ async function resetMfa(user: AdminUserRow) {
   }
 }
 
-async function resendInvite(user: AdminUserRow) {
+async function resendInvite() {
+  const user = renewingUser.value;
+  if (!user) return;
   busy.value = true;
   try {
-    const result = await hub.resendInvite(user.id);
+    const result = await hub.resendInvite(user.id, renewalExpiry.value);
     oneTimeLink.value = result.activation_url;
     oneTimeInviteId.value = user.id;
+    oneTimeExpiry.value = result.activation_expires_at;
+    renewingUser.value = null;
     toast.ok("New activation link ready");
     await load();
   } catch (exc) {
@@ -89,10 +96,12 @@ async function saveUser() {
       editingUser.value = null;
     } else {
       const form = userForm.value;
-      const result = await hub.createUser({ role: form.role, app_ids: form.role === "hub_admin" ? [] : form.app_ids });
+      const result = await hub.createUser({ role: form.role, app_ids: form.role === "hub_admin" ? [] : form.app_ids,
+        invite_expiry: form.invite_expiry });
       oneTimeLink.value = result.activation_url;
       oneTimeInviteId.value = result.id;
-      userForm.value = { open: false, role: "hub_admin", app_ids: [] };
+      oneTimeExpiry.value = result.activation_expires_at;
+      userForm.value = { open: false, role: "hub_admin", app_ids: [], invite_expiry: "1_day" };
     }
     toast.ok(wasEditing ? "Team updated" : "Activation link ready");
     await load();
@@ -118,6 +127,7 @@ const roles = [
   ["auditor", "Auditor", "Read-only access to assigned apps"],
 ] as const;
 const appName = (appId: string) => apps.value.find((app) => app.app_id === appId)?.name ?? appId;
+const expiryLabel = (iso: string | null) => iso ? `Expires ${new Date(iso).toLocaleString()}` : "Never expires";
 </script>
 
 <template>
@@ -129,7 +139,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <section v-else>
     <div v-if="oneTimeLink" class="card card-pad mb-4 space-y-2">
       <p class="text-sm font-semibold">Activation link · Invite {{ oneTimeInviteId.slice(0, 8) }}</p>
-      <p class="text-xs text-subtle">Share this link privately with the team member. It expires in 24 hours and cannot be shown again after you close it. They will verify their email once, set a password, then sign in with email and password.</p>
+      <p class="text-xs text-subtle">Share this link privately with the team member. {{ expiryLabel(oneTimeExpiry) }}. It is shown once and is used once. They verify their email, set a password, then sign in with email and password.</p>
       <input class="input w-full" :value="oneTimeLink" readonly aria-label="Activation link" @focus="($event.target as HTMLInputElement).select()" />
       <div class="flex gap-2"><button class="btn-primary btn-sm" type="button" @click="copyLink">Copy link</button><button class="btn-secondary btn-sm" type="button" @click="oneTimeLink = ''">Done</button></div>
     </div>
@@ -148,8 +158,8 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
             <td class="text-xs">{{ user.is_root ? "Root" : roles.find((role) => role[0] === user.role)?.[1] ?? user.role }}</td>
             <td class="text-xs text-subtle">{{ ["super_admin", "hub_admin"].includes(user.role) ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
             <td><span :class="user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.pending_activation ? "Activation code" : user.auth_method === "password" ? "Password" : user.mfa_enabled ? "Authenticator" : "Off" }}</span></td>
-            <td><span :class="user.is_active && !user.pending_activation ? 'badge-ok' : 'badge-neutral'">{{ !user.is_active ? "Disabled" : user.pending_activation ? "Pending" : "Active" }}</span></td>
-            <td class="text-right whitespace-nowrap"><button v-if="session.isRoot && user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="resendInvite(user)">New link</button><button v-if="session.isRoot && !user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
+            <td><span :class="user.is_active && !user.pending_activation ? 'badge-ok' : 'badge-neutral'">{{ !user.is_active ? "Disabled" : user.pending_activation ? "Pending" : "Active" }}</span><p v-if="user.pending_activation && user.is_active" class="mt-1 text-xs text-subtle">{{ expiryLabel(user.activation_expires_at) }}</p></td>
+            <td class="text-right whitespace-nowrap"><button v-if="session.isRoot && user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="renewingUser = user">New link</button><button v-if="session.isRoot && !user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
           </tr>
         </tbody>
       </table>
@@ -160,6 +170,10 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
     <form id="user-form" class="space-y-4" @submit.prevent="saveUser">
       <template v-if="!editingUser">
         <p class="text-sm text-subtle">Choose the member's role and app access. After saving, share the activation link privately. They will verify their email once and set a password for future sign-ins.</p>
+        <label class="block"><span class="label">Activation link expires after</span>
+          <select v-model="userForm.invite_expiry" class="input"><option value="1_day">1 day</option><option value="1_week">1 week</option><option value="1_month">1 month</option><option value="never">Never</option></select>
+        </label>
+        <p v-if="userForm.invite_expiry === 'never'" class="text-xs text-subtle">The link stays valid until it is used, the account is disabled, or root replaces it.</p>
       </template>
       <fieldset class="space-y-2">
         <legend class="label">Role</legend>
@@ -188,6 +202,17 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
     <template #footer>
       <button class="btn-secondary" type="button" @click="userForm.open = false; editingUser = null">Cancel</button>
       <button class="btn-primary" type="submit" form="user-form" :disabled="busy">Save</button>
+    </template>
+  </ModalDialog>
+
+  <ModalDialog v-if="renewingUser" title="Create a new activation link" @close="renewingUser = null">
+    <p class="mb-3 text-sm text-subtle">The current link will stop working when you create a new one.</p>
+    <label class="block"><span class="label">New link expires after</span>
+      <select v-model="renewalExpiry" class="input"><option value="1_day">1 day</option><option value="1_week">1 week</option><option value="1_month">1 month</option><option value="never">Never</option></select>
+    </label>
+    <template #footer>
+      <button class="btn-secondary" type="button" @click="renewingUser = null">Cancel</button>
+      <button class="btn-primary" type="button" :disabled="busy" @click="resendInvite">Create link</button>
     </template>
   </ModalDialog>
 </template>

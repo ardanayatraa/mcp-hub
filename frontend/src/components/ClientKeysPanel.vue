@@ -22,7 +22,7 @@ const loaded = ref(false);
 const busy = ref(false);
 const showRevoked = ref(false);
 
-const keyForm = ref({ open: false, editing: "" as string, name: "AI assistant", app_id: "", ttl_days: 90, write: false, limit: false, allowed: [] as string[] });
+const keyForm = ref({ open: false, editing: "" as string, name: "AI assistant", app_id: "", ttl_days: 30 as number | null, write: false, limit: false, allowed: [] as string[] });
 const created = ref<ClientKey | null>(null);
 const revoking = ref<ClientKey | null>(null);
 
@@ -60,12 +60,12 @@ const snippet = computed(() => JSON.stringify({
 }, null, 2));
 
 function newKey() {
-  keyForm.value = { open: true, editing: "", name: "AI assistant", app_id: activeApps.value[0]?.id ?? "", ttl_days: 90, write: false, limit: false, allowed: [] };
+  keyForm.value = { open: true, editing: "", name: "AI assistant", app_id: activeApps.value[0]?.id ?? "", ttl_days: 30, write: false, limit: false, allowed: [] };
 }
 
 function editKey(key: ClientKey) {
   const app = props.apps.find((item) => item.app_id === key.app_id);
-  keyForm.value = { open: true, editing: key.id, name: key.name, app_id: app?.id ?? "", ttl_days: 90, write: key.write,
+  keyForm.value = { open: true, editing: key.id, name: key.name, app_id: app?.id ?? "", ttl_days: 30, write: key.write,
                     limit: key.allowed_tools !== null, allowed: [...(key.allowed_tools ?? [])] };
 }
 
@@ -167,7 +167,8 @@ async function revoke() {
             <option v-for="app in activeApps" :key="app.id" :value="app.id">{{ app.name }} · {{ app.environment }}</option>
           </select></label>
         <label v-if="!keyForm.editing" class="block"><span class="label">Expires after</span>
-          <select v-model.number="keyForm.ttl_days" class="input"><option :value="30">30 days</option><option :value="90">90 days</option><option :value="180">180 days</option><option :value="365">1 year</option></select></label>
+          <select v-model="keyForm.ttl_days" class="input"><option :value="1">1 day</option><option :value="7">1 week</option><option :value="30">1 month</option><option :value="null">Never</option></select></label>
+        <p v-if="!keyForm.editing && keyForm.ttl_days === null" class="text-xs text-subtle">A key without expiry stays active until you revoke it or remove its app.</p>
         <label class="flex items-start gap-3 rounded-lg border border-line p-3">
           <input v-model="keyForm.write" type="checkbox" class="mt-0.5" />
           <span><span class="font-medium">Allow write tools</span>

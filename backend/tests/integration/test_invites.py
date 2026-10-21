@@ -2,9 +2,10 @@
 
 from datetime import timedelta
 
+import pytest
 from app.config import get_settings
 from app.errors import HubError
-from app.ids import utcnow
+from app.ids import as_utc, utcnow
 from app.persistence.models import AdminUser, MfaChallenge
 from app.persistence.session import open_session
 from app.security.crypto import sha256_hex
@@ -100,6 +101,34 @@ def test_multiple_pending_links_need_no_email(admin, monkeypatch):
     assert [row["email"] for row in rows if row["id"] in {first["id"], second["id"]}] == [None, None]
 
 
+@pytest.mark.parametrize(("expiry", "days"), [
+    ("1_day", 1), ("1_week", 7), ("1_month", 30), ("never", None),
+])
+def test_invitation_expiry_choices(admin, monkeypatch, expiry, days):
+    activation_codes = mailer(monkeypatch)
+    before = utcnow()
+    created = api(admin, "POST", "/users", {"role": "hub_admin", "invite_expiry": expiry},
+                  expect=201).json()["data"]
+    token = created["activation_url"].split("#", 1)[1]
+    with open_session() as db:
+        user = db.get(AdminUser, created["id"])
+        assert user.activation_issued_at is not None
+        if days is None:
+            assert user.activation_expires_at is None and created["activation_expires_at"] is None
+        else:
+            remaining = as_utc(user.activation_expires_at) - before
+            assert timedelta(days=days) <= remaining < timedelta(days=days, minutes=1)
+            assert created["activation_expires_at"] is not None
+    challenge = get_code(admin["client"], token, f"{expiry}@example.com")
+    verified = verify_code(admin["client"], token, challenge, activation_codes[-1][1])
+    assert verified.status_code == 200
+    proof = verified.json()["data"]["proof_token"]
+    assert admin["client"].post("/api/admin/v1/auth/activate", json={
+        "token": token, "proof_token": proof, "password": "My-New-Password-123"}).status_code == 200
+    assert admin["client"].post("/api/admin/v1/auth/activation-email", json={
+        "token": token, "email": "another@example.com"}).status_code == 400
+
+
 def test_five_guesses_and_send_cooldown(admin, monkeypatch):
     activation_codes = mailer(monkeypatch)
     _, token = create_invite(admin)
@@ -116,7 +145,8 @@ def test_five_guesses_and_send_cooldown(admin, monkeypatch):
         assert row.attempts == 5
 
 
-def test_new_link_invalidates_old_link(admin, monkeypatch):
+@pytest.mark.parametrize("expiry", ["1_week", "never"])
+def test_new_link_invalidates_old_link(admin, monkeypatch, expiry):
     activation_codes = mailer(monkeypatch)
     created, old_token = create_invite(admin)
     challenge = get_code(admin["client"], old_token, "first@example.com")
@@ -125,11 +155,13 @@ def test_new_link_invalidates_old_link(admin, monkeypatch):
     old_proof = verified.json()["data"]["proof_token"]
     with open_session() as db:
         user = db.get(AdminUser, created["id"])
-        user.activation_expires_at = utcnow() + timedelta(hours=23, minutes=58)
+        user.activation_issued_at = utcnow() - timedelta(minutes=2)
         db.commit()
-    response = api(admin, "POST", f"/users/{created['id']}/resend-invite", expect=200).json()["data"]
+    response = api(admin, "POST", f"/users/{created['id']}/resend-invite",
+                   {"invite_expiry": expiry}, expect=200).json()["data"]
     new_token = response["activation_url"].split("#", 1)[1]
     assert new_token != old_token
+    assert (response["activation_expires_at"] is None) == (expiry == "never")
     assert api(admin, "POST", f"/users/{created['id']}/resend-invite").status_code == 429
     assert admin["client"].post("/api/admin/v1/auth/activation-email", json={
         "token": old_token, "email": "real@example.com"}).status_code == 400
@@ -138,11 +170,22 @@ def test_new_link_invalidates_old_link(admin, monkeypatch):
     get_code(admin["client"], new_token, "real@example.com")
 
 
+def test_never_expiring_invite_stops_when_account_is_disabled(admin, monkeypatch):
+    mailer(monkeypatch)
+    created = api(admin, "POST", "/users", {"role": "auditor", "invite_expiry": "never"},
+                  expect=201).json()["data"]
+    token = created["activation_url"].split("#", 1)[1]
+    api(admin, "PATCH", f"/users/{created['id']}", {"is_active": False}, expect=200)
+    assert admin["client"].post("/api/admin/v1/auth/activation-email", json={
+        "token": token, "email": "disabled@example.com"}).status_code == 400
+
+
 def test_requires_mailer_and_rejects_multiple_addresses(admin, monkeypatch):
     assert api(admin, "POST", "/users", {"role": "hub_admin"}).status_code == 503
     with open_session() as db:
         assert db.scalar(select(AdminUser).where(AdminUser.role == "hub_admin")) is None
     mailer(monkeypatch)
+    assert api(admin, "POST", "/users", {"role": "hub_admin", "invite_expiry": "forever"}).status_code == 422
     assert api(admin, "POST", "/users", {"email": "dummy@example.com",
                "role": "hub_admin"}).status_code == 422
     assert api(admin, "POST", "/users", {"email": "a@localhost,b@localhost",

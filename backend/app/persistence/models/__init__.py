@@ -32,6 +32,7 @@ class AdminUser(Base):
     auth_method: Mapped[str] = mapped_column(String(16), nullable=False, default="totp")
     activation_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     activation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activation_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     totp_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

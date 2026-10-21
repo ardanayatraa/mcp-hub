@@ -14,7 +14,6 @@ from app.persistence.session import open_session
 from app.security.passwords import hash_password
 from app.services.backup import export_metadata
 from sqlalchemy import MetaData, create_engine, inspect, select, text
-from sqlalchemy.orm import Session
 from tests.security.test_prd_regressions import published  # noqa: F401
 
 LEGACY = "902b2fc08310"
@@ -30,17 +29,22 @@ def test_activated_email_code_admins_move_to_password_sign_in(tmp_path, monkeypa
     config = Config("alembic.ini")
     command.upgrade(config, "e8a1b7c4d930")
     engine = create_engine(url)
-    with Session(engine) as db:
-        db.add(AdminUser(id="activated", email="peer@example.com", password_hash=hash_password("Passw0rd-1234"),
-                         role="hub_admin", auth_method="email_otp"))
-        db.add(AdminUser(id="pending", email="old-temp@example.com", password_hash=hash_password("Passw0rd-1234"),
-                         role="hub_admin", auth_method="email_otp", activation_token_hash="a" * 64,
-                         activation_expires_at=utcnow() + timedelta(hours=24)))
-        db.commit()
+    with engine.begin() as connection:
+        for user_id, email, token_hash in (("activated", "peer@example.com", None),
+                                           ("pending", "old-temp@example.com", "a" * 64)):
+            connection.execute(text("INSERT INTO admin_users (id, email, password_hash, role, auth_method, "
+                                    "activation_token_hash, activation_expires_at, mfa_enabled, is_active, created_at) "
+                                    "VALUES (:id, :email, :password_hash, 'hub_admin', 'email_otp', :token_hash, "
+                                    ":expires_at, false, true, :created_at)"),
+                               {"id": user_id, "email": email,
+                                "password_hash": hash_password("Passw0rd-1234"), "token_hash": token_hash,
+                                "expires_at": (utcnow() + timedelta(hours=24)).isoformat() if token_hash else None,
+                                "created_at": utcnow().isoformat()})
     command.upgrade(config, "head")
     with engine.begin() as connection:
         rows = {row.id: row.auth_method for row in connection.execute(text("SELECT id, auth_method FROM admin_users"))}
         assert rows == {"activated": "password", "pending": "email_otp"}
+        assert connection.scalar(text("SELECT activation_issued_at FROM admin_users WHERE id = 'pending'")) is not None
         connection.execute(text("UPDATE admin_users SET email = NULL WHERE id = 'pending'"))
     command.downgrade(config, "e8a1b7c4d930")
     with engine.connect() as connection:

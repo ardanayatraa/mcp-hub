@@ -6,7 +6,7 @@ from datetime import timedelta
 import pyotp
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -77,7 +77,7 @@ class ActivationBody(BaseModel):
 def _invited_user(db: Session, token: str) -> AdminUser:
     user = db.scalar(select(AdminUser).where(
         AdminUser.activation_token_hash == sha256_hex(token),
-        AdminUser.activation_expires_at > utcnow(),
+        or_(AdminUser.activation_expires_at.is_(None), AdminUser.activation_expires_at > utcnow()),
         AdminUser.auth_method == "email_otp",
         AdminUser.is_active.is_(True),
     ))
@@ -154,12 +154,12 @@ def activate(body: ActivationBody, request: Request, db: Session = Depends(get_d
     result = db.execute(update(AdminUser).where(
         AdminUser.id == user.id,
         AdminUser.activation_token_hash == sha256_hex(body.token),
-        AdminUser.activation_expires_at > utcnow(),
+        or_(AdminUser.activation_expires_at.is_(None), AdminUser.activation_expires_at > utcnow()),
         AdminUser.auth_method == "email_otp",
         AdminUser.is_active.is_(True),
     ).values(email=proof.recipient_email, password_hash=hash_password(body.password), auth_method="password",
              activation_token_hash=None,
-             activation_expires_at=None).execution_options(synchronize_session=False))
+             activation_expires_at=None, activation_issued_at=None).execution_options(synchronize_session=False))
     if result.rowcount != 1:
         db.rollback()
         raise HubError("INVALID_INVITATION", "Invitation expired or already used. Ask root for a new link.", 400)

@@ -12,6 +12,7 @@ from app.api.v1.common import ok
 from app.api.v1.configuration import (
     IdentityChanges,
     IdentityCreate,
+    InviteLinkOptions,
     UserChanges,
     UserCreate,
     checked,
@@ -100,7 +101,7 @@ def create_identity(payload: dict, db: Session = Depends(get_db), user: AdminUse
         id=new_id(), name=data["name"], token_hash=sha256_hex(raw), app_id=application.id,
         scopes=[READ_SCOPE] + ([WRITE_SCOPE] if data["write"] else []),
         allowed_tools=_allowed_tools(db, application, data["allowed_tools"]),
-        expires_at=utcnow() + timedelta(days=data["ttl_days"]),
+        expires_at=utcnow() + timedelta(days=data["ttl_days"]) if data["ttl_days"] is not None else None,
     )
     db.add(identity)
     record_audit(db, action="key.create", actor_ref=f"admin:{user.id}", result="success",
@@ -152,6 +153,7 @@ def _user_view(db: Session, row: AdminUser) -> dict:
     return {"id": row.id, "email": None if row.activation_token_hash else row.email,
             "role": row.role, "is_root": row.is_root,
             "auth_method": row.auth_method, "pending_activation": row.activation_token_hash is not None,
+            "activation_expires_at": as_utc(row.activation_expires_at).isoformat() if row.activation_expires_at else None,
             "mfa_enabled": row.mfa_enabled, "is_active": row.is_active,
             "mfa_enroll_until": None if row.mfa_enabled or enrollment_deadline(row) is None else enrollment_deadline(row).isoformat(),
             "app_ids": list(db.scalars(select(AdminApplicationScope.app_id).where(AdminApplicationScope.user_id == row.id))),
@@ -170,6 +172,11 @@ def _set_scopes(db: Session, target: AdminUser, app_ids: list[str]) -> None:
 def _require_team_creator(user: AdminUser) -> None:
     if not ((user.is_root and user.role == "super_admin") or (not user.is_root and user.role == "hub_admin")):
         raise HubError("PERMISSION_DENIED", "Operation is not permitted", 403)
+
+
+def _invite_deadline(expiry: str):
+    days = {"1_day": 1, "1_week": 7, "1_month": 30}
+    return utcnow() + timedelta(days=days[expiry]) if expiry != "never" else None
 
 
 @router.get("/users")
@@ -210,7 +217,8 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
                         password_hash=hash_password(data["password"] or secrets.token_urlsafe(48)), role=data["role"],
                         auth_method="email_otp" if invited else "totp",
                         activation_token_hash=sha256_hex(activation_token) if activation_token else None,
-                        activation_expires_at=utcnow() + timedelta(hours=24) if invited else None,
+                        activation_expires_at=_invite_deadline(data["invite_expiry"]) if invited else None,
+                        activation_issued_at=utcnow() if invited else None,
                         mfa_enroll_until=utcnow() + timedelta(hours=get_settings().mfa_enroll_hours) if not invited else None)
     db.add(created)
     db.flush()
@@ -222,24 +230,29 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
 
 
 @router.post("/users/{user_id}/resend-invite")
-def resend_invite(user_id: str, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+def resend_invite(user_id: str, payload: dict | None = None, db: Session = Depends(get_db),
+                  user: AdminUser = Depends(require_csrf)):
     require_root(user)
+    data = checked(InviteLinkOptions, payload or {})
     target = db.get(AdminUser, user_id)
     if target is None:
         raise HubError("NOT_FOUND", "Administrator was not found", 404)
     if target.auth_method != "email_otp" or target.activation_token_hash is None or not target.is_active:
         raise HubError("CONFLICT", "This account has no pending invitation", 409)
-    if target.activation_expires_at and as_utc(target.activation_expires_at) > utcnow() + timedelta(hours=23, minutes=59):
+    if target.activation_issued_at and as_utc(target.activation_issued_at) > utcnow() - timedelta(minutes=1):
         raise HubError("RATE_LIMITED", "Please wait before resending this invitation", 429)
     require_mailer()
     token = secrets.token_urlsafe(32)
     target.activation_token_hash = sha256_hex(token)
-    target.activation_expires_at = utcnow() + timedelta(hours=24)
+    target.activation_expires_at = _invite_deadline(data["invite_expiry"])
+    target.activation_issued_at = utcnow()
     db.execute(delete(MfaChallenge).where(MfaChallenge.user_id == target.id,
                MfaChallenge.purpose.in_(["activation_code", "activation_ready"])))
     record_audit(db, action="admin.invite_resend", actor_ref=f"admin:{user.id}", result="success")
     db.commit()
-    return ok({"activation_url": activation_url(token)})
+    return ok({"activation_url": activation_url(token),
+               "activation_expires_at": as_utc(target.activation_expires_at).isoformat()
+               if target.activation_expires_at else None})
 
 
 @router.patch("/users/{user_id}")

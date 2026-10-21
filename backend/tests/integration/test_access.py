@@ -2,6 +2,7 @@
 
 import copy
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -442,6 +443,35 @@ def test_hub_admin_can_create_keys_and_invite_but_cannot_change_team(admin, monk
     assert client.post("/api/admin/v1/model-providers", headers=headers,
                        json={"key": "peer_provider", "name": "Peer Provider",
                              "base_url": "https://models.example.test/v1"}).status_code == 201
+
+
+@pytest.mark.parametrize("ttl_days", [1, 7, 30, None])
+def test_client_key_expiry_choices(admin, ttl_days):
+    from app.ids import as_utc, utcnow
+    from app.persistence.models import Application, ServiceIdentity
+    from app.security.auth import lookup_service_token
+
+    with open_session() as db:
+        db.add(Application(key="your_app", name="Your App", environment="dev"))
+        db.commit()
+    before = utcnow()
+    created = api(admin, "POST", "/service-identities", {
+        "name": "expiry choice", "app_key": "your_app", "environment": "dev", "ttl_days": ttl_days,
+    }, expect=201).json()["data"]
+    assert (created["expires_at"] is None) == (ttl_days is None)
+    with open_session() as db:
+        key = db.get(ServiceIdentity, created["id"])
+        if ttl_days is None:
+            assert key.expires_at is None
+        else:
+            remaining = as_utc(key.expires_at) - before
+            assert timedelta(days=ttl_days) <= remaining < timedelta(days=ttl_days, minutes=1)
+        assert lookup_service_token(db, created["token"]) is not None
+    if ttl_days is None:
+        assert helpers.mcp(admin["client"], created["token"], "tools/list").status_code == 200
+    api(admin, "POST", f"/service-identities/{created['id']}/revoke", expect=200)
+    with open_session() as db:
+        assert lookup_service_token(db, created["token"]) is None
 
 
 def test_every_attempt_carries_a_fresh_one_time_assertion(admin, monkeypatch):

@@ -73,7 +73,7 @@ class IdentityCreate(BaseModel):
     name: str = Field(default="gateway", min_length=1, max_length=120)
     app_key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     environment: Environment = "dev"
-    ttl_days: int = Field(default=90, ge=1, le=365)
+    ttl_days: int | None = Field(default=30, ge=1, le=365)
     write: bool = False
     allowed_tools: list[str] | None = Field(default=None, max_length=200)
 
@@ -91,6 +91,12 @@ class UserCreate(BaseModel):
     role: Literal["hub_admin", "app_admin", "auditor"]
     password: str | None = Field(default=None, min_length=12, max_length=200)
     app_ids: list[str] = Field(default_factory=list, max_length=500)
+    invite_expiry: Literal["1_day", "1_week", "1_month", "never"] = "1_day"
+
+
+class InviteLinkOptions(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    invite_expiry: Literal["1_day", "1_week", "1_month", "never"] = "1_day"
 
 
 class UserChanges(BaseModel):

@@ -70,7 +70,8 @@ Sign in as the first root admin and scan the authenticator QR code within `MFA_E
 Root uses authenticator MFA in production even if `MFA_REQUIRED=false`. If the window passed,
 run on the server: `python -m app.bootstrap --reset-mfa admin@example.com`. Set SMTP first,
 then add other admins under **Access → Team** without entering an email. Hub admins can also
-invite members there; their Team list excludes root. Copy the 24-hour
+invite members there; their Team list excludes root. Choose the link lifetime (1 day, 1 week,
+1 month, or never), then copy the
 activation link and share it privately. The member enters their real email, verifies an
 emailed code, and sets a password. Later sign-ins use email and password. Root can
 issue a new link when the previous one expires.
