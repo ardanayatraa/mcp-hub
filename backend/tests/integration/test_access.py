@@ -355,6 +355,9 @@ def test_tools_without_input_ignore_stray_arguments(admin, monkeypatch):
         assert result(call(admin["client"], token, "list_data_sources", {"reason": "User asked"}))["success"]
         stray = call(admin["client"], token, "run_report", {"source": "projects", "reason": "User asked"}, delegation())
         assert "VALIDATION_FAILED" in error_text(stray)
+        # Models also name a source "app:source"; it means the same as "app.source".
+        assert result(call(admin["client"], token, "run_report", {"source": "your_app:projects"}, delegation()))["success"]
+        assert "signed-in user" in error_text(call(admin["client"], token, "run_report", {"source": "projects"}))
 
 
 def test_key_permissions_can_change_and_revocation_is_immediate(admin, monkeypatch):

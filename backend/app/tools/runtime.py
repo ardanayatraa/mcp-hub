@@ -49,6 +49,9 @@ from app.tools.schema_tools import project_output_schema, validate_arguments, va
 
 SAFE_UPSTREAM_CODES = {"PERMISSION_DENIED", "VALIDATION_FAILED", "NOT_FOUND", "RATE_LIMITED", "SCHEMA_MISMATCH"}
 CIRCUIT_CODES = {"UPSTREAM_TIMEOUT", "UPSTREAM_UNAVAILABLE", "UPSTREAM_ERROR"}
+# Read by the model, which tells the user: say what is missing and where it works instead.
+NO_SIGNED_IN_USER = ("Only a signed-in user of the app can read this data, and this request has none "
+                     "(the Hub's Try it never has one). Ask from inside the app while signed in.")
 
 Fetch = Callable[..., Awaitable[tuple[int, bytes]]]
 
@@ -388,7 +391,7 @@ async def execute_tool(db: Session, *, tool: ToolDefinition, arguments: dict, ac
     source = load_source(db, connector, application, module, settings)
     delegation = delegation_from_header(delegation_header, source.delegation_secret, application.key)
     if route.requires_user_context and delegation is None:
-        raise HubError("PERMISSION_DENIED", "This tool requires source-verified user context", 403)
+        raise HubError("PERMISSION_DENIED", NO_SIGNED_IN_USER, 403)
     tenant_id = delegation["tenant_id"] if delegation else None
     fetch = live_fetch(source, route, delegation, settings, trace_id, write=tool.template in WRITE_TEMPLATES)
     error = None
@@ -422,12 +425,14 @@ def report_route(db: Session, module: ModuleDefinition, connector: Connector) ->
 
 
 def resolve_source_key(application: Application, value) -> str:
-    """Accept 'orders' or 'app_key.orders'."""
+    """Accept 'orders', 'app_key.orders' or 'app_key:orders' (models write both)."""
 
     if not isinstance(value, str) or not 1 <= len(value) <= 130:
         raise HubError("VALIDATION_FAILED", "source must name a data source from list_data_sources", 422)
-    prefix = application.key + "."
-    return value[len(prefix):] if value.startswith(prefix) else value
+    for prefix in (application.key + ".", application.key + ":"):
+        if value.startswith(prefix):
+            return value[len(prefix):]
+    return value
 
 
 async def run_report_for_caller(db: Session, *, application: Application, connector: Connector, arguments: dict,
@@ -444,7 +449,7 @@ async def run_report_for_caller(db: Session, *, application: Application, connec
     source = load_source(db, connector, application, module, settings)
     delegation = delegation_from_header(delegation_header, source.delegation_secret, application.key)
     if route.requires_user_context and delegation is None:
-        raise HubError("PERMISSION_DENIED", "This data source requires source-verified user context", 403)
+        raise HubError("PERMISSION_DENIED", NO_SIGNED_IN_USER, 403)
     error = None
     try:
         with concurrency_slot(f"builtin:{application.id}:run_report", settings.tool_concurrency):
