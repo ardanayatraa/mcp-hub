@@ -19,8 +19,8 @@ import ToolGenerator from "@/components/ToolGenerator.vue";
 import { hub, type AppDetail, type DataSource, type Tool, type ToolSwitches } from "@/services/hub";
 import { useSession } from "@/stores/session";
 import { useToast } from "@/stores/toast";
-import { appStatus, badgeClass, dateTime, errorMessage, templateInfo, timeAgo, toolStatus } from "@/utils/format";
-import { kindStyle, toolKind } from "@/utils/toolKinds";
+import { appStatus, badgeClass, dateTime, errorMessage, timeAgo, toolStatus } from "@/utils/format";
+import { kindStyle, TOOL_KINDS, toolKind } from "@/utils/toolKinds";
 import { useSlowFlag } from "@/utils/loading";
 import { useCatalogRefresh } from "@/utils/sources";
 
@@ -101,15 +101,35 @@ function sourceSaved(updated: DataSource) {
   sources.value = sources.value.map((source) => (source.id === updated.id ? updated : source));
 }
 
-const toolFilter = ref({ search: "", source: "", template: "", status: "" });
-const toolSources = computed(() => [...new Map(tools.value.map((tool) => [tool.module_key, tool.module_name])).entries()]
-  .sort((a, b) => a[1].localeCompare(b[1])));
-const shownTools = computed(() => {
-  const { search, source, template, status } = toolFilter.value;
-  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
-  return tools.value.filter((tool) => (!source || tool.module_key === source) && (!template || tool.template === template)
-    && (!status || toolStatus(tool).label === status)
-    && words.every((word) => `${tool.display_title} ${tool.mcp_name} ${tool.module_name}`.toLowerCase().includes(word)));
+// One card per data source (plus one for the Hub's built-in tools); a card opens its tools in a modal.
+const BUILT_IN = "__built_in";
+const KIND_ORDER = Object.keys(TOOL_KINDS);
+const toolGroups = computed(() => {
+  const groups = new Map<string, { key: string; name: string; tools: Tool[] }>();
+  for (const tool of tools.value) {
+    if (!groups.has(tool.module_key)) groups.set(tool.module_key, { key: tool.module_key, name: tool.module_name, tools: [] });
+    groups.get(tool.module_key)?.tools.push(tool);
+  }
+  const order = (tool: Tool) => KIND_ORDER.indexOf(toolKind(tool.template, tool.tool_key));
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
+    .map((group) => ({ ...group, tools: group.tools.sort((a, b) => order(a) - order(b) || a.display_title.localeCompare(b.display_title)) }));
+});
+const isOn = (name: string) => switchFor.value.get(name)?.enabled ?? true;
+const groupKinds = (group: { tools: Tool[] }) => [...new Set(group.tools.map((tool) => toolKind(tool.template, tool.tool_key)))]
+  .sort((a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b));
+const notLive = (group: { tools: Tool[] }) => group.tools.filter((tool) => toolStatus(tool).label !== "Live").length;
+const openGroup = ref("");
+const modalTitle = computed(() => openGroup.value === BUILT_IN ? "Built-in tools"
+  : toolGroups.value.find((group) => group.key === openGroup.value)?.name ?? "");
+const modalRows = computed<{ name: string; title: string; detail: string; kind: string; status: ReturnType<typeof toolStatus>;
+  toolId?: string }[]>(() => {
+  if (openGroup.value === BUILT_IN) {
+    return hubTools.value.map((row) => ({ name: row.name, title: row.title, detail: row.live ? "" : row.note ?? "",
+      kind: row.kind, status: row.live ? toolStatus({ status: "published", stale: false }) : { label: "Not live", tone: "neutral" } }));
+  }
+  return (toolGroups.value.find((group) => group.key === openGroup.value)?.tools ?? []).map((tool) => ({
+    name: tool.mcp_name, title: tool.display_title, detail: tool.description, kind: toolKind(tool.template, tool.tool_key),
+    status: toolStatus(tool), toolId: tool.id }));
 });
 
 async function run(action: string, task: () => Promise<unknown>, message: string) {
@@ -138,9 +158,8 @@ async function setSwitches(changes: Record<string, boolean>, message: string) {
   }
 }
 
-function switchShown(on: boolean) {
-  const changes = Object.fromEntries(shownTools.value.filter((tool) => switchFor.value.get(tool.mcp_name)?.enabled !== on)
-    .map((tool) => [tool.mcp_name, on]));
+function switchGroup(on: boolean) {
+  const changes = Object.fromEntries(modalRows.value.filter((row) => isOn(row.name) !== on).map((row) => [row.name, on]));
   const count = Object.keys(changes).length;
   void setSwitches(changes, `${count} tool${count === 1 ? "" : "s"} switched ${on ? "on" : "off"}`);
 }
@@ -248,86 +267,73 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
                       :editable="session.canWrite && !archived" :managed="sourceManaged" @updated="sourceSaved" />
 
     <section v-else-if="tab === 'tools'" class="space-y-4">
-      <div v-if="switches" class="card">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-          <div>
-            <h2 class="card-title">What the AI may use</h2>
-            <p class="text-xs text-subtle">{{ switches.reaching_ai }} tools reach AI clients and the chat now<template v-if="switches.off">
-              · {{ switches.off }} switched off</template>. A switched-off tool is hidden and refused for every key of {{ app.name }}.</p>
-          </div>
-          <span v-if="pending === 'switch'" class="spinner text-subtle" />
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="section-title">What the AI may use</h2>
+          <p v-if="switches" class="text-xs text-subtle">{{ switches.reaching_ai }} tools reach AI clients and the chat now<template v-if="switches.off">
+            · {{ switches.off }} switched off</template>. Open a card to switch its tools on or off.</p>
         </div>
-        <ul class="grid gap-px overflow-hidden rounded-b-xl bg-line sm:grid-cols-2">
-          <li v-for="row in hubTools" :key="row.name" class="flex items-center gap-3 bg-surface px-5 py-3 sm:odd:last:col-span-2">
-            <ToggleSwitch :model-value="row.enabled" :label="`${row.title} on or off`" :disabled="!session.canWrite || archived || busy"
-                          @update:model-value="(on: boolean) => setSwitches({ [row.name]: on }, `${row.title} switched ${on ? 'on' : 'off'}`)" />
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium">{{ row.title }} <span class="badge-neutral ml-1">{{ row.group }}</span></p>
-              <p class="truncate font-mono text-xs text-subtle">{{ row.name }}</p>
-            </div>
-            <span v-if="!row.enabled" class="badge-neutral">Off</span>
-            <span v-else-if="!row.live" class="text-xs text-subtle">{{ row.note }}</span>
-            <span v-else class="badge-ok">On</span>
-          </li>
-        </ul>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <template v-if="tools.length">
-          <div class="relative">
-            <AppIcon name="search" :size="14" class="pointer-events-none absolute left-2.5 top-2.5 text-subtle" />
-            <input v-model="toolFilter.search" class="input w-56 pl-8" placeholder="Search tools" aria-label="Search tools" />
-          </div>
-          <select v-model="toolFilter.source" class="input w-44" aria-label="Data source">
-            <option value="">All data sources</option>
-            <option v-for="[key, name] in toolSources" :key="key" :value="key">{{ name }}</option>
-          </select>
-          <select v-model="toolFilter.template" class="input w-36" aria-label="Type">
-            <option value="">Any type</option>
-            <option v-for="(info, key) in templateInfo" :key="key" :value="key">{{ info.label }}</option>
-          </select>
-          <select v-model="toolFilter.status" class="input w-36" aria-label="Status">
-            <option value="">Any status</option><option>Live</option><option>Draft</option><option>Needs re-test</option><option>Disabled</option>
-          </select>
-        </template>
-        <span class="ml-auto flex flex-wrap gap-2">
-          <template v-if="switches && shownTools.length && session.canWrite && !archived">
-            <button type="button" class="btn-ghost" :disabled="busy" @click="switchShown(true)"><AppIcon name="power" :size="16" /> All shown on</button>
-            <button type="button" class="btn-ghost" :disabled="busy" @click="switchShown(false)">All shown off</button>
-          </template>
+        <span class="flex flex-wrap gap-2">
           <button v-if="session.canWrite && !archived" type="button" class="btn-secondary" @click="generating = true">
             <AppIcon :name="sourceManaged ? 'refresh' : 'sparkles'" :size="16" /> {{ sourceManaged ? "Refresh tools" : "Generate tools" }}</button>
           <RouterLink v-if="!sourceManaged && session.canWrite && !archived" :to="`/tools/new?connector=${id}`" class="btn-primary"><AppIcon name="plus" :size="16" /> New tool</RouterLink>
         </span>
       </div>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <button v-for="group in toolGroups" :key="group.key" type="button"
+                class="card card-pad flex flex-col text-left transition hover:border-brand/50" @click="openGroup = group.key">
+          <span class="flex items-center justify-between gap-2">
+            <span class="truncate font-medium">{{ group.name }}</span>
+            <span :class="group.tools.some((tool) => isOn(tool.mcp_name)) ? 'badge-ok' : 'badge-neutral'">
+              {{ group.tools.filter((tool) => isOn(tool.mcp_name)).length }}/{{ group.tools.length }} on</span>
+          </span>
+          <span class="mt-3 flex flex-wrap gap-1.5">
+            <span v-for="kind in groupKinds(group)" :key="kind" class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
+                  :class="kindStyle(kind).tile"><AppIcon :name="kindStyle(kind).icon" :size="12" /> {{ kindStyle(kind).label }}</span>
+          </span>
+          <span v-if="notLive(group)" class="mt-2 block text-xs text-subtle">{{ notLive(group) }} not live yet</span>
+        </button>
+        <button v-if="hubTools.length" type="button" class="card card-pad flex flex-col text-left transition hover:border-brand/50"
+                @click="openGroup = BUILT_IN">
+          <span class="flex items-center justify-between gap-2">
+            <span class="truncate font-medium">Built-in tools</span>
+            <span :class="hubTools.some((row) => row.enabled) ? 'badge-ok' : 'badge-neutral'">
+              {{ hubTools.filter((row) => row.enabled).length }}/{{ hubTools.length }} on</span>
+          </span>
+          <span class="mt-3 flex flex-wrap gap-1.5">
+            <span v-for="row in hubTools" :key="row.name" class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
+                  :class="kindStyle(row.kind).tile"><AppIcon :name="kindStyle(row.kind).icon" :size="12" /> {{ row.title }}</span>
+          </span>
+        </button>
+      </div>
       <EmptyState v-if="!tools.length" icon="tools" :title="sourceManaged ? 'No models allowed' : 'No custom tools yet'"
                   :text="sourceManaged ? 'Allow a model in the application to make its tools available.' : 'AI clients can already use run_report on allowed data sources. Generate named tools for every published route, or add one by hand.'" />
-      <template v-else>
-        <div class="card overflow-x-auto">
-          <table class="tbl">
-            <thead><tr><th v-if="switches" class="w-16">AI</th><th>Tool</th><th>Type</th><th>Data source</th><th>Status</th></tr></thead>
-            <tbody>
-              <tr v-for="tool in shownTools" :key="tool.id" class="row-link" @click="router.push(`/tools/${tool.id}`)">
-                <td v-if="switches" @click.stop>
-                  <ToggleSwitch :model-value="switchFor.get(tool.mcp_name)?.enabled ?? true" :label="`${tool.display_title} on or off`"
-                                :disabled="!session.canWrite || archived || busy"
-                                @update:model-value="(on: boolean) => setSwitches({ [tool.mcp_name]: on }, `${tool.display_title} switched ${on ? 'on' : 'off'}`)" />
-                </td>
-                <td><span class="flex min-w-0 items-center gap-2.5">
-              <span class="grid h-8 w-8 shrink-0 place-items-center rounded-md" :class="kindStyle(toolKind(tool.template, tool.tool_key)).tile">
-                <AppIcon :name="kindStyle(toolKind(tool.template, tool.tool_key)).icon" :size="15" /></span>
-              <span class="min-w-0"><span class="block truncate font-medium">{{ tool.display_title }}</span>
-                <span class="block truncate font-mono text-xs text-subtle">{{ tool.mcp_name }}</span></span></span></td>
-                <td><span :class="badgeClass(templateInfo[tool.template]?.tone ?? 'neutral')">{{ templateInfo[tool.template]?.label ?? tool.template }}</span></td>
-                <td class="text-xs">{{ tool.module_name }}</td>
-                <td><span v-if="switchFor.get(tool.mcp_name)?.enabled === false" class="badge-neutral">Switched off</span>
-                  <span v-else :class="badgeClass(toolStatus(tool).tone)">{{ toolStatus(tool).label }}</span></td>
-              </tr>
-              <tr v-if="!shownTools.length"><td :colspan="switches ? 5 : 4" class="py-8 text-center text-subtle">No tools match these filters.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="mt-2 text-xs text-subtle">Showing {{ shownTools.length }} of {{ tools.length }} tools</p>
-      </template>
+
+      <ModalDialog v-if="openGroup" :title="modalTitle" @close="openGroup = ''">
+        <p class="mb-2 text-xs text-subtle">A switched-off tool is hidden and refused for every key of {{ app.name }} and its chat.</p>
+        <ul class="divide-y divide-line">
+          <li v-for="row in modalRows" :key="row.name" class="flex items-center gap-3 py-3">
+            <ToggleSwitch v-if="switches" :model-value="isOn(row.name)" :label="`${row.title} on or off`" :disabled="!session.canWrite || archived || busy"
+                          @update:model-value="(on: boolean) => setSwitches({ [row.name]: on }, `${row.title} switched ${on ? 'on' : 'off'}`)" />
+            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-md" :class="kindStyle(row.kind).tile"><AppIcon :name="kindStyle(row.kind).icon" :size="15" /></span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium">{{ row.title }}</span>
+              <span v-if="row.detail" class="block truncate text-xs text-subtle">{{ row.detail }}</span>
+            </span>
+            <span v-if="!isOn(row.name)" class="badge-neutral">Off</span>
+            <span v-else :class="badgeClass(row.status.tone)">{{ row.status.label }}</span>
+            <RouterLink v-if="row.toolId" :to="`/tools/${row.toolId}`" class="btn-ghost btn-sm" :aria-label="`Open ${row.title}`">
+              <AppIcon name="chevron-right" :size="16" /></RouterLink>
+          </li>
+        </ul>
+        <template #footer>
+          <template v-if="switches && session.canWrite && !archived">
+            <button type="button" class="btn-ghost" :disabled="busy" @click="switchGroup(false)">All off</button>
+            <button type="button" class="btn-ghost" :disabled="busy" @click="switchGroup(true)"><AppIcon name="power" :size="16" /> All on</button>
+          </template>
+          <button type="button" class="btn-primary" @click="openGroup = ''">Done</button>
+        </template>
+      </ModalDialog>
     </section>
 
     <AppSkillsPanel v-else-if="tab === 'skills'" :app="app" :editable="session.canWrite && !archived" @changed="(count: number) => (skillsOn = count)" />

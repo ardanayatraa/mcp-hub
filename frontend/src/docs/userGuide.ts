@@ -116,7 +116,7 @@ export const USER_SECTIONS: GuideSection[] = [
       "**Capabilities** (Tools page) describes what this MCP can do right now: live tools by kind, reading, reports (filter operators, totals, time buckets and limits), create/update/delete with confirmation, skills, memory, AI chat, switches and safety limits, how AI clients connect, and what each app allows.",
       "**Report playground** previews `run_report` on an app without an AI client.",
       "**What the agent sees** shows the exact tools, inputs, skills and instructions an AI client gets for any app and client key.",
-      "**Switches**: on the app's **Tools** tab every tool has an on/off switch, including the built-in and memory tools. Off hides the tool from every client key of that app and from the chat, refuses calls to it, and hides any skill that needs it. Use **All shown on / off** with the filters to switch many at once.",
+      "**Switches**: the app's **Tools** tab shows one card per data source, plus one for the built-in and memory tools, with how many of its tools are on. Open a card to switch each tool on or off, or all of them with **All on / All off**. Off hides the tool from every client key of that app and from the chat, refuses calls to it, and hides any skill that needs it.",
     ],
   },
   {
