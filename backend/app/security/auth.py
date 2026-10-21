@@ -111,6 +111,37 @@ def authenticate_password(db: Session, email: str, password: str) -> AdminUser |
     return user
 
 
+def enrollment_deadline(user: AdminUser):
+    """When a never-enrolled admin's MFA setup window closes; None until it has started."""
+
+    return as_utc(user.mfa_enroll_until) if user.mfa_enroll_until else None
+
+
+def enrollment_open(user: AdminUser, hours: int) -> bool:
+    """Whether a never-enrolled admin may still set up MFA with a password alone.
+
+    Admins from before the window existed get theirs at the first sign-in that requires MFA, so
+    turning MFA_REQUIRED on later does not lock every one of them out.
+    """
+
+    if user.mfa_enroll_until is None:
+        user.mfa_enroll_until = utcnow() + timedelta(hours=hours)
+        return True
+    return utcnow() <= as_utc(user.mfa_enroll_until)
+
+
+def reset_mfa(db: Session, user: AdminUser, hours: int) -> None:
+    """Clear the admin's authenticator, sign them out everywhere and open a new enrollment window."""
+
+    from sqlalchemy import delete
+
+    user.mfa_enabled = False
+    user.totp_secret_encrypted = None
+    user.last_totp_counter = None
+    user.mfa_enroll_until = utcnow() + timedelta(hours=hours)
+    db.execute(delete(AdminSession).where(AdminSession.user_id == user.id))
+
+
 def verify_totp(user: AdminUser, code: str) -> int | None:
     if not user.totp_secret_encrypted:
         return None

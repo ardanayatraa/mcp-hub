@@ -20,6 +20,7 @@ from app.persistence.models import (
     ConnectorSecret,
     ContractSnapshot,
     FieldPolicy,
+    GatewayUsage,
     MemorySetting,
     MfaChallenge,
     ModelProvider,
@@ -171,6 +172,10 @@ def purge_expired(db: Session, retention_days: int) -> dict:
     result = db.execute(delete(AdminSession).where(AdminSession.expires_at < utcnow()))
     removed["expired_sessions"] = result.rowcount or 0
     removed["expired_memories"] = memory.purge_expired(db)
+    # Gateway usage is kept a little over a year, for month-on-month comparisons.
+    oldest = (utcnow().replace(day=1) - timedelta(days=366)).strftime("%Y-%m")
+    result = db.execute(delete(GatewayUsage).where(GatewayUsage.period < oldest))
+    removed[GatewayUsage.__tablename__] = result.rowcount or 0
     return removed
 
 

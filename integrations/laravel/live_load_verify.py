@@ -80,6 +80,9 @@ def main(phase: str) -> None:
         report.setdefault("phases", {})
         phase_result = {"checked_at": datetime.now(timezone.utc).isoformat(), "source_health": "ok"}
         if phase == "smoke":
+            sources = tool("list_data_sources", {}, "a")
+            source_names = {row.get("source") for row in sources.get("data", [])}
+            assert {"billing_users", "blast_messages", "templates"} <= source_names
             counts = {}
             for actor, expected_count in (("a", 1200), ("b", 300)):
                 body = tool("hireach__blast_messages__count", {}, actor)
@@ -96,7 +99,18 @@ def main(phase: str) -> None:
             assert "PERMISSION_DENIED" in tool("hireach__blast_messages__count", {}, None, error=True)["message"]
             assert tool("hireach__blast_messages__list", {"limit": 51}, "a", error=True)
             assert tool("hireach__billing_users__prepare_update", {"ref": "bogus"}, "a", error=True)
-            assert tool("hireach__templates__list", {}, "a", error=True)
+            templates = tool("hireach__templates__list", {}, "a")
+            assert templates["meta"]["total_count"] == len(templates["data"]) == 20
+            assert all({"ref", "name"} <= row.keys() for row in templates["data"])
+            assert tool("hireach__templates__count", {}, "a")["data"][0]["count"] == 20
+            first_template = templates["data"][0]
+            detail = tool("hireach__templates__get", {"name": first_template["name"]}, "a")
+            assert detail["data"][0]["name"] == first_template["name"]
+            assert "PERMISSION_DENIED" in tool("hireach__templates__count", {}, None, error=True)["message"]
+            for actor in ("a", "b"):
+                billing_page = tool("hireach__billing_users__list", {}, actor)
+                assert billing_page["meta"]["total_count"] == 1
+                assert len(billing_page["data"]) == 1
             phase_result["visible_messages"] = counts
             print("Live MCP smoke: two account scopes, 1,500 visible messages, billing profiles, denied calls OK.", flush=True)
 
@@ -133,6 +147,10 @@ def main(phase: str) -> None:
             complete = tool("run_report", {"source": "blast_messages", "metrics": [{"fn": "count"}]}, "b")
             assert complete["data"]["totals"]["count"] == 300
             assert complete["meta"]["coverage"] == "complete"
+            for source, expected_count in (("templates", 20), ("billing_users", 1)):
+                result = tool("run_report", {"source": source, "metrics": [{"fn": "count"}]}, "a")
+                assert result["data"]["totals"]["count"] == expected_count
+                assert result["meta"]["coverage"] == "complete"
             phase_result["report_cap"] = 1000
             phase_result["report_complete_count"] = 300
             print("Live MCP reports: 1,000-record cap and 300-record complete scan OK.", flush=True)

@@ -11,3 +11,6 @@ dist/
 infra/certs/
 .verification/
 .uv-cache/
+tmp/
+output/
+dev.env

@@ -12,7 +12,9 @@ use InvalidArgumentException;
 class McpResourceRegistry
 {
     public const BLOCKED_FIELDS = ['id', 'ref', 'tenant_id', 'user_id', 'msisdn', 'message_content',
-        'description', 'email', 'phone', 'phone_number', 'password', 'token', 'secret', 'api_key'];
+        'description', 'email', 'phone', 'phone_number', 'password', 'token', 'secret', 'api_key',
+        'otp', 'pin', 'cvv', 'cvc', 'passport', 'iban', 'dob', 'ssn', 'verification_code',
+        'auth_code', 'security_code', 'card_number', 'credit_card', 'account_number', 'national_id'];
 
     public static function registrations(): array
     {
@@ -150,6 +152,9 @@ class McpResourceRegistry
             }
             $keywords = $config['keywords'] ?? [str_replace('_', ' ', $key), $config['label'] ?? Str::title(str_replace('_', ' ', $key))];
             if ($key === 'blast_messages') { $keywords[] = 'blast'; }
+            // The screens call a BillingUser the user's billing profile; without these the bare word
+            // "billing" points the question at the Billing model, which AI may not read.
+            if ($key === 'billing_users') { array_push($keywords, 'billing profile', 'profil billing', 'profil tagihan'); }
             $out[$key] = array_merge($config, ['owner' => $owner, 'fields' => $fields, 'lookup' => $lookup,
                 'filters' => $filters, 'ref_prefix' => $prefix,
                 'label' => $config['label'] ?? Str::title(str_replace('_', ' ', $key)),
@@ -174,7 +179,7 @@ class McpResourceRegistry
 
     private static function blocked(string $field): bool
     {
-        if (in_array($field, self::BLOCKED_FIELDS, true)) { return true; }
+        if (in_array($field, self::BLOCKED_FIELDS, true) || self::writeBlocked($field)) { return true; }
         foreach (['password', 'token', 'secret', 'api_key', 'authorization', 'email', 'phone', 'msisdn',
             'no_ktp', 'nik', 'npwp', 'birth', 'address', 'private_'] as $part) {
             if (str_contains($field, $part)) { return true; }

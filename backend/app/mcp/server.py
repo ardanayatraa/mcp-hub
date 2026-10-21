@@ -58,9 +58,12 @@ class HubMCPServer(MCPServer):
                 visible = catalog.visible_tools(db, caller)
                 db.commit()
                 return visible
-            except HubError:
+            except HubError as exc:
                 db.rollback()
-                # A failed policy fetch must not expose yesterday's permissions.
+                # A failed policy fetch must not expose yesterday's permissions. Say why in the log:
+                # the app only sees an empty tool list.
+                logger.warning("source_permissions_unavailable",
+                               extra={"app_key": caller.application.key, "error_code": exc.code})
                 return []
         finally:
             db.close()

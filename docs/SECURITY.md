@@ -8,7 +8,8 @@ top of the app's own checks. It never replaces them.
 - Argon2 passwords (12+ characters, upper, lower, digit). Unknown emails take the same verification path as known ones.
 - Session cookie: `HttpOnly`, `SameSite=Strict`, `Secure` in production. Every non-GET request needs the `X-CSRF-Token`.
 - TOTP MFA with single-use, expiring challenges and replay-protected codes. Production refuses to start without `MFA_REQUIRED=true`.
-- Login and MFA attempts are rate limited without logging the submitted address or code.
+- An admin who never enrolled may enroll with the password alone only within `MFA_ENROLL_HOURS` (72) of being created or reset; later the password alone is refused (`MFA_ENROLLMENT_EXPIRED`) until a super admin resets it, or `python -m app.bootstrap --reset-mfa EMAIL` is run on the server. A reset clears the authenticator and ends the admin's sessions.
+- Login and MFA attempts are rate limited per client address without logging the submitted address or code. Behind a proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the limit sees each client, not the proxy.
 - Roles: `super_admin` (everything, users and backups), `app_admin` and `auditor` (only assigned apps; auditors are read-only and never see tokens or hashes). The last active super admin cannot be demoted or disabled. Disabled admins lose access on their next request.
 
 ## Client keys (MCP callers)
@@ -74,10 +75,11 @@ Memory is off until an admin turns it on for an app. When it is on:
 
 ## Hub chat
 
-- The Claude key (`ANTHROPIC_API_KEY`) lives in the Hub's environment. OpenAI-compatible provider
-  keys are added by super admins under **AI providers**, encrypted with `SECRET_ENCRYPTION_KEY`,
+- Model keys are set by super admins under **AI providers**: the Claude key on the Claude card,
+  OpenAI-compatible keys per provider. They are encrypted with `SECRET_ENCRYPTION_KEY`,
   never returned (only the last four characters), and included in backups as ciphertext. Apps and
   browsers never see any model key; apps call `/chat/v1` from their server with a client key.
+  A Claude key saved in the Hub wins over `ANTHROPIC_API_KEY`, which remains a fallback.
 - Provider addresses follow the connector egress rules: HTTPS unless `ALLOW_INSECURE_HTTP`, no
   credentials in the URL, private and loopback addresses only when `EGRESS_ALLOW_PRIVATE` /
   `EGRESS_ALLOW_LOOPBACK` allow them, ports from `MODEL_EGRESS_ALLOWED_PORTS`, and only
@@ -90,6 +92,9 @@ Memory is off until an admin turns it on for an app. When it is on:
   and checked for personal data. Tool results, memories and earlier messages are marked as data.
 - Every tool call in a chat goes through the same dispatch as MCP: key permission, tool switch,
   personal-data check, source permissions and audit. Write tools only produce proposals.
+- Write tools are withheld from a chat turn unless the current user message (or the selected
+  skill) explicitly requests a write. A tool result or earlier assistant message cannot
+  introduce that authorization; a model call to a withheld tool is rejected.
 - Per-user limits: `CHAT_RATE_LIMIT` per minute and the app's daily message limit, keyed by the
   signed user (or the client key without one). Counters are per process.
 - The model provider receives an opaque per-user hash (`metadata.user_id`) for abuse detection,
@@ -103,18 +108,41 @@ Memory is off until an admin turns it on for an app. When it is on:
 - Responses are streamed and cut at the size cap. Attempts share one deadline. Only GET retries. Five consecutive upstream failures open a 30-second circuit.
 - Paused or archived apps refuse every call immediately.
 
+## Secrets at rest
+
+Connector secrets, provider keys, TOTP secrets and memories are encrypted with
+`SECRET_ENCRYPTION_KEY` (Fernet). To rotate it: set the new key, move the old one to
+`SECRET_ENCRYPTION_KEY_PREVIOUS`, restart, run `python -m app.rotate_keys` (all values or none are
+re-encrypted), then clear `SECRET_ENCRYPTION_KEY_PREVIOUS` and restart.
+
+## Headers and deployment
+
+Every route except `/health` and `/ready` must arrive with a Host in `ALLOWED_HOSTS`
+(`400 INVALID_HOST` otherwise; `/mcp` applies the MCP SDK's own check). The API explorer
+(`/docs`, `/redoc`, `/openapi.json`) exists in development only.
+
+The backend sends `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `nosniff`,
+`X-Frame-Options: DENY`, `no-referrer`, `no-store`, and HSTS when `COOKIE_SECURE` is on. The nginx
+edge adds HSTS, a CSP that allows only the Hub's own scripts and connections, and a
+Permissions-Policy. The backend container runs as an unprivileged user.
+
 ## Limits
 
 Defaults: 60 calls per key and tool per minute, 8 concurrent calls per tool and per
 upstream host, 50 records per page or read call, and 1000 records or 20 seconds per report.
 Request bodies are capped (admin 1 MB, MCP 2 MB). The counters are in memory: run one
-worker.
+worker. Each kind of limit (sign-in, MFA, tools, chat, gateway, daily limits) is counted
+separately, so a flood of one kind, such as many end users of one app, never blocks admin
+sign-in or another app's tools. The model gateway also has an allowed-model list and a monthly
+token budget per app; they are stored in the database, and only super admins change them.
 
 ## Audit
 
 Every tool call and admin change records action, actor id, app, tool, result, error code,
 duration, retries and trace id. Payloads, results, prompts, tokens and secrets are never
-stored or logged. JSON logging drops free-form messages and exception text. The UI shows
+stored or logged. JSON logging keeps the Hub's own event names but drops other free-form messages and
+exception text. Expired audit rows, sessions, MFA challenges and memories are purged every
+`PURGE_INTERVAL_HOURS` (6). The UI shows
 key names and admin emails by resolving ids at display time.
 
 ## Production configuration

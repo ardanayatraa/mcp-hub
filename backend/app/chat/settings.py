@@ -19,7 +19,11 @@ MODEL_RE = registry.MODEL_RE
 MAX_INSTRUCTIONS = 4000
 MAX_SUGGESTIONS = 6
 FIELDS = {"enabled", "provider", "model", "effort", "instructions", "welcome_message", "suggestions", "max_steps",
-          "daily_limit"}
+          "daily_limit", "gateway_models", "monthly_token_limit"}
+# Allowed gateway models and the token budget: super admins only.
+COST_FIELDS = {"gateway_models", "monthly_token_limit"}
+MAX_GATEWAY_MODELS = 200
+MAX_MONTHLY_TOKENS = 2_000_000_000
 
 
 def setting(db: Session, app_id: str) -> ChatSetting:
@@ -27,18 +31,19 @@ def setting(db: Session, app_id: str) -> ChatSetting:
 
     return db.get(ChatSetting, app_id) or ChatSetting(
         app_id=app_id, enabled=False, provider="anthropic", model=DEFAULT_MODEL, effort="medium", instructions="",
-        welcome_message="", suggestions=[], max_steps=6, daily_limit=200)
+        welcome_message="", suggestions=[], max_steps=6, daily_limit=200, gateway_models=[], monthly_token_limit=0)
 
 
 def provider_options(db: Session, settings: Settings, current: str) -> list[dict]:
     """Claude, the environment gateway when configured (or in use), then every registered provider."""
 
     options = [{"id": registry.ANTHROPIC, "label": "Claude (Anthropic)", "kind": "anthropic",
-                "ready": bool(settings.anthropic_api_key), "models": [], "default_model": DEFAULT_MODEL}]
+                "ready": bool(registry.claude_settings(db, settings).anthropic_api_key), "models": [],
+                "default_model": DEFAULT_MODEL}]
     if settings.chat_openai_base_url or current == registry.ENV_GATEWAY:
         options.append({"id": registry.ENV_GATEWAY, "label": "Gateway (environment)", "kind": "openai_compatible",
                         "ready": bool(settings.chat_openai_base_url), "models": [], "default_model": ""})
-    for row in db.scalars(select(ModelProvider).order_by(ModelProvider.name)):
+    for row in db.scalars(select(ModelProvider).where(ModelProvider.key != registry.ANTHROPIC).order_by(ModelProvider.name)):
         if row.enabled or row.key == current:
             options.append({"id": row.key, "label": row.name, "kind": "openai_compatible",
                             "ready": registry.view(row)["ready"], "models": list(row.models or []),
@@ -52,11 +57,53 @@ def admin_view(db: Session, application: Application, settings: Settings) -> dic
             "instructions": config.instructions, "welcome_message": config.welcome_message,
             "suggestions": list(config.suggestions or []), "max_steps": config.max_steps,
             "daily_limit": config.daily_limit,
+            "gateway_models": list(config.gateway_models or []),
+            "monthly_token_limit": config.monthly_token_limit or 0,
+            "gateway_usage": usage_view(db, application.id),
             "fallbacks": config.provider == "anthropic" and config.model in FALLBACK_MODELS,
             "updated_at": as_utc(config.updated_at).isoformat() if config.updated_at else None,
             "options": {"providers": provider_options(db, settings, config.provider),
                         "models": CLAUDE_MODELS, "efforts": list(EFFORTS), "max_steps": [1, 12],
-                        "daily_limit": [0, 5000]}}
+                        "daily_limit": [0, 5000], "monthly_token_limit": [0, MAX_MONTHLY_TOKENS]}}
+
+
+def model_allowed(patterns, model_id: str) -> bool:
+    """Whether a gateway model id is open to the app: an exact id, or provider/* for a whole provider."""
+
+    if not patterns:
+        return True
+    provider = model_id.split("/", 1)[0]
+    return any(item == model_id or (item.endswith("/*") and item[:-2] == provider) for item in patterns)
+
+
+def _gateway_models(db: Session, items) -> list[str]:
+    if not isinstance(items, list) or len(items) > MAX_GATEWAY_MODELS:
+        raise HubError("VALIDATION_FAILED", f"Allow at most {MAX_GATEWAY_MODELS} models", 422)
+    cleaned: list[str] = []
+    for item in items:
+        provider, _, model = item.partition("/") if isinstance(item, str) else ("", "", "")
+        if (not provider or len(item) > 160 or not registry.exists(db, provider)
+                or not (model == "*" or MODEL_RE.fullmatch(model))):
+            raise HubError("VALIDATION_FAILED", "Each allowed model is provider/model or provider/* "
+                           "for a provider on the Hub", 422)
+        if item not in cleaned:
+            cleaned.append(item)
+    return cleaned
+
+
+def usage_view(db: Session, app_id: str) -> dict:
+    """This month's gateway calls and tokens for the app, busiest models first."""
+
+    from app.persistence.models import GatewayUsage
+
+    period = utcnow().strftime("%Y-%m")
+    rows = list(db.scalars(select(GatewayUsage).where(GatewayUsage.app_id == app_id, GatewayUsage.period == period)))
+    rows.sort(key=lambda row: row.prompt_tokens + row.completion_tokens, reverse=True)
+    return {"period": period, "calls": sum(row.calls for row in rows), "errors": sum(row.errors for row in rows),
+            "prompt_tokens": sum(row.prompt_tokens for row in rows),
+            "completion_tokens": sum(row.completion_tokens for row in rows),
+            "models": [{"model": row.model, "calls": row.calls, "errors": row.errors,
+                        "tokens": row.prompt_tokens + row.completion_tokens} for row in rows[:20]]}
 
 
 def _text(value, field: str, maximum: int) -> str:
@@ -111,6 +158,13 @@ def update_settings(db: Session, application: Application, payload) -> ChatSetti
         if type(payload["daily_limit"]) is not int or not 0 <= payload["daily_limit"] <= 5000:
             raise HubError("VALIDATION_FAILED", "Messages per user per day must be between 0 (no limit) and 5000", 422)
         row.daily_limit = payload["daily_limit"]
+    if "gateway_models" in payload:
+        row.gateway_models = _gateway_models(db, payload["gateway_models"])
+    if "monthly_token_limit" in payload:
+        limit = payload["monthly_token_limit"]
+        if type(limit) is not int or not 0 <= limit <= MAX_MONTHLY_TOKENS:
+            raise HubError("VALIDATION_FAILED", "Tokens per month must be 0 (no budget) or a positive number", 422)
+        row.monthly_token_limit = limit
     row.updated_at = utcnow()
     db.flush()
     return row

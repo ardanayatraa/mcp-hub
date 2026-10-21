@@ -37,5 +37,12 @@
   "tests/Unit/McpClientTest.php": "eb498c0ca4a442ee450662c0ba1010e1e8d878e2e2a430524d68937146199f64",
   "app/Http/Livewire/Table/AiAccessTable.php": null,
   "config/ai.php": "6429611440a48d933b30d31d4f283a9fbdd561043d6e4f0464fb9f37b7f0fa52",
-  "config/mcp_resources.php": "16a4f0e1c52681603ffd7a2dd4e05e9bd166dc3a2ee92961a93a5ac3036d8931"
+  "config/mcp_resources.php": "16a4f0e1c52681603ffd7a2dd4e05e9bd166dc3a2ee92961a93a5ac3036d8931",
+  "database/migrations/2026_10_20_000001_enable_blast_message_status_filter.php": null,
+  "database/migrations/2026_10_20_000002_harden_ai_detail_access.php": null,
+  "app/Services/AI/NativeReportPdf.php": null,
+  "public/js/ai-report-preview.js": null,
+  "resources/views/ai/report-pdf.blade.php": null,
+  "resources/views/livewire/ai/chat.blade.php": "6f9ef63738f24cd5c7047644fba2607f67de6af1aa89d9aa7a684a57f9c3f6d3",
+  "routes/web.php": "efe5417df2e3e883a07452e7963312578b3a59daa1d88826ffda115f3f81ecab"
 }

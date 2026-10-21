@@ -8,9 +8,10 @@ The `overlay/` directory contains reviewed files from the connected Laravel appl
 including its existing chat and settings components. Installation is guarded by source
 hashes; this snapshot must be reviewed before applying it to a different application.
 
-Write tools (prepare create, update, delete) take the model's fillable, registered fields,
-except one-time and account codes such as `otp`, `pin` or `cvv`: MCP Hub refuses those as
-write inputs, and one refused input would hide every tool of the app.
+Write tools (prepare create, update, delete) take the model's fillable, registered fields.
+One-time and account codes such as `otp`, `pin` and `cvv` are excluded from both readable
+fields and write inputs. An existing registration containing one of these fields must be
+cleaned before the Hub can publish its tools.
 
 ## Connection
 
@@ -19,8 +20,17 @@ Laravel reads its connection settings from `.env` through `config/ai.php`:
 - `MCP_HUB_ENABLED`, `MCP_HUB_URL`, `MCP_HUB_TOKEN`
 - `MCP_HUB_SOURCE_URL`, `MCP_HUB_SOURCE_KEY`, `MCP_HUB_DELEGATION_SECRET`
 
-Existing `MCP_BRIDGE_*` settings continue to configure the AI provider bridge. The Hub
-handles data tools; the provider bridge handles AI model discovery and chat.
+`MCP_BRIDGE_*` configures where AI models come from. Point it at the Hub's model gateway so the
+models and their keys are managed under **AI providers** in the Hub:
+
+- `MCP_BRIDGE_URL=https://<hub>/gateway/mcp` (locally `http://127.0.0.1:18000/gateway/mcp`)
+- `MCP_BRIDGE_TOKEN=<a Hub client key for the app>` (the `MCP_HUB_TOKEN` key works)
+
+The app's **Chat** must be on in the Hub. HiReach's model picker then lists the Hub models the app
+may use (`provider/model` ids; narrow them under **Model gateway access** on the app's Chat tab) and
+its chat calls them through the Hub; data tools still go through `MCP_HUB_URL`. A model outside that
+list is refused (`MODEL_NOT_ALLOWED`), and once the app's monthly token budget is used up calls get
+`BUDGET_EXCEEDED` until an admin raises it. In production the Hub must be served over HTTPS.
 
 The local connection and credentials are stored in ignored
 `.verification/laravel-connection.json`. Its `source_path` identifies the installed
@@ -52,8 +62,10 @@ sequenceDiagram
 ## Models and permissions
 
 Open `/admin/settings/ai` and use **Add Model** or **Edit** to configure a registration:
-model, display name, resource key, user ownership column, readable fields and optional
-lookup field. Models are discovered from `app/Models`. Schema discovery reads metadata;
+model, display name, resource key, user ownership column, readable fields, optional
+lookup field, and exact-match filters for selected text fields. Enter up to 50 distinct
+filter values per field, separated by commas. List and count tools accept only those
+values. Models are discovered from `app/Models`. Schema discovery reads metadata;
 hidden, credential, personal and unsupported fields cannot be exposed to AI.
 
 New AI settings default to On; a saved Off state remains Off. **Enable AI** uses an
@@ -70,10 +82,21 @@ Model registrations are stored in `ai_integrations.permissions`; there are no co
 fallback models. `config/ai.php` contains connection settings, global CRUD flags and
 optional validation rules. Create, Update and Delete default to Off. When enabled,
 writable fields and basic validation follow fillable attributes and the table schema.
+Migration `2026_10_20_000001_enable_blast_message_status_filter.php` adds `SUCCESS` and
+`FAILED` to an existing Blast Messages registration only when its readable `status`
+field has no filter values. It preserves all existing access flags and administrator
+filter choices.
+Migration `2026_10_20_000002_harden_ai_detail_access.php` removes sensitive code fields
+from the latest registration and adds exact-name lookup to Blast Messages (`title`) and
+Billing Users (`name`) when those readable fields are selected. It preserves existing
+access flags and lookup choices. Run both migrations when upgrading an existing HiReach
+installation; new registrations are validated by the same field policy.
 
 The source manifest supplies the application key and stable tool identifiers such as
 `your_app.projects.list`, exposed through MCP as `your_app__projects__list`.
-List/count tools are generated for registered models; a lookup field adds a get tool.
+List/count tools are generated for registered models; a lookup field adds a get tool for
+current-user detail by exact registered value. Chat requests for a named record include
+that lookup argument, and malformed model tool calls receive a retryable validation error.
 Field schemas follow the model's registered fields. No separate Hub model setup is needed.
 
 The source-managed connector refreshes grants on MCP list/call. Open Hub catalog pages
@@ -87,6 +110,35 @@ CRUD tools prepare an actor-bound, expiring proposal. The user confirms in the s
 application, which rechecks permissions, ownership, schema and record state before
 committing. MCP does not expose a commit tool. Native exports use the same registered
 fields and authenticated application download workflow.
+
+PDF and Excel reports include a **Lihat preview** link that opens a simple report page
+in a new tab. The page shows the HiReach logo, report metadata and all exported rows,
+with **Unduh** and **Cetak / Simpan PDF** actions. Preview and download URLs use the
+same account-bound, two-hour token; generated files are pruned after three hours.
+Preview and download links also stop working if the account's model permission,
+readable fields, approved filters or ownership scope changes after generation.
+Links also close if any included record leaves the account's scope or no longer
+matches the report's status filter. Reports generated before this record check
+must be generated again.
+Status-filtered Blast Messages reports require that exact status to be allowed by
+the administrator. Report requests naming Billing Users or another registered model
+use that model, including the chat fallback path.
+Reports created before this access-signature check must be generated again after upgrade.
+PDF creation and preview use application code and the browser's built-in print feature,
+without adding a Composer or JavaScript package. Exports reject more than 1,000 rows
+or 2 MB of report text with a clear error instead of silently truncating data. When PDF text contains characters
+outside the built-in PDF font, the report opens as a Unicode-safe browser preview and
+offers **Cetak / Simpan PDF** instead of a damaged direct PDF download. While a request runs, chat
+shows whether it is preparing a report or composing a response.
+Reports support PDF and Excel. CSV requests receive a clear unsupported-format reply.
+The chat applies a Blast Messages status filter only when the user's current request
+explicitly names that status, so a model cannot silently narrow an all-status report.
+Report queries select only the registered readable columns and the record ID.
+The chat offers tools for the current request only. A result containing instructions
+cannot trigger an unrequested export, write proposal or read of another named model;
+the server checks every requested tool against the offered set. In chat, only issued
+report links owned by the current account remain clickable. Other model-generated
+links are displayed as text.
 
 ## Adapter files
 
@@ -126,9 +178,10 @@ to start on the old schema. The source-managed catalog follows current applicati
 
 ## Verification
 
-The Laravel suite passed 83 tests / 943 assertions using in-memory SQLite. The Hub suite
-passed 153 tests using isolated databases and mocked requests. Frontend type checking
-and production builds passed.
+The Laravel MCP connector suite passed 83 tests and the AI integration suite passed 67 tests
+using the local test database. The Hub suite passed 252 tests using isolated databases and mocked
+requests. Frontend type checking and production builds passed. The live browser audit also
+depends on a reachable configured model provider.
 
 `docs/evidence/LARAVEL_CRUD_CONTRACT.json` is a Laravel-generated dummy contract with a
 neutral application key, used by the Hub regression tests. Its private generator is

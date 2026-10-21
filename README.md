@@ -37,6 +37,12 @@ it and may ask the user to confirm). Details: [docs/TOOLS.md](docs/TOOLS.md).
 
 Requires Python 3.12, [uv](https://docs.astral.sh/uv/), Node 22 and pnpm.
 
+The short way on Windows: run `.\dev.ps1` (or double-click `dev.cmd`). It installs what is missing,
+writes `dev.env` with fresh keys on the first run (ports `HUB_PORT` and `UI_PORT` live there too),
+migrates the database and starts the API and the UI in one window. Ctrl+C stops both.
+
+The same steps by hand:
+
 ```powershell
 # 1. Hub API + MCP endpoint
 cd backend
@@ -98,12 +104,17 @@ what the key may call, and every `tools/call` is authorized again from scratch.
 
 ## Giving an app its own AI chat
 
-Set `ANTHROPIC_API_KEY` in the Hub's environment for Claude, or add any OpenAI-compatible provider
-(OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Gemini, a gateway, Ollama, ...) under **AI providers**.
+Every model key is set under **AI providers**: paste the Claude key on the Claude card, or add any
+OpenAI-compatible provider (OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Gemini, a gateway, Ollama, ...).
+Keys are stored encrypted and take effect without a restart; `ANTHROPIC_API_KEY` still works as a fallback.
 Then turn the chat on in the app's **Chat** tab, pick the provider and model, and call
 `/chat/v1/turn` from the app's server ([API](docs/API.md#chat-endpoint)). The app designs its own
 chat window and streams the answer to it; the in-app **Laravel guide** shows the server route and a
 small browser helper.
+
+An app that runs its own chat can instead use the **model gateway**: it lists every model under AI
+providers (`/gateway/v1/models`) and calls the one its users pick (`/gateway/v1/chat/completions`, or the
+`/gateway/mcp` bridge), while the keys stay on the Hub. See [the API](docs/API.md#model-gateway).
 
 ## Compose
 
@@ -114,7 +125,7 @@ stack: it allows private HTTP egress so the Hub can reach the reference app.
 
 Production refuses to start without PostgreSQL, HTTPS-only cookies, MFA, an egress
 allowlist and disabled insecure HTTP/TLS. Run one worker process: rate limits are kept in
-memory.
+memory. See [Deploying to production](docs/DEPLOY.md).
 
 ## Upgrading
 
@@ -139,6 +150,7 @@ pnpm build      # type-checks with vue-tsc
 - [Admin and MCP API](docs/API.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security](docs/SECURITY.md) and [threat model](docs/THREAT_MODEL.md)
+- [Deploying to production](docs/DEPLOY.md)
 - [Backup, upgrade and rollback](docs/BACKUP.md)
 - [What changed in 1.0](docs/CHANGES.md)
 - [Laravel integration](integrations/laravel/README.md)

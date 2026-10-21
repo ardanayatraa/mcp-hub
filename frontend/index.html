@@ -4,13 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <script>
-      // Apply the chosen theme before anything renders, so the page never flashes the wrong one.
-      try {
-        var theme = localStorage.getItem("hub-theme");
-        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
-      } catch (error) { /* storage blocked: follow the system */ }
-    </script>
+    <script src="/theme.js"></script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2318181b'/%3E%3Cpath d='M13 4 6 14h5l-1 6 7-10h-5z' fill='white'/%3E%3C/svg%3E" />
     <title>MCP Hub</title>
   </head>

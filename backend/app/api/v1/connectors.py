@@ -17,7 +17,7 @@ from app.persistence.models import AdminUser, ServiceIdentity
 from app.persistence.session import get_db, open_session
 from app.security.audit import record_audit
 from app.security.auth import require_csrf
-from app.security.authorization import WRITE_ROLES, require_app_access, require_role
+from app.security.authorization import ADMIN_ROLES, WRITE_ROLES, require_app_access, require_role
 from app.security.clients import READ_SCOPE, Caller
 from app.services import connectors as service
 from app.services import tool_switches
@@ -172,11 +172,25 @@ def chat_view(connector_id: str, db: Session = Depends(get_db), user: AdminUser 
     return ok(chat_settings.admin_view(db, application, get_settings()))
 
 
+@router.get("/{connector_id}/chat/gateway-models")
+async def gateway_models(connector_id: str, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    """Every model the Hub can reach now, for choosing the ones this app may call through the gateway."""
+
+    from app.chat import gateway
+
+    scoped_bundle(db, user, connector_id)
+    rows = await gateway.every_model(db, get_settings())
+    db.commit()
+    return ok({"models": rows})
+
+
 @router.patch("/{connector_id}/chat")
 def update_chat(connector_id: str, payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     connector, application = writable_bundle(db, user, connector_id)
     if connector.status == "archived" and isinstance(payload, dict) and payload.get("enabled") is True:
         raise HubError("CONFLICT", "Archived apps cannot turn chat on", 409)
+    if isinstance(payload, dict) and set(payload) & chat_settings.COST_FIELDS:
+        require_role(user.role, ADMIN_ROLES)  # the cost guard is not for the app's own admins to lift
     chat_settings.update_settings(db, application, payload)
     record_audit(db, action="chat.settings", actor_ref=f"admin:{user.id}", result="success",
                  app_key=application.key, environment=application.environment)

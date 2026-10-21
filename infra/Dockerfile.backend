@@ -1,11 +1,17 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir uv \
+    && groupadd --system --gid 10001 hub \
+    && useradd --system --uid 10001 --gid hub --no-create-home --shell /usr/sbin/nologin hub
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY backend/app ./app
 COPY backend/alembic.ini ./
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    FORWARDED_ALLOW_IPS="127.0.0.1"
+# The code is root-owned and read-only to the process; the Hub keeps its data in the database.
+USER hub
 EXPOSE 8000
-CMD ["sh", "-c", "alembic upgrade head && python -m app.bootstrap && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# X-Forwarded-For is trusted only from FORWARDED_ALLOW_IPS (the reverse proxy), so login limits see real clients.
+CMD ["sh", "-c", "alembic upgrade head && python -m app.bootstrap && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"$FORWARDED_ALLOW_IPS\""]

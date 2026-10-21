@@ -92,6 +92,11 @@ class Chat extends Component
             return;
         }
 
+        if (mb_strlen($text) > 4000) {
+            $this->error = 'Pesan terlalu panjang. Maksimal 4.000 karakter.';
+            return;
+        }
+
         if (session()->has($this->pendingKey()) && $this->isAffirmative($text)) {
             $this->input = '';
             $this->confirmPending();
@@ -111,7 +116,7 @@ class Chat extends Component
         $this->dispatchBrowserEvent('hireach-ai-stream', [
             'model' => $this->model,
             'session_id' => $this->sessionId,
-            'messages' => array_values($this->messages),
+            'messages' => $this->requestMessages(),
         ]);
     }
 
@@ -127,7 +132,7 @@ class Chat extends Component
             $this->model = app(AiProviderClient::class)->resolveModel($this->model);
             $raw = app(AiChatOrchestrator::class)->complete(
                 $this->model,
-                array_values($this->messages),
+                $this->requestMessages(),
                 auth()->user(),
                 $this->metadata()
             );
@@ -137,11 +142,11 @@ class Chat extends Component
             ];
             $this->saveConversation();
         } catch (Throwable $e) {
-            $this->error = 'AI is temporarily unavailable. Please try again.';
+            $this->error = 'Layanan AI sedang tidak tersedia. Coba lagi beberapa saat.';
 
             $this->messages[] = [
                 'role' => 'assistant',
-                'content' => 'Gagal menghubungi AI. Coba lagi.',
+                'content' => 'Maaf, saya belum bisa menjawab karena layanan AI sedang tidak tersedia. Coba lagi beberapa saat.',
             ];
         } finally {
             $this->isThinking = false;
@@ -177,10 +182,10 @@ class Chat extends Component
             return;
         }
 
-        $this->error = 'AI is temporarily unavailable. Please try again.';
+        $this->error = 'Layanan AI sedang tidak tersedia. Coba lagi beberapa saat.';
         $this->messages[] = [
             'role' => 'assistant',
-            'content' => 'Gagal menghubungi AI. Coba lagi.',
+            'content' => 'Maaf, saya belum bisa menjawab karena layanan AI sedang tidak tersedia. Coba lagi beberapa saat.',
         ];
         $this->isThinking = false;
         $this->loadSessions();
@@ -400,6 +405,25 @@ class Chat extends Component
         app(AiProviderClient::class)->saveLocalConversation($this->sessionId, $this->sessionTitle, $this->messages);
     }
 
+    /** Keep the transport within AiController's 40-message and 4,000-character limits. */
+    private function requestMessages(): array
+    {
+        $history = [];
+        foreach (array_slice($this->messages, -20) as $message) {
+            if (! is_array($message) || ! in_array($message['role'] ?? null, ['user', 'assistant'], true)
+                || ! is_string($message['content'] ?? null) || trim($message['content']) === '') {
+                continue;
+            }
+            $content = $message['content'];
+            if (mb_strlen($content) > 4000) {
+                $content = mb_substr($content, 0, 3999).'…';
+            }
+            $history[] = ['role' => $message['role'], 'content' => $content];
+        }
+
+        return $history;
+    }
+
     public function getUsageCardProperty(): array
     {
         $user = is_array($this->usage['user'] ?? null) ? $this->usage['user'] : [];
@@ -472,7 +496,7 @@ class Chat extends Component
         ]);
 
         $html = preg_replace('/<table\b[^>]*>.*?<\/table>/is', '<div class="ai-table">$0</div>', $html) ?? $html;
-        $html = $this->autolinkHtml($html);
+        $html = $this->keepIssuedReportLinks($html);
         $html = preg_replace('/<a href="/', '<a target="_blank" rel="noopener" href="', $html) ?? $html;
 
         return $html;
@@ -498,14 +522,24 @@ class Chat extends Component
         ) ?? $content;
     }
 
-    private function autolinkHtml(string $html): string
+    private function keepIssuedReportLinks(string $html): string
     {
         return preg_replace_callback(
-            '#(?<!href=")(?<!href=\')(https?://[^\s<]+)#i',
-            function ($match) {
-                $url = rtrim($match[1], '.,);');
-
-                return '<a href="'.e($url).'">'.e($url).'</a>';
+            '#<a\b[^>]*\bhref="([^"]*)"[^>]*>(.*?)</a>#is',
+            static function (array $match): string {
+                $url = parse_url(html_entity_decode($match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                $base = parse_url(url('/'));
+                if (! is_array($url) || ! is_array($base)
+                    || ($url['scheme'] ?? null) !== ($base['scheme'] ?? null)
+                    || ($url['host'] ?? null) !== ($base['host'] ?? null)
+                    || ($url['port'] ?? null) !== ($base['port'] ?? null)
+                    || isset($url['query']) || isset($url['fragment']) || isset($url['user'])
+                    || ! preg_match('~^/ai/report/([a-f0-9]{32})(?:/preview)?$~i', $url['path'] ?? '', $parts)) {
+                    return $match[2];
+                }
+                $meta = \Illuminate\Support\Facades\Cache::get('hireach.ai.report.'.strtolower($parts[1]));
+                return is_array($meta) && (int) ($meta['user_id'] ?? 0) === (int) auth()->id()
+                    ? $match[0] : $match[2];
             },
             $html
         ) ?? $html;
@@ -658,6 +692,11 @@ class Chat extends Component
 
     private function attachExport(string $visible, string $userText): string
     {
+        if (preg_match('/\bcsv\b/i', $userText)
+            && ! preg_match('/\b(?:pdf|excel|xlsx)\b/i', $userText)
+            && preg_match('/\b(?:buat|unduh|download|export|ekspor|laporan|report)\b/iu', $userText)) {
+            return 'Format CSV belum tersedia. Saya bisa membuat laporan Excel atau PDF.';
+        }
         if (AiChatOrchestrator::asksAboutCapabilities([['role' => 'user', 'content' => $userText]])) {
             return $visible;
         }
@@ -678,12 +717,22 @@ class Chat extends Component
                 $userText
             );
         } catch (Throwable $e) {
-            return trim($visible."\n\nCould not prepare the download.");
+            $message = preg_match('/^(?:Laporan (?:melebihi 1\.000 baris|terlalu besar)|Filter status )/u', $e->getMessage())
+                ? $e->getMessage()
+                : 'Laporan belum dapat dibuat. Periksa izin data atau coba lagi.';
+
+            return trim($visible."\n\n".$message);
         }
 
-        $kind = $file['format'] === 'pdf' ? 'printable report' : 'Excel file';
+        $kind = $file['format'] === 'pdf' ? 'PDF' : 'Excel';
 
-        return trim($visible."\n\nDownload ".$kind.' ('.$file['count'].' rows): ['.$file['filename'].']('.$file['url'].')');
+        $report = 'Laporan '.$kind.' berisi '.$file['count'].' data sudah siap. '
+            .'[Lihat preview]('.$file['preview_url'].')';
+        $report .= ! empty($file['print_only'])
+            ? '. Untuk huruf di luar Latin, pilih "Cetak / Simpan PDF" pada preview agar teks tetap utuh.'
+            : ' · [Download '.$kind.']('.$file['url'].')';
+
+        return trim($visible."\n\n".$report);
     }
 
     private function inferExport(string $userText): ?array
@@ -693,8 +742,13 @@ class Chat extends Component
             return null;
         }
 
+        $resource = AiResourceExecutor::namedResource($userText);
+        if ($resource === null) {
+            return null;
+        }
+
         return [
-            'resource' => preg_match('/template/i', $q) ? 'templates' : 'blast_messages',
+            'resource' => $resource,
             'format' => preg_match('/\bpdf\b/i', $q) ? 'pdf' : 'xlsx',
         ];
     }

@@ -35,7 +35,7 @@ class Ai extends Component
     public bool $confirmingResourceRemoval = false;
     public string $resourceToRemove = '';
     public string $editingResource = '';
-    public array $resourceDraft = ['key' => '', 'model' => '', 'label' => '', 'owner' => '', 'lookup' => '', 'fields' => []];
+    public array $resourceDraft = ['key' => '', 'model' => '', 'label' => '', 'owner' => '', 'lookup' => '', 'fields' => [], 'filters' => []];
     public array $modelColumns = ['owners' => [], 'fields' => []];
 
     public function getModelOptionsProperty(): array
@@ -49,7 +49,7 @@ class Ai extends Component
         $this->resetValidation();
         $this->reset(['confirmingResourceRemoval', 'resourceToRemove']);
         $this->editingResource = '';
-        $this->resourceDraft = ['key' => '', 'model' => '', 'label' => '', 'owner' => '', 'lookup' => '', 'fields' => []];
+        $this->resourceDraft = ['key' => '', 'model' => '', 'label' => '', 'owner' => '', 'lookup' => '', 'fields' => [], 'filters' => []];
         $this->modelColumns = ['owners' => [], 'fields' => []];
         $this->showResourceForm = true;
     }
@@ -66,6 +66,7 @@ class Ai extends Component
         $this->authorizeAdmin();
         $this->resetValidation();
         $this->resourceDraft['fields'] = [];
+        $this->resourceDraft['filters'] = [];
         $this->resourceDraft['lookup'] = '';
         $this->resourceDraft['owner'] = '';
         $this->modelColumns = ['owners' => [], 'fields' => []];
@@ -90,7 +91,8 @@ class Ai extends Component
         $this->createResource();
         $this->editingResource = $key;
         $this->resourceDraft = ['key' => $key, 'model' => $spec['model'], 'label' => $spec['label'],
-            'owner' => $spec['owner'], 'lookup' => $spec['lookup'] ?? '', 'fields' => array_keys($spec['fields'])];
+            'owner' => $spec['owner'], 'lookup' => $spec['lookup'] ?? '', 'fields' => array_keys($spec['fields']),
+            'filters' => array_map(fn ($values) => implode(', ', $values), $spec['filters'] ?? [])];
         try {
             $this->modelColumns = McpResourceRegistry::modelColumns($spec['model']);
         } catch (\Throwable $error) {
@@ -107,6 +109,8 @@ class Ai extends Component
             'resourceDraft.label' => ['required', 'string', 'max:80'],
             'resourceDraft.fields' => ['required', 'array', 'min:1', 'max:40'],
             'resourceDraft.fields.*' => ['required', 'string', 'distinct'],
+            'resourceDraft.filters' => ['array', 'max:40'],
+            'resourceDraft.filters.*' => ['nullable', 'string', 'max:10049'],
         ]);
         try {
             // Rebuild from trusted model/schema metadata, never from browser-supplied choices or types.
@@ -122,8 +126,22 @@ class Ai extends Component
             'resourceDraft.fields.*' => [Rule::in(array_keys($columns['fields']))],
             'resourceDraft.lookup' => ['nullable', Rule::in($lookups)],
         ]);
+        $filters = [];
+        foreach ($this->resourceDraft['filters'] ?? [] as $field => $raw) {
+            if ($raw === null || trim($raw) === '') { continue; }
+            if (! is_string($field) || in_array($field, ['limit', 'cursor'], true) || ! in_array($field, $selected, true)
+                || ! isset($columns['fields'][$field]) || ! str_starts_with($columns['fields'][$field], 'string')) {
+                throw ValidationException::withMessages(['resourceDraft.filters' => 'Filters require a selected readable text field.']);
+            }
+            $values = array_map('trim', explode(',', $raw));
+            if (count($values) > 50 || in_array('', $values, true) || count(array_unique($values)) !== count($values)
+                || count(array_filter($values, fn ($value) => strlen($value) <= 200)) !== count($values)) {
+                throw ValidationException::withMessages(['resourceDraft.filters.'.$field => 'Enter 1 to 50 unique values, each up to 200 characters, separated by commas.']);
+            }
+            $filters[$field] = $values;
+        }
         $key = $this->resourceDraft['key'];
-        DB::transaction(function () use ($key, $columns, $selected) {
+        DB::transaction(function () use ($key, $columns, $selected, $filters) {
             $integration = AiIntegration::query()->latest('id')->lockForUpdate()->first();
             if (! $integration) {
                 $integration = AiIntegration::create(['name' => 'Hireach AI', 'api_url' => 'mcp://telixcell',
@@ -145,7 +163,7 @@ class Ai extends Component
             $spec = ['model' => $this->resourceDraft['model'], 'label' => $this->resourceDraft['label'],
                 'owner' => $this->resourceDraft['owner'], 'lookup' => $this->resourceDraft['lookup'] ?: null,
                 'fields' => $fields, 'ref_prefix' => $previous['ref_prefix'] ?? substr($key, 0, 23).'_',
-                'filters' => $sameModel ? array_intersect_key($previous['filters'] ?? [], $fields) : []];
+                'filters' => $filters];
             if ($sameModel && isset($previous['keywords'])) { $spec['keywords'] = $previous['keywords']; }
             $registrations[$key] = $spec;
             try { McpResourceRegistry::tools($registrations); }

@@ -16,6 +16,7 @@ hashes = json.loads(state.read_text())
 source = source_path()
 overlay = Path(__file__).parent / 'overlay'
 originals = json.loads((root / '.verification/laravel-originals.json').read_text())
+reviewed = json.loads((Path(__file__).parent / 'source-baselines.json').read_text())
 paths = {file.relative_to(overlay).as_posix() for file in overlay.rglob('*') if file.is_file()}
 removal_manifest = root / '.verification/laravel-package-removals.json'
 removals = json.loads(removal_manifest.read_text()) if removal_manifest.exists() else []
@@ -64,10 +65,11 @@ for path in removals:
 for path in paths:
     target = (source / path).resolve()
     assert target.is_relative_to(source), 'Invalid target path'
-    assert path in originals, f'Unreviewed new target: {path}'
-    expected = hashes.get(path, originals[path])
+    assert path in originals or path in reviewed, f'Unreviewed new target: {path}'
+    expected = hashes.get(path, originals.get(path, reviewed.get(path)))
     actual = hashlib.sha256(target.read_bytes()).hexdigest() if target.exists() else None
-    assert actual == expected, f'Source changed: {path}'
+    installed = hashlib.sha256((overlay / path).read_bytes()).hexdigest()
+    assert actual in (expected, installed), f'Source changed: {path}'
 if args.check:
     print(f'Verified {len(paths)} installed adapter files; no source files changed.')
     raise SystemExit(0)
@@ -77,15 +79,16 @@ for path in sorted(paths):
     digest = hashlib.sha256(payload).hexdigest()
     if digest != hashes.get(path):
         target = source / path
-        if path not in hashes and target.exists():
-            backup = root / '.verification/laravel-backup' / path
-            assert not backup.exists(), f'Backup already exists: {path}'
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            backup.write_bytes(target.read_bytes())
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(payload)
+        if not target.exists() or target.read_bytes() != payload:
+            if path not in hashes and target.exists():
+                backup = root / '.verification/laravel-backup' / path
+                assert not backup.exists(), f'Backup already exists: {path}'
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                backup.write_bytes(target.read_bytes())
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            changed += 1
         hashes[path] = digest
-        changed += 1
 for old, (target, backup, archive) in rename_sources.items():
     if originals[old] is not None and old not in hashes:
         backup.parent.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from app.errors import HubError
 
@@ -22,9 +22,23 @@ def encrypt_secret(key: str, plaintext: str) -> str:
     return _fernet(key).encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 
+def previous_keys() -> list[str]:
+    """Keys from SECRET_ENCRYPTION_KEY_PREVIOUS: still read during a rotation, never used to encrypt."""
+
+    from app.config import get_settings
+
+    return get_settings().csv(get_settings().secret_encryption_key_previous)
+
+
+def keyring(key: str) -> MultiFernet:
+    """The current key first, then the previous ones; MultiFernet encrypts with the first only."""
+
+    return MultiFernet([_fernet(key), *(_fernet(old) for old in previous_keys() if old != key)])
+
+
 def decrypt_secret(key: str, ciphertext: str) -> str:
     try:
-        return _fernet(key).decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        return keyring(key).decrypt(ciphertext.encode("utf-8")).decode("utf-8")
     except InvalidToken as exc:
         raise HubError("SECRET_UNAVAILABLE", "Stored credential could not be decrypted", 500) from exc
 

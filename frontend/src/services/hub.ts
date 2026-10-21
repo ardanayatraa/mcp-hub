@@ -246,7 +246,16 @@ export interface ModelProvider {
   ready: boolean;
 }
 
-export interface BuiltinProvider { key: string; name: string; ready: boolean; configured_by: string; used_by: string[] }
+export interface BuiltinProvider {
+  key: string;
+  name: string;
+  ready: boolean;
+  configured_by: string;
+  used_by: string[];
+  /** Claude only: where the key comes from. A key saved in the Hub wins over the environment. */
+  key_source?: "hub" | "environment" | null;
+  api_key_hint?: string;
+}
 
 export interface ProviderPreset {
   key: string;
@@ -284,6 +293,11 @@ export interface ChatSettings {
   suggestions: string[];
   max_steps: number;
   daily_limit: number;
+  /** Model gateway: "provider/model" or "provider/*"; empty means every ready model. */
+  gateway_models: string[];
+  /** Input plus output tokens per calendar month through the gateway; 0 means no budget. */
+  monthly_token_limit: number;
+  gateway_usage: GatewayUsage;
   /** Claude retries a declined request on a fallback model, server-side. */
   fallbacks: boolean;
   updated_at: string | null;
@@ -293,10 +307,22 @@ export interface ChatSettings {
     efforts: ChatSettings["effort"][];
     max_steps: [number, number];
     daily_limit: [number, number];
+    monthly_token_limit: [number, number];
   };
 }
 
-export type ChatSettingsUpdate = Partial<Omit<ChatSettings, "fallbacks" | "updated_at" | "options">>;
+export interface GatewayUsage {
+  period: string;
+  calls: number;
+  errors: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  models: { model: string; calls: number; errors: number; tokens: number }[];
+}
+
+export interface GatewayModel { id: string; provider: string; name: string }
+
+export type ChatSettingsUpdate = Partial<Omit<ChatSettings, "fallbacks" | "updated_at" | "options" | "gateway_usage">>;
 
 export interface ChatToolEvent {
   id: string;
@@ -349,7 +375,11 @@ export interface ClientKey {
   token?: string;
 }
 
-export interface AdminUserRow { id: string; email: string; role: string; mfa_enabled: boolean; is_active: boolean; app_ids: string[]; created_at: string }
+export interface AdminUserRow {
+  id: string; email: string; role: string; mfa_enabled: boolean; is_active: boolean; app_ids: string[]; created_at: string;
+  /** While MFA is required, the time by which this admin must set it up; null once set up. */
+  mfa_enroll_until: string | null;
+}
 
 /** A readable name for a tool key: what it does, where it lives, and a link to its page. */
 export interface ToolCard {
@@ -522,8 +552,12 @@ export const hub = {
   providerModels: (key: string, refresh = false) =>
     api<ModelCatalog>(`/model-providers/${encodeURIComponent(key)}/models${refresh ? "?refresh=true" : ""}`),
   deleteProvider: (id: string) => remove(`/model-providers/${id}`),
+  saveClaudeKey: (apiKey: string) =>
+    api<BuiltinProvider>("/model-providers/anthropic/key", { method: "PUT", ...json({ api_key: apiKey }) }),
+  clearClaudeKey: () => remove<BuiltinProvider>("/model-providers/anthropic/key"),
   chat: (connectorId: string) => api<ChatSettings>(`/connectors/${connectorId}/chat`),
   updateChat: (connectorId: string, body: ChatSettingsUpdate) => patch<ChatSettings>(`/connectors/${connectorId}/chat`, body),
+  gatewayModels: (connectorId: string) => api<{ models: GatewayModel[] }>(`/connectors/${connectorId}/chat/gateway-models`),
 
   keys: (appId?: string) => api<ClientKey[]>(`/service-identities${appId ? `?app_id=${encodeURIComponent(appId)}` : ""}`),
   createKey: (body: Record<string, unknown>) => post<ClientKey>("/service-identities", body),

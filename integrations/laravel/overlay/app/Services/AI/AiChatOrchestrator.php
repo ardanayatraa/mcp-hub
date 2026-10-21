@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Mcp\McpClient;
 use App\Services\Mcp\McpHubClient;
 use App\Services\Mcp\McpResourceRegistry;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class AiChatOrchestrator
@@ -15,7 +16,13 @@ class AiChatOrchestrator
     public const USER_COUNT_UNAVAILABLE_REPLY = 'Saya belum memiliki tool yang diizinkan untuk menghitung user HiReach.';
 
     private array $reportLinks = [];
+    private ?string $reportError = null;
     private ?string $pendingProposal = null;
+    private bool $offerList = false;
+    private ?string $listSuggestionLanguage = null;
+    private array $availableToolNames = [];
+    private string $currentQuestion = '';
+    private ?array $verifiedList = null;
 
     public function __construct(
         private AiProviderClient $ai,
@@ -29,8 +36,17 @@ class AiChatOrchestrator
      */
     public function complete(?string $model, array $history, User $user, array $metadata): string
     {
+        $this->currentQuestion = self::latestUserText($history);
         if (McpHubClient::enabled()) { \App\Services\Mcp\McpPrivacyGuard::messages($history); }
         $this->assertMcpTransport();
+
+        if (($denied = self::otherAccountReply($history, $user)) !== null) {
+            return $denied;
+        }
+
+        if (($unsupported = self::unsupportedReportFormatReply($history)) !== null) {
+            return $unsupported;
+        }
 
         if (self::asksAboutCapabilities($history)) {
             return $this->capabilityReply($history, $user);
@@ -40,18 +56,27 @@ class AiChatOrchestrator
             return self::USER_COUNT_UNAVAILABLE_REPLY;
         }
 
+        if (($denied = $this->unsupportedStatusFilterReply($history, $user)) !== null) {
+            return $denied;
+        }
+
         if (($denied = $this->unavailableResourceReply($history, $user)) !== null) {
             return $denied;
         }
 
         $this->reportLinks = [];
+        $this->reportError = null;
         $this->pendingProposal = null;
+        $this->verifiedList = null;
         $outOfScope = self::isOutOfScope($history);
-        $messages = $this->seed($history, $user, $outOfScope);
         $dataQuestion = $this->asksAboutHireachData($history);
         $tools = ! $outOfScope && ($dataQuestion || $this->wantsTools($history))
-            ? $this->availableTools($user)
+            ? $this->toolsForQuestion($user)
             : [];
+        $messages = $this->seed($history, $user, $outOfScope, $tools);
+        $this->offerList = false;
+        $this->listSuggestionLanguage = self::suggestionLanguage($history);
+        $this->availableToolNames = array_column(array_column($tools, 'function'), 'name');
         $mustUseTool = $tools !== [] && $dataQuestion;
 
         for ($round = 0; $round < self::MAX_TOOL_ROUNDS + 1; $round++) {
@@ -74,7 +99,10 @@ class AiChatOrchestrator
                 return 'Data HiReach belum bisa diperiksa saat ini.';
             }
             if ($calls === [] || $tools === [] || $round >= self::MAX_TOOL_ROUNDS) {
-                return trim(self::cleanReportReply((string) ($message['content'] ?? '')).$this->reportMarkdown().$this->proposalMarker());
+                $reply = $this->verifiedList !== null ? $this->verifiedListReply() : ($this->reportLinks === []
+                    ? ($this->reportError ?? self::cleanReportReply((string) ($message['content'] ?? '')))
+                    : $this->reportMarkdown());
+                return $reply.$this->listSuggestion($reply).$this->proposalMarker();
             }
 
             $messages[] = [
@@ -83,6 +111,9 @@ class AiChatOrchestrator
                 'tool_calls' => $calls,
             ];
             $messages = array_merge($messages, $this->toolMessages($calls, $user));
+            if ($this->verifiedList !== null) {
+                return $this->verifiedListReply();
+            }
         }
 
         return '';
@@ -96,8 +127,23 @@ class AiChatOrchestrator
      */
     public function stream(?string $model, array $history, User $user, array $metadata): \Generator
     {
+        $this->currentQuestion = self::latestUserText($history);
         if (McpHubClient::enabled()) { \App\Services\Mcp\McpPrivacyGuard::messages($history); }
         $this->assertMcpTransport();
+
+        if (($denied = self::otherAccountReply($history, $user)) !== null) {
+            yield 'data: '.json_encode(['choices' => [[
+                'index' => 0, 'delta' => ['content' => $denied],
+            ]]], JSON_UNESCAPED_UNICODE)."\n\ndata: [DONE]\n\n";
+            return;
+        }
+
+        if (($unsupported = self::unsupportedReportFormatReply($history)) !== null) {
+            yield 'data: '.json_encode(['choices' => [[
+                'index' => 0, 'delta' => ['content' => $unsupported],
+            ]]], JSON_UNESCAPED_UNICODE)."\n\ndata: [DONE]\n\n";
+            return;
+        }
 
         if (self::asksAboutCapabilities($history)) {
             yield 'data: '.json_encode(['choices' => [[
@@ -116,6 +162,13 @@ class AiChatOrchestrator
             return;
         }
 
+        if (($denied = $this->unsupportedStatusFilterReply($history, $user)) !== null) {
+            yield 'data: '.json_encode(['choices' => [[
+                'index' => 0, 'delta' => ['content' => $denied],
+            ]]], JSON_UNESCAPED_UNICODE)."\n\ndata: [DONE]\n\n";
+            return;
+        }
+
         if (($denied = $this->unavailableResourceReply($history, $user)) !== null) {
             yield 'data: '.json_encode(['choices' => [[
                 'index' => 0, 'delta' => ['content' => $denied],
@@ -124,13 +177,18 @@ class AiChatOrchestrator
         }
 
         $this->reportLinks = [];
+        $this->reportError = null;
         $this->pendingProposal = null;
+        $this->verifiedList = null;
         $outOfScope = self::isOutOfScope($history);
-        $messages = $this->seed($history, $user, $outOfScope);
         $dataQuestion = $this->asksAboutHireachData($history);
         $tools = ! $outOfScope && ($dataQuestion || $this->wantsTools($history))
-            ? $this->availableTools($user)
+            ? $this->toolsForQuestion($user)
             : [];
+        $messages = $this->seed($history, $user, $outOfScope, $tools);
+        $this->offerList = false;
+        $this->listSuggestionLanguage = self::suggestionLanguage($history);
+        $this->availableToolNames = array_column(array_column($tools, 'function'), 'name');
         $mustUseTool = $tools !== [] && $dataQuestion;
 
         if ($tools === []) {
@@ -163,21 +221,49 @@ class AiChatOrchestrator
                 return;
             }
             if ($calls !== [] && $tools !== [] && $round < self::MAX_TOOL_ROUNDS) {
+                $activity = 'Memeriksa permintaan perubahan';
+                foreach ($calls as $call) {
+                    $name = (string) ($call['function']['name'] ?? '');
+                    if (! in_array($name, $this->availableToolNames, true)) { continue; }
+                    if ($name === 'export_report') {
+                        $activity = 'Menyiapkan laporan dan preview Anda';
+                        break;
+                    }
+                    $action = McpResourceRegistry::tools()[$name]['action'] ?? null;
+                    if (in_array($action, ['list', 'count', 'get'], true)) {
+                        $activity = 'Membaca data HiReach';
+                    }
+                }
+                yield 'data: '.json_encode(['activity' => $activity], JSON_UNESCAPED_UNICODE)."\n\n";
                 $messages[] = [
                     'role' => 'assistant',
                     'content' => null,
                     'tool_calls' => $calls,
                 ];
                 $messages = array_merge($messages, $this->toolMessages($calls, $user));
+                if ($this->verifiedList !== null) {
+                    yield 'data: '.json_encode(['choices' => [[
+                        'index' => 0, 'delta' => ['content' => $this->verifiedListReply()],
+                    ]]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n\ndata: [DONE]\n\n";
+                    return;
+                }
                 continue;
             }
 
             if ($calls !== [] && $round >= self::MAX_TOOL_ROUNDS && ! $this->sseHasContent($buffer)) {
-                $message = 'AI could not finish this request.'.$this->reportMarkdown().$this->proposalMarker();
+                $message = ($this->reportLinks === [] ? ($this->reportError ?? 'AI could not finish this request.') : $this->reportMarkdown())
+                    .$this->proposalMarker();
                 yield 'data: '.json_encode(['choices' => [[
                     'index' => 0,
                     'delta' => ['content' => $message],
                 ]]], JSON_UNESCAPED_SLASHES)."\n\ndata: [DONE]\n\n";
+                return;
+            }
+
+            if ($this->verifiedList !== null) {
+                yield 'data: '.json_encode(['choices' => [[
+                    'index' => 0, 'delta' => ['content' => $this->verifiedListReply()],
+                ]]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n\ndata: [DONE]\n\n";
                 return;
             }
 
@@ -286,7 +372,9 @@ class AiChatOrchestrator
             return false;
         }
 
-        return true;
+        // An unfamiliar language is not evidence that a request is unrelated to HiReach.
+        // Let the model interpret ambiguous wording with the current, permission-filtered tools.
+        return preg_match('/\b(?:nasi\s+bungkus|makanan|resep|cuaca|weather|food|recipe|trivia|lelucon)\b/iu', $question) === 1;
     }
 
     /** @param array<int,array<string,mixed>> $history */
@@ -312,7 +400,7 @@ class AiChatOrchestrator
         }
 
         return preg_match('/^(?:ya|iya|boleh|oke|ok|lanjut)[\s?.!]*$/iu', $latest) === 1
-            || preg_match('/\b(?:daftar(?:nya)?|detail(?:nya)?|rinci(?:an(?:nya)?)?|semua data|lihat|tampilkan|sajikan|yang|kasih|kasi)\b/iu', $latest) === 1;
+            || preg_match('/\b(?:daftar(?:nya)?|list(?:nya)?|detail(?:nya)?|rinci(?:an(?:nya)?)?|semua data|lihat|tampilkan|sajikan|yang|kasih|kasi)\b/iu', $latest) === 1;
     }
 
     private static function mentionsRegisteredResource(string $question): bool
@@ -322,8 +410,17 @@ class AiChatOrchestrator
             $terms = $resource['keywords'] ?? [str_replace('_', ' ', (string) $key), $resource['label'] ?? ''];
             foreach ($terms as $term) {
                 $term = trim(mb_strtolower((string) $term));
-                if ($term !== '' && preg_match('/(?<!\pL)'.preg_quote($term, '/').'(?!\pL)/iu', $question) === 1) {
-                    return true;
+                if ($term !== '') {
+                    $variants = [$term];
+                    $singular = Str::singular($term);
+                    if ($singular !== $term) {
+                        $variants[] = $singular;
+                    }
+                    foreach ($variants as $variant) {
+                        if (preg_match('/(?<!\pL)'.preg_quote($variant, '/').'(?!\pL)/iu', $question) === 1) {
+                            return true;
+                        }
+                    }
                 }
             }
         }
@@ -382,11 +479,10 @@ class AiChatOrchestrator
      * @param  array<int,array<string,mixed>>  $history
      * @return array<int,array<string,mixed>>
      */
-    protected function seed(array $history, User $user, bool $outOfScope = false): array
+    protected function seed(array $history, User $user, bool $outOfScope = false, ?array $tools = null): array
     {
-        $names = $outOfScope ? [] : (($this->ai->usesMcpProvider() || McpHubClient::enabled())
-            ? array_map(fn (array $tool) => $tool['function']['name'], $this->availableTools($user))
-            : null);
+        $names = $outOfScope ? []
+            : array_map(fn (array $tool) => $tool['function']['name'], $tools ?? $this->availableTools($user));
 
         return array_merge([$this->tools->systemMessage($user, '', $names)], array_values($history));
     }
@@ -396,11 +492,32 @@ class AiChatOrchestrator
         return McpHubClient::enabled() ? app(McpHubClient::class)->openaiTools($user) : $this->tools->openaiTools($user);
     }
 
+    /** A tool result cannot grant access to a different operation or data model. */
+    private function toolsForQuestion(User $user): array
+    {
+        $question = self::withoutExplicitRecordValue($this->currentQuestion);
+        $resource = AiResourceExecutor::namedResource($question);
+        $report = preg_match('/\b(?:pdf|xlsx|excel|export|ekspor|download|unduh)\b|\b(?:buat|bikin|create|generate|cetak|print)\s+(?:file\s+)?(?:laporan|report)\b/iu', $question) === 1;
+        $write = $report ? null : (preg_match('/\b(?:hapus|delete|remove|buang)\b/iu', $question) ? 'delete'
+            : (preg_match('/\b(?:ubah|edit|update|perbarui|ganti|change|modify)\b/iu', $question) ? 'update'
+                : (preg_match('/\b(?:buat|bikin|tambah|tambahkan|create|add|new)\b/iu', $question) ? 'create' : null)));
+
+        return array_values(array_filter($this->availableTools($user), static function (array $tool) use ($resource, $report, $write): bool {
+            $name = $tool['function']['name'] ?? '';
+            if ($name === 'export_report') { return $report; }
+            $spec = McpResourceRegistry::tools()[$name] ?? null;
+            if (! $spec) { return false; }
+            if ($resource !== null && $spec['resource'] !== $resource) { return false; }
+            if (isset($spec['phase'])) { return $resource !== null && $spec['resource'] === $resource && $spec['action'] === $write; }
+            return true;
+        }));
+    }
+
     /** Permission inventory is metadata, never an AI guess or a data query. */
     public static function asksAboutCapabilities(array $history): bool
     {
         $question = self::latestUserText($history);
-        if (preg_match('/\b(?:apa|mana|what|which)\b/iu', $question)
+        if (preg_match('/\b(?:apa|mana|kemana|what|which)\b/iu', $question)
             && preg_match('/\b(?:data|models?|tabel|tools?|akses|access|laporan|reports?|ekspor|export)\b/iu', $question)
             && preg_match('/\b(?:bisa|dapat|mampu|akses|access|izinkan|diizinkan|tersedia|terhubung|available|connected|can|sajikan|menyajikan)\b/iu', $question)) {
             return true;
@@ -419,10 +536,72 @@ class AiChatOrchestrator
         return '';
     }
 
+    /** Explicit requests for another account must explain the ownership boundary. */
+    private static function otherAccountReply(array $history, User $user): ?string
+    {
+        $question = mb_strtolower(self::withoutExplicitRecordValue(self::latestUserText($history)));
+        if (preg_match('/\b(?:tampilkan|lihat|ambil|daftar|list|show|get|fetch|berapa|jumlah|count)\b/iu', $question) !== 1) {
+            return null;
+        }
+        $other = preg_match('/\b(?:pengguna|user|akun|account)\s+(?:lain|other|another)\b|\b(?:other|another)\s+(?:user|account)\b/iu', $question) === 1;
+        if (preg_match('/\b(?:pengguna|user|akun)\s+#?([0-9]+)\b/iu', $question, $match) === 1
+            && (string) (int) $match[1] !== (string) $user->getKey()) {
+            $other = true;
+        }
+        if (! $other) { return null; }
+
+        return self::suggestionLanguage($history) === 'en'
+            ? 'I can only read data belonging to your account, so I cannot show another user’s data.'
+            : 'Saya hanya bisa membaca data milik akun Anda, jadi tidak bisa menampilkan data pengguna lain.';
+    }
+
+    /** Never ask the model to invent a filter that the current Hub tool does not accept. */
+    private function unsupportedStatusFilterReply(array $history, User $user): ?string
+    {
+        $question = self::latestUserText($history);
+        if (preg_match('/\b(?:berstatus|status)\s*[:=]?\s*(FAILED|SUCCESS)\b/iu', $question, $match) !== 1) {
+            return null;
+        }
+        $status = strtoupper($match[1]);
+        $action = preg_match('/\b(?:berapa|jumlah|total|hitung|count|how many)\b/iu', $question) ? 'count' : 'list';
+        $available = array_column($this->availableTools($user), 'function');
+        $definitions = array_column($available, null, 'name');
+        foreach (McpResourceRegistry::resources() as $key => $resource) {
+            if (! isset($resource['fields']['status'])) { continue; }
+            $terms = [$key, str_replace('_', ' ', $key), $resource['label'], ...($resource['keywords'] ?? [])];
+            $mentioned = false;
+            foreach ($terms as $term) {
+                if ($term !== '' && preg_match('/(?<!\pL)'.preg_quote((string) $term, '/').'(?!\pL)/iu', $question)) {
+                    $mentioned = true;
+                    break;
+                }
+            }
+            if (! $mentioned) { continue; }
+            foreach (McpResourceRegistry::tools() as $name => $tool) {
+                if ($tool['resource'] !== $key || $tool['action'] !== $action || ! isset($definitions[$name])) { continue; }
+                if (array_key_exists('status', (array) ($definitions[$name]['parameters']['properties'] ?? []))) {
+                    return null;
+                }
+                $label = Str::singular(mb_strtolower((string) $resource['label']));
+                $english = self::suggestionLanguage($history) === 'en';
+                if ($action === 'count') {
+                    return $english
+                        ? "I can read your {$label} data, but the {$status} status filter is not available, so I cannot give an accurate count."
+                        : "Saya bisa membaca data {$label} milik akun Anda, tetapi filter status {$status} belum tersedia. Jadi, saya belum bisa memberi jumlah yang akurat.";
+                }
+                return $english
+                    ? "I can read your {$label} data, but the {$status} status filter is not available, so I cannot show an accurate filtered list."
+                    : "Saya bisa membaca data {$label} milik akun Anda, tetapi filter status {$status} belum tersedia. Jadi, saya belum bisa menampilkan daftar berdasarkan status itu.";
+            }
+        }
+
+        return null;
+    }
+
     /** A named unavailable model must never be replaced with another model's tool. */
     private function unavailableResourceReply(array $history, User $user): ?string
     {
-        $question = self::latestUserText($history);
+        $question = self::withoutExplicitRecordValue(self::latestUserText($history));
         if (! preg_match('/\b(?:tampilkan|lihat|ambil|sajikan|daftar|data|berapa|jumlah|total|hitung|terakhir|terbaru|list|show|get|fetch|count|latest|last|records?|export|ekspor|download|unduh|buat|tambahkan|ubah|edit|update|hapus|delete|remove)\b/iu', $question)) {
             return null;
         }
@@ -470,9 +649,9 @@ class AiChatOrchestrator
         }
         if (array_diff_key($mentioned, $permitted) === []) { return null; }
 
-        $english = preg_match('/\b(?:show|list|get|fetch|count|latest|records?|my)\b/i', self::latestUserText($history)) === 1;
-        return ($english ? 'I do not have access to the requested data model.'
-            : 'Saya tidak punya akses ke model data yang Anda minta.')."\n\n"
+        $english = self::suggestionLanguage($history) === 'en';
+        return ($english ? 'I do not have access to that data.'
+            : 'Saya tidak punya akses ke data yang Anda minta.')."\n\n"
             .$this->capabilityReply($history, $user, $available);
     }
 
@@ -492,17 +671,33 @@ class AiChatOrchestrator
             return $english ? 'No data models are currently allowed for your account.'
                 : 'Belum ada model data yang diizinkan untuk akun Anda.';
         }
-        $labels = $english ? ['read' => 'read', 'create' => 'create', 'update' => 'update', 'delete' => 'delete']
-            : ['read' => 'baca', 'create' => 'tambah', 'update' => 'ubah', 'delete' => 'hapus'];
-        $lines = [];
+        $verbs = $english ? ['read' => 'read', 'create' => 'create', 'update' => 'update', 'delete' => 'delete']
+            : ['read' => 'membaca', 'create' => 'menambah', 'update' => 'mengubah', 'delete' => 'menghapus'];
+        $byOperation = [];
         foreach ($resources as $resource) {
-            $operations = array_keys(array_intersect_key($labels, $resource['operations']));
             $name = str_replace(["\r", "\n"], ' ', $resource['label']);
+            if (! $english) {
+                $name = \Illuminate\Support\Str::singular(mb_strtolower($name, 'UTF-8'));
+            }
             $name = str_replace(['\\', '*', '_', '[', ']'], ['\\\\', '\\*', '\\_', '\\[', '\\]'], $name);
-            $lines[] = '- '.$name.' — '.implode(', ', array_map(fn ($operation) => $labels[$operation], $operations));
+            foreach (array_keys(array_intersect_key($verbs, $resource['operations'])) as $operation) {
+                $byOperation[$operation][] = $name;
+            }
         }
-        return ($english ? "Available data:\n\n" : "Data yang bisa diakses sekarang:\n\n")
-            .implode("\n", $lines).($english ? "\n\nOnly your own records." : "\n\nHanya data milik akun Anda.");
+        $sentences = [];
+        foreach ($verbs as $operation => $verb) {
+            $names = $byOperation[$operation] ?? [];
+            if ($names === []) { continue; }
+            $last = array_pop($names);
+            $joined = $names === [] ? $last : implode(', ', $names)
+                .(count($names) === 1 ? ($english ? ' and ' : ' dan ') : ($english ? ', and ' : ', dan ')).$last;
+            $prefix = $sentences === [] ? ($english ? 'I can ' : 'Saya bisa ')
+                : ($english ? 'I can also ' : 'Saya juga bisa ');
+            $sentences[] = $prefix.$verb.($english ? ' data from ' : ' data dari ').$joined
+                .($english ? ' in your account.' : ' milik akun Anda.');
+        }
+
+        return implode(' ', $sentences);
     }
 
     /**
@@ -521,7 +716,46 @@ class AiChatOrchestrator
             }
 
             try {
+                if (! in_array($name, $this->availableToolNames, true)) {
+                    throw new \RuntimeException('Tool was not authorized for this request.');
+                }
                 $spec = \App\Services\Mcp\McpResourceRegistry::tools()[$name] ?? [];
+                // Some providers add a non-schema "reason" alongside function arguments.
+                // Drop only that annotation; other unknown inputs still fail Hub validation.
+                if (! array_key_exists('reason', (array) ($spec['input_schema']['properties'] ?? []))) {
+                    unset($arguments['reason']);
+                }
+                if (($spec['action'] ?? '') === 'get' && isset($spec['resource'])) {
+                    $lookup = McpResourceRegistry::resources()[$spec['resource']]['lookup'] ?? null;
+                    if (is_string($lookup) && ! isset($arguments[$lookup])) {
+                        $value = self::explicitLookupValue($this->currentQuestion, $lookup);
+                        if ($value !== null && strlen($value) <= ($spec['input_schema']['properties'][$lookup]['maxLength'] ?? 200)) {
+                            $arguments[$lookup] = $value;
+                        }
+                    }
+                }
+                if ($name === 'export_report') {
+                    if (preg_match('/\bpdf\b/i', $this->currentQuestion)) {
+                        $arguments['format'] = 'pdf';
+                    } elseif (preg_match('/\b(?:excel|xlsx)\b/i', $this->currentQuestion)) {
+                        $arguments['format'] = 'xlsx';
+                    }
+                    if (($namedResource = AiResourceExecutor::namedResource($this->currentQuestion)) !== null) {
+                        $arguments['resource'] = $namedResource;
+                    }
+                    unset($arguments['status']);
+                    if (preg_match('/\b(?:failed|gagal)\b/i', $this->currentQuestion)) {
+                        $arguments['status'] = 'FAILED';
+                    } elseif (preg_match('/\b(?:success|sukses|berhasil)\b/i', $this->currentQuestion)) {
+                        $arguments['status'] = 'SUCCESS';
+                    }
+                }
+                if (($schemaError = self::toolArgumentError($spec, $arguments, $name)) !== null) {
+                    $out[] = ['role' => 'tool',
+                        'tool_call_id' => (string) ($call['id'] ?? ('call_'.bin2hex(random_bytes(6)))),
+                        'content' => json_encode(['ok' => false, 'error' => $schemaError], JSON_UNESCAPED_UNICODE)];
+                    continue;
+                }
                 if (isset($spec['phase']) && $this->pendingProposal !== null) {
                     throw new \RuntimeException('Review the existing proposal first.');
                 }
@@ -533,16 +767,56 @@ class AiChatOrchestrator
                     $this->tools->proposal($ref, $user);
                     $this->pendingProposal = $ref;
                 }
-                if ($name === 'export_report' && is_string($payload['url'] ?? null)) {
+                if ($name === 'export_report' && is_string($payload['preview_url'] ?? null)) {
                     $this->reportLinks[] = [
                         'url' => $payload['url'],
+                        'preview_url' => $payload['preview_url'] ?? null,
                         'format' => $payload['format'] ?? 'xlsx',
+                        'label' => $payload['label'] ?? 'data',
+                        'count' => $payload['count'] ?? 0,
+                        'print_only' => $payload['print_only'] ?? false,
                     ];
                     unset($payload['url']);
-                    $payload['download_ready'] = true;
+                    unset($payload['preview_url']);
+                    $payload['preview_ready'] = true;
+                    $payload['download_ready'] = empty($payload['print_only']);
+                }
+                if (($spec['action'] ?? '') === 'count'
+                    && in_array('list_'.$spec['resource'], $this->availableToolNames, true)
+                    && is_int($payload['data']['count'] ?? null) && $payload['data']['count'] > 0) {
+                    $this->offerList = true;
+                }
+                if (($spec['action'] ?? '') === 'list' && self::isSimpleListRequest($this->currentQuestion)
+                    && is_array($payload['data'] ?? null)) {
+                    $rows = $payload['data'];
+                    $cursor = $payload['meta']['next_cursor'] ?? null;
+                    $seen = [];
+                    while (is_string($cursor) && $cursor !== '' && count($rows) < 100 && ! isset($seen[$cursor])) {
+                        $seen[$cursor] = true;
+                        $nextArgs = $arguments;
+                        $nextArgs['limit'] = min(50, 100 - count($rows));
+                        $nextArgs['cursor'] = $cursor;
+                        try {
+                            $next = ($this->ai->usesMcpProvider() || McpHubClient::enabled())
+                                ? $this->mcp->query('hireach', $name, $nextArgs, $user)
+                                : $this->tools->callTool($name, $nextArgs, $user);
+                            if (! is_array($next['data'] ?? null) || $next['data'] === []) { break; }
+                            $rows = array_merge($rows, $next['data']);
+                            $cursor = $next['meta']['next_cursor'] ?? null;
+                        } catch (\Throwable $error) {
+                            break;
+                        }
+                    }
+                    $this->verifiedList = ['resource' => $spec['resource'], 'rows' => array_slice($rows, 0, 100),
+                        'more' => is_string($cursor) && $cursor !== ''];
                 }
                 $content = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
             } catch (\Throwable $e) {
+                if ($name === 'export_report') {
+                    $this->reportError = preg_match('/^(?:Laporan (?:melebihi 1\.000 baris|terlalu besar)|Filter status )/u', $e->getMessage())
+                        ? $e->getMessage()
+                        : 'Laporan belum dapat dibuat. Periksa izin data atau coba lagi.';
+                }
                 $content = '{"ok":false,"error":"AI tool request failed."}';
             }
 
@@ -556,6 +830,54 @@ class AiChatOrchestrator
         return $out;
     }
 
+    private static function toolArgumentError(array $spec, array $arguments, string $name): ?string
+    {
+        if ($spec === []) { return null; }
+        $schema = $spec['input_schema'] ?? [];
+        $properties = (array) ($schema['properties'] ?? []);
+        $required = (array) ($schema['required'] ?? []);
+        $missing = array_values(array_diff($required, array_keys($arguments)));
+        if ($missing !== []) {
+            return 'Missing required argument: '.implode(', ', $missing).'. Retry '.$name
+                .' with that value copied exactly from the user request or a prior tool result.';
+        }
+        $unknown = array_values(array_diff(array_keys($arguments), array_keys($properties)));
+        if ($unknown !== []) {
+            return 'Unsupported argument: '.implode(', ', $unknown).'. Retry '.$name
+                .' using only: '.implode(', ', array_keys($properties)).'.';
+        }
+        if (isset($arguments['limit']) && (! is_int($arguments['limit']) || $arguments['limit'] < 1 || $arguments['limit'] > 50)) {
+            return 'The limit must be an integer from 1 to 50. Retry with a valid limit.';
+        }
+        foreach ($arguments as $key => $value) {
+            if (isset($properties[$key]['enum']) && ! in_array($value, $properties[$key]['enum'], true)) {
+                return 'Invalid '.$key.' value. Retry using one of: '.implode(', ', $properties[$key]['enum']).'.';
+            }
+        }
+        return null;
+    }
+
+    private static function explicitLookupValue(string $question, string $field): ?string
+    {
+        $label = $field === 'title' ? '(?:berjudul|judul|titled|title)' : '(?:bernama|nama|named|name)';
+        if (preg_match('/\b'.$label.'\s*[:=]?\s*(?:"([^"]+)"|“([^”]+)”|\x27([^\x27]+)\x27|(.+?)(?=\s+milik\s+(?:saya|aku)|\s+(?:saya|aku|my|mine)\b|[?.!]|$))/iu',
+            $question, $match) !== 1) { return null; }
+        $value = trim((string) (($match[1] ?? '') ?: ($match[2] ?? '') ?: ($match[3] ?? '') ?: ($match[4] ?? '')));
+        return $value !== '' ? $value : null;
+    }
+
+    private static function withoutExplicitRecordValue(string $question): string
+    {
+        // Names and titles are record values, even when they contain words such as "User".
+        foreach (['title' => '(?:berjudul|titled)', 'name' => '(?:bernama|named)'] as $field => $label) {
+            if (preg_match('/\b'.$label.'\b/iu', $question)
+                && ($value = self::explicitLookupValue($question, $field)) !== null) {
+                $question = str_replace($value, ' ', $question);
+            }
+        }
+        return $question;
+    }
+
     private function assertMcpTransport(): void
     {
         if (config('ai.mcp.ai_only', true) && ! $this->ai->usesMcpProvider()) {
@@ -565,13 +887,20 @@ class AiChatOrchestrator
 
     private function reportMarkdown(): string
     {
-        $links = [];
+        $lines = [];
         foreach ($this->reportLinks as $report) {
-            $label = $report['format'] === 'pdf' ? 'Download PDF' : 'Download Excel';
-            $links[] = '['.$label.']('.$report['url'].')';
+            $pdf = $report['format'] === 'pdf';
+            $kind = $pdf ? 'PDF' : 'Excel';
+            $count = (int) ($report['count'] ?? 0);
+            $label = (string) ($report['label'] ?? 'data');
+            $line = 'Laporan '.$kind.' '.$label.' berisi '.number_format($count, 0, ',', '.')
+                .' data milik akun Anda sudah siap. [Lihat preview]('.$report['preview_url'].')';
+            $lines[] = ! empty($report['print_only'])
+                ? $line.'. Untuk huruf di luar Latin, pilih "Cetak / Simpan PDF" pada preview agar teks tetap utuh.'
+                : $line.' · [Download '.$kind.']('.$report['url'].')';
         }
 
-        return $links === [] ? '' : "\n\n".implode("\n", $links);
+        return implode("\n\n", $lines);
     }
 
     private function proposalMarker(): string
@@ -579,15 +908,110 @@ class AiChatOrchestrator
         return $this->pendingProposal === null ? '' : "\n<<<CONFIRM ".json_encode(['proposal_ref' => $this->pendingProposal]).' CONFIRM>>>';
     }
 
+    private function listSuggestion(string $reply): string
+    {
+        if (! $this->offerList || $reply === '' || $this->listSuggestionLanguage === null
+            || preg_match('/\b(?:mau|ingin|would you like)\b.{0,70}\b(?:lihat|tampilkan|daftar|list|show|see)\b/iu', $reply)) {
+            return '';
+        }
+
+        return $this->listSuggestionLanguage === 'en'
+            ? "\n\nWould you like me to show the list?"
+            : "\n\nMau saya tampilkan daftarnya?";
+    }
+
+    private static function isSimpleListRequest(string $question): bool
+    {
+        return preg_match('/\b(?:daftar(?:nya)?|list(?:nya)?|tampilkan|lihat|show)\b/iu', $question) === 1
+            && preg_match('/\b(?:laporan|report|pdf|excel|xlsx|detail|rinci|berapa|jumlah|count|hapus|ubah|buat)\b/iu', $question) !== 1;
+    }
+
+    private function verifiedListReply(): string
+    {
+        $rows = $this->verifiedList['rows'];
+        $label = str_replace('_', ' ', rtrim((string) $this->verifiedList['resource'], 's'));
+        if ($rows === []) { return 'Belum ada '.$label.' yang dapat ditampilkan untuk akun Anda.'; }
+        $first = reset($rows);
+        $fields = [];
+        foreach (['name', 'title', 'code', 'type', 'status', 'is_enabled', 'created_at'] as $field) {
+            if (is_array($first) && array_key_exists($field, $first)) { $fields[] = $field; }
+        }
+        $fields = array_slice($fields, 0, 3);
+        if ($fields === [] && is_array($first)) {
+            $fields = array_slice(array_keys(array_filter($first,
+                static fn ($value, $key) => is_scalar($value) && ! in_array($key, ['id', 'ref', 'user_id'], true),
+                ARRAY_FILTER_USE_BOTH)), 0, 3);
+        }
+        $headings = ['name' => 'Nama', 'title' => 'Judul', 'code' => 'Kode', 'type' => 'Tipe',
+            'status' => 'Status', 'is_enabled' => 'Aktif', 'created_at' => 'Dibuat'];
+        $lines = ['Berikut '.count($rows).' '.$label.' milik akun Anda:', '',
+            '| No. | '.implode(' | ', array_map(static fn ($field) => $headings[$field] ?? ucfirst($field), $fields)).' |',
+            '| ---: | '.implode(' | ', array_fill(0, count($fields), '---')).' |'];
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) { continue; }
+            $cells = array_map(static function ($field) use ($row): string {
+                $value = $row[$field] ?? null;
+                if ($value === null) { return '—'; }
+                if (is_bool($value)) { return $value ? 'Ya' : 'Tidak'; }
+                if (! is_scalar($value)) { return '—'; }
+                $safe = htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                return str_replace(["\\", '|', "`", '*', '_', '[', ']', "\r", "\n"],
+                    ["\\\\", '\\|', '\\`', '\\*', '\\_', '\\[', '\\]', ' ', ' '], $safe);
+            }, $fields);
+            $lines[] = '| '.($index + 1).' | '.implode(' | ', $cells).' |';
+        }
+        if ($this->verifiedList['more']) {
+            $lines[] = '';
+            $lines[] = 'Masih ada data lain. Untuk daftar lengkap, minta laporan PDF atau Excel.';
+        }
+        return implode("\n", $lines);
+    }
+
+    private static function suggestionLanguage(array $history): ?string
+    {
+        $question = self::latestUserText($history);
+        if (preg_match('/\b(?:berapa|jumlah|milik|saya|aku|tampilkan|lihat|daftar|kasih|kasi|lain|pengguna|berstatus)\b/iu', $question)) {
+            return 'id';
+        }
+        if (preg_match('/\b(?:how many|count|my|account|show|list|please)\b/i', $question)) {
+            return 'en';
+        }
+
+        return null;
+    }
+
+    private static function unsupportedReportFormatReply(array $history): ?string
+    {
+        $question = self::latestUserText($history);
+        return preg_match('/\bcsv\b/i', $question)
+            && preg_match('/\b(?:buat|unduh|download|export|ekspor|laporan|report)\b/iu', $question)
+            && ! preg_match('/\b(?:pdf|excel|xlsx)\b/i', $question)
+                ? 'Format CSV belum tersedia. Saya bisa membuat laporan Excel atau PDF.'
+                : null;
+    }
+
     public static function cleanReportReply(string $reply): string
     {
         // Confirmation references come from the server, never the model's text.
         $reply = preg_replace('/<<<CONFIRM[\\s\\S]*?(?:CONFIRM>>>|$)/', '', $reply) ?? $reply;
         $reply = preg_replace_callback(
-            '/\[(Download (?:Excel|PDF))\]\(([^)\s]+)\)/i',
-            fn (array $match) => preg_match('~/ai/report/[a-f0-9]{32}(?:$|[?#])~i', $match[2])
-                ? $match[0]
-                : '',
+            '/\[(Download (?:Excel|PDF)|Lihat preview)\]\(([^)\s]+)\)/i',
+            static function (array $match): string {
+                $url = parse_url($match[2]);
+                $base = parse_url(url('/'));
+                if (! is_array($url) || ! is_array($base)
+                    || ($url['scheme'] ?? null) !== ($base['scheme'] ?? null)
+                    || ($url['host'] ?? null) !== ($base['host'] ?? null)
+                    || ($url['port'] ?? null) !== ($base['port'] ?? null)
+                    || isset($url['query']) || isset($url['fragment']) || isset($url['user'])
+                    || ! preg_match('~^/ai/report/([a-f0-9]{32})(/preview)?$~i', $url['path'] ?? '', $parts)
+                    || (strcasecmp($match[1], 'Lihat preview') === 0) !== isset($parts[2])) {
+                    return '';
+                }
+                $meta = Cache::get('hireach.ai.report.'.strtolower($parts[1]));
+                return is_array($meta) && (int) ($meta['user_id'] ?? 0) === (int) auth()->id()
+                    ? $match[0] : '';
+            },
             $reply
         ) ?? $reply;
 
@@ -597,7 +1021,7 @@ class AiChatOrchestrator
     private function appendReportEvent(string $buffer): string
     {
         $markdown = $this->reportMarkdown();
-        if ($markdown === '' && $this->pendingProposal === null && ! str_contains($buffer, '<<<CONFIRM')) {
+        if ($markdown === '' && $this->reportError === null && $this->pendingProposal === null && ! $this->offerList && ! str_contains($buffer, '<<<CONFIRM')) {
             return $buffer;
         }
 
@@ -609,7 +1033,10 @@ class AiChatOrchestrator
                 $content .= $delta;
             }
         }
-        $content = self::cleanReportReply($content).$markdown.$this->proposalMarker();
+        $content = $this->reportLinks === []
+            ? ($this->reportError ?? self::cleanReportReply($content))
+            : $markdown;
+        $content .= $this->listSuggestion($content).$this->proposalMarker();
 
         return 'data: '.json_encode(['choices' => [[
             'index' => 0,

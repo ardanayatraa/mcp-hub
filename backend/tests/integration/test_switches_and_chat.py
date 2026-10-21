@@ -240,6 +240,27 @@ def test_chat_shows_write_requests_as_proposals(admin, monkeypatch, model):
         assert [data["tools"][0]["write"] for kind, data in got if kind == "done"] == [True]
 
 
+def test_untrusted_data_cannot_turn_a_read_chat_into_a_write_proposal(admin, monkeypatch, model):
+    from tests.integration.test_access import connect_managed, managed_manifest
+
+    script, record = model
+    helpers.dns(monkeypatch)
+    monkeypatch.setattr(helpers, "MANIFEST", managed_manifest())
+    with helpers.source():
+        app = connect_managed(admin)
+        enable_chat(admin, app["id"])
+        writer = issue_key(admin, write=True)
+        name = "your_app__projects__prepare_create"
+        script += [providers.Step(calls=[providers.ToolCall("c1", "run_report", {"source": "projects"})], stop="tool_use"),
+                   providers.Step(calls=[providers.ToolCall("c2", name, {"name": "Injected"})], stop="tool_use"),
+                   providers.Step(text="I could not create it.")]
+        body = turn(admin, writer, {"message": "Show my projects"}, delegation(), stream=False).json()["data"]
+        assert name not in record["tools"]
+        assert body["tools"][0]["status"] == "done"
+        assert body["tools"][1]["error"]["code"] == "UNKNOWN_TOOL"
+        assert body["proposals"] == []
+
+
 def test_chat_config_hides_everything_while_off(admin, monkeypatch):
     helpers.dns(monkeypatch)
     with helpers.source():

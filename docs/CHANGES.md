@@ -1,5 +1,62 @@
 # What changed after 1.0
 
+## Model gateway
+
+- **Apps pick their model from every provider the Hub holds keys for.** `/gateway/v1/models` lists
+  Claude and every ready OpenAI-compatible provider (ids such as `openai/gpt-4.1`);
+  `/gateway/v1/chat/completions` answers in the OpenAI shape with function calling, converting
+  Claude both ways. `/gateway/mcp` serves the same as the tools `list_ai_models` and `chat_ai`, so an
+  app that used a separate model bridge (HiReach) only changes `MCP_BRIDGE_URL` and `MCP_BRIDGE_TOKEN`.
+- Allowed while the app's Chat is on; chat rate and daily limits apply per user and
+  `GATEWAY_APP_RATE_LIMIT` per app; each call is audited as `model.chat`. Messages are never stored.
+- PHP's empty arrays in tool schemas (`"properties": []`) are repaired before they reach a provider.
+- **Allowed models and a monthly token budget per app**, under Model gateway access on the app's
+  Chat tab, with this month's calls, errors and tokens per model. Other models get `MODEL_NOT_ALLOWED`;
+  an app over budget gets `BUDGET_EXCEEDED`. Existing apps keep every model open until narrowed.
+- The daily limit counts questions, not tool rounds. A provider answering 502/503 gets one retry.
+
+## Production hardening
+
+- Migration `a9d4c2e7f615` (run `alembic upgrade head`): gateway settings and usage, and an MFA
+  enrollment deadline for admins.
+- **MFA enrollment window.** While MFA is required, an admin who never enrolled can do so only
+  within `MFA_ENROLL_HOURS` (72) of being created or reset; afterwards a super admin resets it (Access,
+  Team, Edit, Reset) or the server shell runs `python -m app.bootstrap --reset-mfa EMAIL`.
+- **Encryption key rotation.** `SECRET_ENCRYPTION_KEY_PREVIOUS` keeps old keys readable;
+  `python -m app.rotate_keys` re-encrypts every stored secret with the current key.
+- **Expired data is purged on a schedule** (`PURGE_INTERVAL_HOURS`, default 6): audit rows past
+  retention, sessions, MFA challenges, memories, and gateway usage older than about a year.
+- **Docker:** the backend runs as an unprivileged user and trusts `X-Forwarded-For` only from
+  `FORWARDED_ALLOW_IPS`, so login limits see each client rather than the proxy. nginx forwards
+  `/chat/` and `/gateway/` (they were missing) and sends HSTS, a strict Content-Security-Policy and
+  Permissions-Policy; the backend adds `default-src 'none'` and HSTS over HTTPS. The theme script
+  moved out of `index.html` so the CSP needs no inline script.
+- JSON logs keep the Hub's own event names (such as `gateway_model_error`, `purge_expired`), and
+  request lines keep method, path (without the query) and status, never the client address.
+- **Production refuses** the example secrets from `.env.example`, a session key under 32
+  characters, non-https public URLs and origins, and an `ALLOWED_HOSTS` without the public host.
+  Malformed encryption keys stop the start instead of failing requests later.
+- **Host check** on every route but the probes (`INVALID_HOST`); the API explorer is
+  development-only.
+- **Rate limits per kind:** a flood of one kind (end users of one app) can no longer use up the
+  shared table and block admin sign-in. Daily limits use small fixed-window counters.
+- Only super admins change an app's allowed models and token budget. Gateway calls are rate
+  limited before a refusal is audited, and accept OpenAI's top-level `user` as the end user.
+  Streamed tool calls carry their `index`.
+- Admins created before the MFA enrollment window get theirs at their first sign-in that
+  requires MFA, so turning `MFA_REQUIRED` on later locks nobody out.
+- nginx: hashed assets are cached for good, `index.html` is revalidated on every load, static
+  files are gzipped (API answers are not), and duplicate security headers are dropped.
+- New [deployment guide](DEPLOY.md). Tested on PostgreSQL 16 as well as SQLite.
+
+## Every model key in the admin UI
+
+- **The Claude key is set under AI providers**, like the OpenAI-compatible keys: paste it on the
+  Claude card. It is stored encrypted, never returned (only the last four characters), applies
+  without a restart, and wins over `ANTHROPIC_API_KEY`, which stays as a fallback. No migration:
+  it is kept as the reserved `anthropic` row of `model_providers`.
+- API: `PUT` and `DELETE /api/admin/v1/model-providers/anthropic/key` (super admin).
+
 ## Bearer tokens everywhere
 
 - **The Hub calls apps with `Authorization: Bearer <token>` only.** `X-API-Key` is gone.

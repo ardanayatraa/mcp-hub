@@ -98,6 +98,8 @@ class UserChanges(BaseModel):
     role: Literal["super_admin", "app_admin", "auditor"] = "auditor"
     is_active: bool = True
     app_ids: list[str] = Field(default_factory=list, max_length=500)
+    # Clears the admin's authenticator and opens a new enrollment window.
+    reset_mfa: bool = False
 
 
 class ModuleChanges(BaseModel):

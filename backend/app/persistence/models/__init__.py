@@ -31,6 +31,9 @@ class AdminUser(Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_totp_counter: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # While MFA is required, an account that never enrolled may enroll until then (created or reset
+    # + MFA_ENROLL_HOURS); afterwards a super admin must reset it. Empty: created_at + the window.
+    mfa_enroll_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
@@ -382,6 +385,27 @@ class ChatSetting(Base):
     suggestions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
     daily_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
+    # Model gateway: the models the app may call ("provider/model" or "provider/*"; empty = every
+    # ready model) and its token budget per calendar month (0 = no budget).
+    gateway_models: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    monthly_token_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class GatewayUsage(Base):
+    """Model gateway calls and tokens per app, model and month. Counts only, never messages."""
+
+    __tablename__ = "gateway_usage"
+    __table_args__ = (UniqueConstraint("app_id", "period", "model", name="uq_gateway_usage_app_period_model"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    period: Mapped[str] = mapped_column(String(7), nullable=False)  # YYYY-MM, UTC
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    errors: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 

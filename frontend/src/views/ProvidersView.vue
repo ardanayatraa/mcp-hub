@@ -6,6 +6,7 @@ import LoadingSkeleton from "@/components/LoadingSkeleton.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import ProviderDialog from "@/components/ProviderDialog.vue";
+import SecretInput from "@/components/SecretInput.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import { hub, type BuiltinProvider, type ModelProvider, type ProviderPreset } from "@/services/hub";
 import { useSession } from "@/stores/session";
@@ -24,6 +25,7 @@ const dialog = ref<{ provider?: ModelProvider } | null>(null);
 const removing = ref<ModelProvider | null>(null);
 const busy = ref("");
 const canEdit = computed(() => session.isSuper);
+const claudeKey = ref("");
 
 async function load() {
   try {
@@ -53,6 +55,42 @@ async function test(row: ModelProvider) {
     replace(tested);
     if (tested.status === "ok") toast.ok(tested.status_message);
     else toast.error(tested.status_message || "The provider did not answer");
+  } catch (exc) {
+    toast.error(errorMessage(exc));
+  } finally {
+    busy.value = "";
+  }
+}
+
+const keySource = (item: BuiltinProvider) => item.key_source === "hub"
+  ? `Key saved in the Hub${item.api_key_hint ? ` (…${item.api_key_hint})` : ""}.`
+  : item.key_source === "environment" ? `Key from ${item.configured_by} in the Hub's environment.` : "No key yet.";
+
+function replaceBuiltin(updated: BuiltinProvider) {
+  builtin.value = builtin.value.map((item) => (item.key === updated.key ? updated : item));
+}
+
+async function saveClaude() {
+  busy.value = "claude:save";
+  try {
+    replaceBuiltin(await hub.saveClaudeKey(claudeKey.value.trim()));
+    claudeKey.value = "";
+    // Loading the model list checks the new key with Anthropic.
+    const catalog = await hub.providerModels("anthropic", true);
+    if (catalog.error) toast.error(`Key saved, but ${catalog.error}`);
+    else toast.ok(`Claude key saved · ${catalog.models.length} models available`);
+  } catch (exc) {
+    toast.error(errorMessage(exc));
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function clearClaude() {
+  busy.value = "claude:clear";
+  try {
+    replaceBuiltin(await hub.clearClaudeKey());
+    toast.ok("Saved Claude key removed");
   } catch (exc) {
     toast.error(errorMessage(exc));
   } finally {
@@ -115,8 +153,20 @@ const statusInfo = (row: ModelProvider) => !row.enabled ? { label: "Off", tone: 
         <div class="min-w-0 flex-1">
           <p class="flex flex-wrap items-center gap-2 font-medium">{{ item.name }}
             <span :class="item.ready ? 'badge-ok' : 'badge-warn'">{{ item.ready ? "Ready" : "No key" }}</span></p>
-          <p class="mt-1 text-xs text-subtle">Set by <code class="code">{{ item.configured_by }}</code> in the Hub's environment.
-            {{ item.ready ? "" : "Add it and restart the Hub to use it." }}</p>
+          <template v-if="item.key === 'anthropic'">
+            <p class="mt-1 text-xs text-subtle">{{ keySource(item) }}</p>
+            <form v-if="canEdit" class="mt-3 flex flex-wrap items-center gap-2" @submit.prevent="saveClaude">
+              <SecretInput v-model="claudeKey" class="min-w-0 flex-1" aria-label="Claude API key" maxlength="1000"
+                           :placeholder="item.ready ? 'Paste a new key to replace it' : 'Paste the API key (sk-ant-…)'" />
+              <button class="btn-primary" type="submit" :disabled="!claudeKey.trim() || busy !== ''">
+                <span v-if="busy === 'claude:save'" class="spinner" /> Save</button>
+              <button v-if="item.key_source === 'hub'" class="btn-ghost text-bad" type="button" :disabled="busy !== ''"
+                      :title="`Remove the saved key; ${item.configured_by} applies again when set`" @click="clearClaude">
+                <span v-if="busy === 'claude:clear'" class="spinner" /> Remove</button>
+            </form>
+          </template>
+          <p v-else class="mt-1 text-xs text-subtle">Set by <code class="code">{{ item.configured_by }}</code> in the Hub's environment.
+            {{ item.ready ? "" : "Add it and restart the Hub to use it." }} To manage its key here, add it as a provider instead.</p>
           <p v-if="item.used_by.length" class="mt-1 text-xs text-subtle">Used by {{ item.used_by.join(", ") }}</p>
         </div>
       </div>

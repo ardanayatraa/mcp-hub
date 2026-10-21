@@ -120,7 +120,10 @@ def test_source_managed_empty_initial_contract_can_connect(admin, monkeypatch):
 
 
 @pytest.mark.parametrize("failure", ["unavailable", "unmanaged", "wrong_app", "wrong_tool", "malformed", "late_build_failure"])
-def test_invalid_source_policy_fails_closed_and_does_not_partly_publish(admin, monkeypatch, failure):
+def test_invalid_source_policy_fails_closed_and_does_not_partly_publish(admin, monkeypatch, failure, caplog):
+    from app.mcp import server
+
+    monkeypatch.setattr(server.logger, "disabled", False)  # alembic's fileConfig may have turned it off
     helpers.dns(monkeypatch)
     manifest = managed_manifest()
     monkeypatch.setattr(helpers, "MANIFEST", manifest)
@@ -147,7 +150,10 @@ def test_invalid_source_policy_fails_closed_and_does_not_partly_publish(admin, m
         elif failure == "late_build_failure":
             manifest["modules"][0]["read_endpoints"][0]["description"] = "Updated first tool before the last tool fails."
             manifest["modules"][-1]["read_endpoints"][0]["tool_key"] = "your_app.activity." + "x" * 41 + ".extra"
-        assert listed(admin["client"], token) == []
+        with caplog.at_level("WARNING", logger="hub.mcp"):
+            assert listed(admin["client"], token) == []
+        assert any(record.getMessage() == "source_permissions_unavailable" and record.app_key == "your_app"
+                   for record in caplog.records)
         assert call(admin["client"], token, "your_app__projects__list", {}, delegation()).json()["result"]["isError"]
         assert not [request for request in requests if request.url.path == "/api/v1/projects"]
         assert api(admin, "GET", "/tools").status_code == 422

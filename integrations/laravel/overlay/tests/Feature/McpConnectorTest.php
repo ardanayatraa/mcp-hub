@@ -50,7 +50,8 @@ class McpConnectorTest extends TestCase
         });
         Schema::create('blast_messages', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('user_id'); $t->string('title'); $t->string('type');
-            $t->string('status'); $t->string('msisdn'); $t->text('message_content'); $t->softDeletes(); $t->timestamps();
+            $t->string('status'); $t->integer('otp')->nullable(); $t->string('msisdn');
+            $t->text('message_content'); $t->softDeletes(); $t->timestamps();
         });
         foreach ([1, 2] as $id) {
             DB::table('role_user')->insert(['user_id' => $id, 'status' => 'active', 'active' => true]);
@@ -258,6 +259,10 @@ class McpConnectorTest extends TestCase
         $this->getJson('/api/ai/v1/templates/list?user_id=2', $this->headers())->assertStatus(403);
         $this->getJson('/api/ai/v1/templates/list?limit=51', $this->headers())->assertStatus(422);
         $this->getJson('/api/ai/v1/templates/list?cursor=private@email.test', $this->headers())->assertStatus(422);
+        // The connector emits offsets beyond five digits for large accounts.
+        $this->getJson('/api/ai/v1/templates/list?cursor=page_100000', $this->headers())
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/ai/v1/templates/list?cursor=page_1000000000', $this->headers())->assertStatus(422);
     }
 
     public function test_legacy_accounts_require_active_source_roles_and_deleted_accounts_deny(): void
@@ -318,6 +323,51 @@ class McpConnectorTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_privacy_guard_allows_template_dates_but_rejects_phone_numbers(): void
+    {
+        \App\Services\Mcp\McpPrivacyGuard::messages([
+            ['role' => 'assistant', 'content' => 'Template dibuat 13-10-2026 08:01:19.'],
+            ['role' => 'user', 'content' => 'anda bisa akses kemana?'],
+        ]);
+
+        $this->expectExceptionMessage('AI Chat cannot accept personal data.');
+        \App\Services\Mcp\McpPrivacyGuard::messages([
+            ['role' => 'user', 'content' => 'Hubungi 0812-3456-7890'],
+        ]);
+    }
+
+    public function test_other_account_questions_explain_user_scope_without_calling_tools(): void
+    {
+        Http::fake();
+        $agent = app(AiChatOrchestrator::class);
+        $history = [['role' => 'user', 'content' => 'Tampilkan 5 template milik User 2, bukan milik akun saya.']];
+        $reply = 'Saya hanya bisa membaca data milik akun Anda, jadi tidak bisa menampilkan data pengguna lain.';
+        $this->assertSame($reply, $agent->complete(null, $history, $this->owner, []));
+        $stream = implode('', iterator_to_array($agent->stream(null, $history, $this->owner, [])));
+        $this->assertStringContainsString($reply, $stream);
+        $this->assertSame('I can only read data belonging to your account, so I cannot show another user’s data.',
+            $agent->complete(null, [['role' => 'user', 'content' => 'Show templates from another user.']], $this->owner, []));
+        Http::assertNothingSent();
+    }
+
+    public function test_status_count_without_permitted_filter_explains_limit_without_guessing(): void
+    {
+        Http::fake();
+        $this->mock(McpHubClient::class, function ($mock) {
+            $mock->shouldReceive('openaiTools')->twice()->andReturn([[
+                'type' => 'function', 'function' => ['name' => 'count_blast_messages',
+                    'parameters' => ['type' => 'object', 'properties' => []]],
+            ]]);
+        });
+        $agent = app(AiChatOrchestrator::class);
+        $history = [['role' => 'user', 'content' => 'Berapa blast message berstatus FAILED milik saya?']];
+        $reply = 'Saya bisa membaca data blast message milik akun Anda, tetapi filter status FAILED belum tersedia. Jadi, saya belum bisa memberi jumlah yang akurat.';
+        $this->assertSame($reply, $agent->complete(null, $history, $this->owner, []));
+        $this->assertStringContainsString($reply,
+            implode('', iterator_to_array($agent->stream(null, $history, $this->owner, []))));
+        Http::assertNothingSent();
+    }
+
     public function test_capability_questions_follow_current_dynamic_models_without_ai_or_business_reads(): void
     {
         $this->registerProjectFixture();
@@ -348,6 +398,7 @@ class McpConnectorTest extends TestCase
             foreach ([false, true] as $streamed) {
                 foreach (['anda menyajikan data apa aja ini sekarang bisanya?',
                     'data apa aja yang bisa anda akses sekarang?', 'Data apa saja yang bisa anda akses?',
+                    'anda bisa akses kemana?', 'anda bisa akses ke mana?',
                     'Apa yang bisa kamu lakukan?', 'Laporan apa yang bisa diekspor dari data yang tersedia?',
                     'What data can you access right now?'] as $question) {
                     $history = [['role' => 'user', 'content' => 'data apa yang bisa anda akses?'],
@@ -361,16 +412,46 @@ class McpConnectorTest extends TestCase
                         $this->assertStringContainsString('data: [DONE]', $reply);
                         $reply = json_decode(substr(explode("\n", $reply)[0], 6), true)['choices'][0]['delta']['content'];
                     }
-                    $this->assertStringContainsString('- Blast Messages', $reply);
-                    $this->assertStringContainsString('- Projects', $reply);
+                    $this->assertStringContainsString($question === 'What data can you access right now?'
+                        ? 'I can read data from Blast Messages and Projects in your account.'
+                        : 'Saya bisa membaca data dari blast message dan project milik akun Anda.', $reply);
                     $this->assertStringNotContainsString('Templates', $reply);
                     $this->assertStringNotContainsString('- Laporan', $reply);
                     $this->assertStringNotContainsString('Download', $reply);
-                    $this->assertStringContainsString("\n\n- ", $reply);
+                    $this->assertStringNotContainsString(' — baca', $reply);
                 }
             }
         }
         $this->assertSame([], $businessReads);
+    }
+
+    public function test_unfamiliar_languages_reach_model_with_only_currently_allowed_tools(): void
+    {
+        $this->permissions(false);
+        Http::fake(function ($request) {
+            $this->assertSame('tools/list', $request['method']);
+            return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => ['tools' => [[
+                'name' => 'hireach__blast_messages__list',
+                'inputSchema' => McpResourceRegistry::tools()['list_blast_messages']['input_schema'],
+            ]]]]);
+        });
+        $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) {
+            $mock->shouldReceive('usesMcpProvider')->andReturn(false);
+            $mock->shouldReceive('chat')->times(2)->andReturnUsing(function ($model, $messages, $stream, $metadata, $options) {
+                $names = array_column(array_column($options['tools'] ?? [], 'function'), 'name');
+                $this->assertContains('list_blast_messages', $names);
+                $this->assertNotContains('list_templates', $names);
+                $this->assertSame('auto', $options['tool_choice']);
+                $this->assertStringContainsString('Understand questions in any language', $messages[0]['content']);
+                return ['choices' => [['message' => ['content' => 'Permitted data only.']]]];
+            });
+        });
+        foreach (['¿A qué datos puedes acceder?', 'どのデータにアクセスできますか？'] as $question) {
+            $history = [['role' => 'user', 'content' => $question]];
+            $this->assertFalse(AiChatOrchestrator::isOutOfScope($history));
+            $this->assertSame('Permitted data only.',
+                app(AiChatOrchestrator::class)->complete(null, $history, $this->owner, []));
+        }
     }
 
     public function test_capability_reply_rechecks_admin_flags_and_hub_catalog_each_turn(): void
@@ -392,7 +473,7 @@ class McpConnectorTest extends TestCase
         $agent = app(AiChatOrchestrator::class);
         $history = [['role' => 'user', 'content' => 'data apa aja yang bisa anda akses sekarang?']];
         $reply = $agent->complete(null, $history, $this->owner, []);
-        $this->assertStringContainsString('- Projects — baca', $reply);
+        $this->assertSame('Saya bisa membaca data dari project milik akun Anda.', $reply);
         $this->assertStringNotContainsString('Blast Messages', $reply);
         $this->assertStringNotContainsString('Templates', $reply);
         $history[] = ['role' => 'assistant', 'content' => $reply];
@@ -458,7 +539,8 @@ class McpConnectorTest extends TestCase
                         $reply = json_decode(substr(explode("\n", $reply)[0], 6), true)['choices'][0]['delta']['content'];
                     }
                     $this->assertStringContainsString('tidak punya akses', $reply);
-                    $this->assertStringContainsString('- Blast Messages', $reply);
+                    $this->assertStringContainsString('Saya bisa membaca data dari ', $reply);
+                    $this->assertStringContainsString('blast message', $reply);
                     $this->assertStringNotContainsString('fabricated-record', $reply);
                     $this->assertStringNotContainsString('Welcome', $reply);
                 }
@@ -485,6 +567,9 @@ class McpConnectorTest extends TestCase
             $result = $request['method'] === 'tools/list' ? ['tools' => [[
                 'name' => 'hireach__templates__count',
                 'inputSchema' => McpResourceRegistry::tools()['count_templates']['input_schema'],
+            ], [
+                'name' => 'hireach__templates__list',
+                'inputSchema' => McpResourceRegistry::tools()['list_templates']['input_schema'],
             ]]] : ['isError' => false, 'structuredContent' => ['success' => true, 'data' => [['count' => 2]],
                 'meta' => ['contains_personal_data' => false], 'trace_id' => 'tr_dummy']];
             return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => $result]);
@@ -492,20 +577,32 @@ class McpConnectorTest extends TestCase
         $round = 0;
         $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) use (&$round) {
             $mock->shouldReceive('usesMcpProvider')->andReturn(true);
-            $mock->shouldReceive('chat')->twice()->andReturnUsing(function ($model, $messages, $stream, $metadata, $options) use (&$round) {
+            $mock->shouldReceive('chat')->times(4)->andReturnUsing(function ($model, $messages, $stream, $metadata, $options) use (&$round) {
                 $this->assertStringNotContainsString('dummy1@example.test', json_encode($messages));
-                if ($round++ === 0) {
+                if ($round++ % 2 === 0) {
                     $this->assertContains('count_templates', array_column(array_column($options['tools'], 'function'), 'name'));
                     return ['choices' => [['message' => ['tool_calls' => [['id' => 'call_dummy', 'type' => 'function',
                         'function' => ['name' => 'count_templates', 'arguments' => '{}']]]]]]];
                 }
                 $tool = collect($messages)->first(fn ($message) => $message['role'] === 'tool');
                 $this->assertSame(2, json_decode($tool['content'], true)['data']['count']);
-                return ['choices' => [['message' => ['content' => 'Ada 2 template.']]]];
+                $latest = collect($messages)->last(fn ($message) => $message['role'] === 'user');
+                return ['choices' => [['message' => ['content' => str_contains($latest['content'], 'How many')
+                    ? 'There are 2 templates.' : 'Ada 2 template.']]]];
             });
         });
         $reply = app(AiChatOrchestrator::class)->complete('dummy-model', [['role' => 'user', 'content' => 'Berapa template saya?']], $this->owner, []);
-        $this->assertSame('Ada 2 template.', $reply);
+        $this->assertSame("Ada 2 template.\n\nMau saya tampilkan daftarnya?", $reply);
+        $this->assertSame("There are 2 templates.\n\nWould you like me to show the list?",
+            app(AiChatOrchestrator::class)->complete('dummy-model',
+                [['role' => 'user', 'content' => 'How many templates are in my account?']], $this->owner, []));
+        foreach (['coba anda berikan list nya', 'list nya', 'ya, tampilkan'] as $followUp) {
+            $this->assertFalse(AiChatOrchestrator::isOutOfScope([
+                ['role' => 'user', 'content' => 'Berapa jumlah template milik akun saya?'],
+                ['role' => 'assistant', 'content' => $reply],
+                ['role' => 'user', 'content' => $followUp],
+            ]));
+        }
         Http::assertSent(fn ($request) => $request['method'] === 'tools/call'
             && $request['params']['name'] === 'hireach__templates__count');
     }
@@ -517,12 +614,15 @@ class McpConnectorTest extends TestCase
             $result = $request['method'] === 'tools/list' ? ['tools' => [[
                 'name' => 'hireach__blast_messages__count',
                 'inputSchema' => McpResourceRegistry::tools()['count_blast_messages']['input_schema'],
+            ], [
+                'name' => 'hireach__blast_messages__list',
+                'inputSchema' => McpResourceRegistry::tools()['list_blast_messages']['input_schema'],
             ]]] : ['isError' => false, 'structuredContent' => ['success' => true, 'data' => [['count' => 1]],
                 'meta' => ['contains_personal_data' => false], 'trace_id' => 'tr_dummy']];
             return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => $result]);
         });
         $toolCall = ['id' => 'call_blast', 'type' => 'function',
-            'function' => ['name' => 'count_blast_messages', 'arguments' => '{}']];
+            'function' => ['name' => 'count_blast_messages', 'arguments' => '{"status":"FAILED","reason":"Count my messages"}']];
         $fullRound = 0;
         $streamRound = 0;
         $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) use (&$fullRound, &$streamRound, $toolCall) {
@@ -549,11 +649,15 @@ class McpConnectorTest extends TestCase
             });
         });
         $history = [['role' => 'user', 'content' => 'berapa blast']];
-        $this->assertSame('Ada 1 blast.', app(AiChatOrchestrator::class)->complete(null, $history, $this->owner, []));
+        $this->assertSame("Ada 1 blast.\n\nMau saya tampilkan daftarnya?",
+            app(AiChatOrchestrator::class)->complete(null, $history, $this->owner, []));
         $stream = implode('', iterator_to_array(app(AiChatOrchestrator::class)->stream(null, $history, $this->owner, [])));
         $this->assertStringContainsString('Ada 1 blast.', $stream);
+        $this->assertStringContainsString('Mau saya tampilkan daftarnya?', $stream);
         Http::assertSent(fn ($request) => $request['method'] === 'tools/call'
-            && $request['params']['name'] === 'hireach__blast_messages__count');
+            && $request['params']['name'] === 'hireach__blast_messages__count'
+            && $request['params']['arguments']['status'] === 'FAILED'
+            && ! str_contains($request->body(), '"reason"'));
 
         $integration = \App\Models\AiIntegration::findOrFail(1);
         $permissions = $integration->permissions;
@@ -561,6 +665,81 @@ class McpConnectorTest extends TestCase
         $integration->update(['permissions' => $permissions]);
         $this->assertStringContainsString('tidak punya akses',
             app(AiChatOrchestrator::class)->complete(null, $history, $this->owner, []));
+    }
+
+    public function test_missing_detail_lookup_argument_is_repaired_before_hub_call(): void
+    {
+        Http::fake(function ($request) {
+            $result = $request['method'] === 'tools/list' ? ['tools' => [[
+                'name' => 'hireach__blast_messages__get',
+                'inputSchema' => McpResourceRegistry::tools()['get_blast_message']['input_schema'],
+            ]]] : ['isError' => false, 'structuredContent' => ['success' => true,
+                'data' => [['title' => 'Campaign 1', 'status' => 'FAILED']],
+                'meta' => ['contains_personal_data' => false], 'trace_id' => 'tr_dummy']];
+            return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => $result]);
+        });
+        $round = 0;
+        $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) use (&$round) {
+            $mock->shouldReceive('usesMcpProvider')->andReturn(true);
+            $mock->shouldReceive('chat')->times(3)->andReturnUsing(function ($model, $messages) use (&$round) {
+                $round++;
+                if ($round === 2) {
+                    $tool = collect($messages)->first(fn ($message) => $message['role'] === 'tool');
+                    $this->assertStringContainsString('Missing required argument: title', $tool['content']);
+                }
+                if ($round < 3) {
+                    return ['choices' => [['message' => ['tool_calls' => [[
+                        'id' => 'call_'.$round, 'type' => 'function',
+                        'function' => ['name' => 'get_blast_message',
+                            'arguments' => $round === 1 ? '{"reason":"detail"}' : '{"title":"Campaign 1"}'],
+                    ]]]]]];
+                }
+                $tool = collect($messages)->last(fn ($message) => $message['role'] === 'tool');
+                $this->assertSame('Campaign 1', json_decode($tool['content'], true)['data']['title']);
+                return ['choices' => [['message' => ['content' => 'Campaign 1 berstatus FAILED.']]]];
+            });
+        });
+        $reply = app(AiChatOrchestrator::class)->complete(null,
+            [['role' => 'user', 'content' => 'Detail blast message Campaign 1 milik saya']], $this->owner, []);
+        $this->assertSame('Campaign 1 berstatus FAILED.', $reply);
+        $calls = collect(Http::recorded())->filter(fn ($pair) => $pair[0]['method'] === 'tools/call');
+        $this->assertCount(1, $calls);
+        Http::assertSent(fn ($request) => $request['method'] === 'tools/call'
+            && $request['params']['arguments'] === ['title' => 'Campaign 1']);
+    }
+
+    public function test_explicit_title_is_used_when_model_omits_required_detail_argument(): void
+    {
+        Http::fake(function ($request) {
+            $result = $request['method'] === 'tools/list' ? ['tools' => [[
+                'name' => 'hireach__blast_messages__get',
+                'inputSchema' => McpResourceRegistry::tools()['get_blast_message']['input_schema'],
+            ]]] : ['isError' => false, 'structuredContent' => ['success' => true,
+                'data' => [['title' => 'Test User 4', 'status' => 'FAILED']],
+                'meta' => ['contains_personal_data' => false], 'trace_id' => 'tr_dummy']];
+            return Http::response(['jsonrpc' => '2.0', 'id' => $request['id'], 'result' => $result]);
+        });
+        $round = 0;
+        $this->mock(\App\Services\AI\AiProviderClient::class, function ($mock) use (&$round) {
+            $mock->shouldReceive('usesMcpProvider')->andReturn(true);
+            $mock->shouldReceive('chat')->twice()->andReturnUsing(function ($model, $messages) use (&$round) {
+                if ($round++ === 0) {
+                    return ['choices' => [['message' => ['tool_calls' => [[
+                        'id' => 'call_detail', 'type' => 'function',
+                        'function' => ['name' => 'get_blast_message', 'arguments' => '{"reason":"detail"}'],
+                    ]]]]]];
+                }
+                $tool = collect($messages)->last(fn ($message) => $message['role'] === 'tool');
+                $this->assertSame('Test User 4', json_decode($tool['content'], true)['data']['title']);
+                return ['choices' => [['message' => ['content' => 'Test User 4 berstatus FAILED.']]]];
+            });
+        });
+        $reply = app(AiChatOrchestrator::class)->complete(null,
+            [['role' => 'user', 'content' => 'Tampilkan detail blast message saya berjudul Test User 4.']],
+            $this->owner, []);
+        $this->assertSame('Test User 4 berstatus FAILED.', $reply);
+        Http::assertSent(fn ($request) => $request['method'] === 'tools/call'
+            && $request['params']['arguments'] === ['title' => 'Test User 4']);
     }
 
     public function test_mcp_conversations_use_local_storage_for_missing_and_deleted_chats(): void
@@ -671,6 +850,7 @@ class McpConnectorTest extends TestCase
     {
         $base = ['model' => AiProjectFixture::class, 'owner' => 'owner_id', 'fields' => ['title' => 'string']];
         foreach ([['fields' => ['email' => 'string']], ['fields' => ['access_token' => 'string']],
+            ['fields' => ['otp' => 'integer']], ['fields' => ['pin_code' => 'string']],
             ['fields' => ['owner_id' => 'integer']], ['owner' => ''], ['model' => \stdClass::class],
             ['fields' => ['title' => 'unknown']], ['lookup' => 'private_email'],
             ['filters' => ['private_email' => ['private']]]] as $invalid) {
@@ -745,6 +925,79 @@ class McpConnectorTest extends TestCase
         $this->assertSame([], \App\Services\AI\AiResourceExecutor::resources());
         $this->assertDatabaseCount('contacts', 2);
         $this->getJson('/api/ai/v1/contacts/count', $this->headers())->assertStatus(403);
+    }
+
+    public function test_admin_can_configure_scoped_exact_match_filters_for_count_and_list(): void
+    {
+        $settings = $this->contactSettings()->assertSee('Exact-match filters')
+            ->set('resourceDraft.filters.status', 'ACTIVE, INACTIVE')
+            ->call('saveResource')->assertHasNoErrors();
+        $this->assertSame(['ACTIVE', 'INACTIVE'], McpResourceRegistry::resources()['contacts']['filters']['status']);
+        $settings->call('editResource', 'contacts')->assertSet('resourceDraft.filters.status', 'ACTIVE, INACTIVE');
+
+        \Livewire\Livewire::actingAs($this->owner)->test(\App\Http\Livewire\Table\AiAccessTable::class)
+            ->set('resources.contacts.enabled', true)->set('resources.contacts.read', true)->assertHasNoErrors();
+        $this->assertSame(['ACTIVE', 'INACTIVE'], McpResourceRegistry::tools()['count_contacts']['input_schema']['properties']['status']['enum']);
+        $this->getJson('/api/ai/v1/contacts/count?status=ACTIVE', $this->headers())
+            ->assertOk()->assertJsonPath('data.0.count', 1);
+        $this->getJson('/api/ai/v1/contacts/list?status=INACTIVE', $this->headers())
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/ai/v1/contacts/count?status=UNKNOWN', $this->headers())->assertStatus(422);
+    }
+
+    public function test_admin_rejects_unreadable_or_malformed_filter_values(): void
+    {
+        $settings = $this->contactSettings();
+        $before = DB::table('ai_integrations')->where('id', 1)->value('permissions');
+        $settings->set('resourceDraft.filters.phone_number', 'private')
+            ->call('saveResource')->assertHasErrors('resourceDraft.filters');
+        $settings->set('resourceDraft.filters', ['status' => 'ACTIVE, ACTIVE'])
+            ->call('saveResource')->assertHasErrors('resourceDraft.filters.status');
+        $settings->set('resourceDraft.filters', ['status' => 'ACTIVE,'])
+            ->call('saveResource')->assertHasErrors('resourceDraft.filters.status');
+        $this->assertSame($before, DB::table('ai_integrations')->where('id', 1)->value('permissions'));
+    }
+
+    public function test_blast_status_filter_migration_backfills_only_missing_values(): void
+    {
+        $integration = \App\Models\AiIntegration::findOrFail(1);
+        $permissions = $integration->permissions;
+        unset($permissions['_resources']['blast_messages']['filters']);
+        $integration->update(['permissions' => $permissions]);
+        $migration = require base_path('database/migrations/2026_10_20_000001_enable_blast_message_status_filter.php');
+        $migration->up();
+        $this->assertSame(['SUCCESS', 'FAILED'], McpResourceRegistry::resources()['blast_messages']['filters']['status']);
+        $this->assertTrue(\App\Models\AiIntegration::findOrFail(1)->permission('blast_messages')['read']);
+
+        $permissions = \App\Models\AiIntegration::findOrFail(1)->permissions;
+        $permissions['_resources']['blast_messages']['filters']['status'] = ['CUSTOM'];
+        $integration->update(['permissions' => $permissions]);
+        $migration->up();
+        $this->assertSame(['CUSTOM'], McpResourceRegistry::resources()['blast_messages']['filters']['status']);
+    }
+
+    public function test_detail_access_migration_removes_otp_and_enables_owned_blast_lookup(): void
+    {
+        $integration = \App\Models\AiIntegration::findOrFail(1);
+        $permissions = $integration->permissions;
+        $permissions['_resources']['blast_messages']['fields']['otp'] = 'integer';
+        $permissions['_resources']['blast_messages']['lookup'] = null;
+        $integration->update(['permissions' => $permissions]);
+
+        $migration = require base_path('database/migrations/2026_10_20_000002_harden_ai_detail_access.php');
+        $migration->up();
+        $blast = McpResourceRegistry::resources()['blast_messages'];
+        $this->assertArrayNotHasKey('otp', $blast['fields']);
+        $this->assertSame('title', $blast['lookup']);
+        $this->assertArrayHasKey('get_blast_message', McpResourceRegistry::tools());
+        $manifestModule = collect(McpResourceRegistry::manifest()['modules'])->firstWhere('key', 'blast_messages');
+        $this->assertSame('blocked', $manifestModule['field_policies']['otp']);
+        $this->getJson('/api/ai/v1/blast_messages/get?title=Campaign%201', $this->headers())
+            ->assertOk()->assertJsonPath('data.0.title', 'Campaign 1')->assertDontSee('otp');
+        $this->getJson('/api/ai/v1/blast_messages/get?title=Campaign%202', $this->headers())
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->assertTrue(\App\Models\AiIntegration::findOrFail(1)->permission('blast_messages')['read']);
+        $this->assertArrayNotHasKey('otp', McpResourceRegistry::modelColumns(\App\Models\BlastMessage::class)['fields']);
     }
 
     public function test_schema_choices_exclude_private_hidden_and_unsupported_fields(): void
@@ -1431,8 +1684,7 @@ class McpConnectorTest extends TestCase
         $permissions = $integration->permissions;
         $permissions['_resources']['records'] = ['model' => AiRecordFixture::class, 'owner' => 'user_id',
             'fields' => ['label' => 'string:40', 'active' => 'boolean', 'rating' => 'number', 'reviewed_at' => 'datetime',
-                'optional_note' => 'string:80', 'guarded_field' => 'string', 'created_at' => 'datetime',
-                'otp' => 'integer', 'pin_code' => 'string:20']];
+                'optional_note' => 'string:80', 'guarded_field' => 'string', 'created_at' => 'datetime']];
         foreach (['projects', 'records'] as $resource) {
             $permissions[$resource] = ['read' => true, 'enabled' => true, 'create' => true, 'update' => true, 'delete' => true];
         }
@@ -1444,7 +1696,7 @@ class McpConnectorTest extends TestCase
         $this->assertSame(['string', 'null'], $record['properties']['optional_note']['type']);
         $this->assertSame('number', $record['properties']['rating']['type']);
         foreach (['user_id', 'guarded_field', 'created_at'] as $field) { $this->assertArrayNotHasKey($field, $record['properties']); }
-        // One-time and secret codes stay readable as registered but are never write inputs (MCP Hub refuses them).
+        // One-time and secret codes are neither readable nor accepted as write inputs.
         foreach (['otp', 'pin_code'] as $field) { $this->assertArrayNotHasKey($field, $record['properties']); }
         $executor = app(\App\Services\AI\AiResourceExecutor::class);
         // Different model, owner and fillable attributes use the same executor with no overrides.

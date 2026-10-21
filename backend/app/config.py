@@ -1,11 +1,15 @@
 """Environment configuration. Secrets come from the environment, never from code."""
 
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.errors import HubError
+
+# Values printed in .env.example and the docs; a deployment that keeps one is not secret.
+EXAMPLE_VALUES = {"replace-with-long-random-string", "replace-with-fernet-key", "ChangeMe-Now-12", "change-me"}
 
 
 class Settings(BaseSettings):
@@ -14,10 +18,15 @@ class Settings(BaseSettings):
     environment: str = "dev"
     database_url: str = "sqlite+pysqlite:///:memory:"
     secret_encryption_key: str = ""
+    # During a key rotation: the old keys, comma-separated. They decrypt only; run
+    # `python -m app.rotate_keys` to re-encrypt everything with SECRET_ENCRYPTION_KEY, then remove them.
+    secret_encryption_key_previous: str = ""
     session_signing_key: str = ""
     admin_initial_email: str = "admin@localhost"
     admin_initial_password: str = ""
     mfa_required: bool = False
+    # Hours a new (or reset) admin has to set up MFA while it is required; later a super admin resets it.
+    mfa_enroll_hours: int = Field(default=72, ge=1, le=720)
     cookie_secure: bool = False
     allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     allowed_hosts: str = "localhost,127.0.0.1,localhost:8000,127.0.0.1:8000"
@@ -38,6 +47,8 @@ class Settings(BaseSettings):
     report_max_records: int = Field(default=1000, ge=50, le=5000)
     report_timeout_seconds: int = Field(default=20, ge=1, le=120)
     audit_retention_days: int = Field(default=90, ge=1, le=3650)
+    # Hours between automatic purges of expired audit rows, sessions and memories; 0 turns it off.
+    purge_interval_hours: int = Field(default=6, ge=0, le=168)
     log_level: str = "INFO"
     circuit_failure_threshold: int = 5
     circuit_open_seconds: int = 30
@@ -56,6 +67,8 @@ class Settings(BaseSettings):
     chat_max_tokens: int = Field(default=16000, ge=1024, le=64000)
     chat_timeout_seconds: int = Field(default=120, ge=10, le=600)
     chat_rate_limit: int = Field(default=20, ge=1, le=1000)
+    # Model gateway calls per app per minute, across all its users (end_user_id comes from the app).
+    gateway_app_rate_limit: int = Field(default=300, ge=1, le=100000)
     # Where admin-added model providers may live. Empty hosts means any public host; private and
     # loopback addresses still follow EGRESS_ALLOW_PRIVATE / EGRESS_ALLOW_LOOPBACK.
     model_egress_allowed_hosts: str = ""
@@ -98,6 +111,18 @@ class Settings(BaseSettings):
             problems.append("private and loopback egress are disabled in production")
         if not self.secret_encryption_key or not self.session_signing_key:
             problems.append("encryption and session keys are required")
+        elif len(self.session_signing_key) < 32 or self.session_signing_key in EXAMPLE_VALUES:
+            problems.append("SESSION_SIGNING_KEY must be a random value of 32+ characters")
+        if self.admin_initial_password in EXAMPLE_VALUES:
+            problems.append("ADMIN_INITIAL_PASSWORD is the published example; choose your own")
+        if not self.mcp_public_url.startswith("https://") or not self.mcp_issuer_url.startswith("https://"):
+            problems.append("MCP_PUBLIC_URL and MCP_ISSUER_URL must be https addresses")
+        if any(not origin.startswith("https://") for origin in self.origin_list):
+            problems.append("ALLOWED_ORIGINS must be https origins")
+        public = urlsplit(self.mcp_public_url)
+        hosts = {host.lower() for host in self.host_list}
+        if public.hostname and public.netloc.lower() not in hosts and public.hostname.lower() not in hosts:
+            problems.append("ALLOWED_HOSTS must include the MCP_PUBLIC_URL host")
         if not self.egress_allowed_hosts and not self.egress_allowed_cidrs:
             problems.append("approved egress hosts or CIDRs are required")
         if self.database_url.startswith("sqlite"):

@@ -123,6 +123,20 @@ def _trim(tools: list[Tool]) -> list[Tool]:
     return sorted(tools, key=rank)[:MAX_TOOLS]
 
 
+def _explicit_write_intent(text: str) -> bool:
+    # Only the current user turn (or a skill the user selected) can request a write.
+    # Tool results and prior assistant messages are deliberately excluded.
+    text = re.sub(r'"[^"\n]*"|\'[^\'\n]*\'|`[^`\n]*`', ' ', text.casefold())
+    return bool(re.search(
+        r"\b(?:create|add|update|edit|change|delete|remove|send|publish|approve|assign|"
+        r"buat|bikin|tambah|tambahkan|ubah|perbarui|ganti|hapus|kirim|terbitkan|setujui|"
+        r"crear|agregar|actualizar|editar|eliminar|enviar|publicar|"
+        r"créer|ajouter|modifier|supprimer|envoyer|publier|"
+        r"erstellen|hinzufügen|ändern|löschen|senden|veröffentlichen)\b",
+        text,
+    ))
+
+
 def system_prompt(caller: Caller, config, tools: list[Tool], locale: str | None, trimmed: bool) -> str:
     name = caller.application.name
     names = {tool.name for tool in tools}
@@ -218,6 +232,8 @@ class Turn:
         self.endpoint: registry.Endpoint | None = None
 
     async def prepare(self) -> "Turn":
+        # The Claude key saved under AI providers wins over ANTHROPIC_API_KEY for this turn.
+        self.settings = registry.claude_settings(self.db, self.settings)
         db, caller, request, settings = self.db, self.caller, self.request, self.settings
         if not self.config.enabled:
             raise HubError("CHAT_DISABLED", "Chat is turned off for this app", 403)
@@ -273,7 +289,8 @@ class Turn:
             self.db.commit()
 
     async def _run(self, emit: Emit) -> dict:
-        offered = _trim(self.tools)
+        offered = _trim([tool for tool in self.tools if _explicit_write_intent(self.user_text)
+                         or tool.annotations is None or tool.annotations.read_only_hint is not False])
         titles = {tool.name: tool.title or tool.name for tool in offered}
         writes = {tool.name for tool in offered if tool.annotations is not None and tool.annotations.read_only_hint is False}
         system = system_prompt(self.caller, self.config, offered, self.request.locale, len(offered) < len(self.tools))

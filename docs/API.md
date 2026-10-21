@@ -89,11 +89,13 @@ See [the source-managed contract](CONNECTOR_CONTRACT.md#permissions-managed-by-t
 
 ### AI providers
 
-OpenAI-compatible model providers the chat can use. Listing is open to every admin role; changes need super admin.
+Claude and the OpenAI-compatible model providers the chat can use. Listing is open to every admin role; changes need super admin.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/model-providers` | `{builtin: [Claude, and the environment gateway when set], providers: [...]}`. Each provider has `api_key_set` and `api_key_hint` (last 4 characters), never the key; `models` from the last test; `used_by` app names. |
+| GET | `/model-providers` | `{builtin: [Claude, and the environment gateway when set], providers: [...]}`. Claude has `key_source` (`hub`, `environment` or `null`) and `api_key_hint`. Each provider has `api_key_set` and `api_key_hint` (last 4 characters), never the key; `models` from the last test; `used_by` app names. |
+| PUT | `/model-providers/anthropic/key` | `{api_key}`. Saves the Claude key encrypted; it wins over `ANTHROPIC_API_KEY` and applies without a restart. Returns the Claude entry, never the key. |
+| DELETE | `/model-providers/anthropic/key` | Removes the saved Claude key; `ANTHROPIC_API_KEY` applies again when set. |
 | GET | `/model-providers/presets` | OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Gemini, Together, Fireworks, xAI, Cerebras, Azure OpenAI, Ollama, LM Studio, other. |
 | POST | `/model-providers` | `{key, name, base_url, auth_style?: bearer\|header\|none, auth_header?, api_key?, headers?, token_param?: max_tokens\|max_completion_tokens\|none, tool_schema?: full\|basic, streaming?, default_model?, enabled?}`. The key is stored encrypted. |
 | PATCH | `/model-providers/{id}` | Same fields except `key`; `clear_api_key: true` removes the saved key. Changing the address or key resets the status to untested. |
@@ -112,8 +114,9 @@ OpenAI-compatible model providers the chat can use. Listing is open to every adm
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/connectors/{id}/chat` | Settings plus `fallbacks` (server-side fallback active) and `options` (providers with `ready`, Claude models, efforts, limits). |
-| PATCH | `/connectors/{id}/chat` | `{enabled?, provider?: anthropic\|openai_compatible\|<provider key>, model?, effort?: low\|medium\|high, instructions? (≤4000), welcome_message? (≤300), suggestions? (≤6 × 120), max_steps?: 1..12, daily_limit?: 0..5000}`. Text with personal data is refused. |
+| GET | `/connectors/{id}/chat` | Settings plus `fallbacks` (server-side fallback active), `gateway_usage` (this month's gateway calls, errors and tokens, per model) and `options` (providers with `ready`, Claude models, efforts, limits). |
+| PATCH | `/connectors/{id}/chat` | `{enabled?, provider?: anthropic\|openai_compatible\|<provider key>, model?, effort?: low\|medium\|high, instructions? (≤4000), welcome_message? (≤300), suggestions? (≤6 × 120), max_steps?: 1..12, daily_limit?: 0..5000, gateway_models?: ["provider/model" or "provider/*", ≤200] (empty: every model), monthly_token_limit?: 0 (none)..2e9}`. Text with personal data is refused. |
+| GET | `/connectors/{id}/chat/gateway-models` | Every model the Hub can reach now (`{models: [{id, provider, name}]}`), to choose the app's allowed models. |
 | POST | `/connectors/{id}/chat/try` | Streams a read-only answer (same events as `/chat/v1/turn`) as the admin, without a signed-in app user. |
 
 ### Access
@@ -166,6 +169,37 @@ user context). Otherwise the answer streams as Server-Sent Events:
 
 With `"stream": false` the same summary returns once as `{success, data: {text, tools, proposals, notices, steps, trace_id}}`.
 Each turn is audited as `chat.turn`; its tool calls are audited as `tool.execute` under the same trace.
+
+## Model gateway
+
+For apps that run their own chat (their own tools, their own model picker) but keep the model keys
+on the Hub. Called from the app's server with a client key, like the chat endpoint. The app may use
+it while its **Chat** is on in the Hub and the app is active, and only with the models its admin
+allowed under **Model gateway access** (every model while that list is empty; others get
+`403 MODEL_NOT_ALLOWED`).
+
+Limits: the chat rate limit applies per `metadata.end_user_id` and `GATEWAY_APP_RATE_LIMIT` (default
+300 per minute) per app, since the app chooses the user ids. The daily limit counts questions per
+user: only calls whose last message is the user's, so tool rounds that continue an answer do not use
+it up. The monthly token budget (input plus output, all models) refuses calls with
+`429 BUDGET_EXCEEDED` once this month's usage reaches it; the call that crosses it still completes.
+
+Tool schemas sent with PHP's empty arrays (`"properties": []`) are repaired to objects. A provider
+that answers 502/503 or cannot be connected to gets one more try after half a second. A provider's
+error text is logged with the trace id (personal data withheld). Each call is audited as
+`model.chat` (model, result, duration) and counted per app, model and month (calls, errors, tokens);
+messages are never stored.
+
+Model ids name their provider: `anthropic/claude-opus-5-5`, `openai/gpt-4.1`, `telixcel/gh/gpt-4o-mini`
+(provider key, `/`, the provider's model id). The list holds every ready provider under **AI
+providers**: Claude when its key is set, the environment gateway, and each enabled OpenAI-compatible
+provider, with model lists fetched from the providers.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/gateway/v1/models` | `{object: "list", default, data: [{id, object: "model", owned_by, name}]}`. `default` is the app's Chat model when it is listed. |
+| POST | `/gateway/v1/chat/completions` | OpenAI chat completions: `{model, messages, tools?, tool_choice?, temperature?, top_p?, max_tokens?, metadata?}`. Function calling works with every provider; Claude turns are converted both ways. `"stream": true` returns the answer as one SSE chunk and `[DONE]`. |
+| POST | `/gateway/mcp` | JSON-RPC (plain JSON, no session): `tools/list`, and `tools/call` with `list_ai_models` (`{data: [{id, provider, name}], default}`) or `chat_ai` (the completion body above, answered as `structuredContent.result`). The model bridge HiReach speaks: set `MCP_BRIDGE_URL` to this address and `MCP_BRIDGE_TOKEN` to a client key. |
 
 ## MCP endpoint
 

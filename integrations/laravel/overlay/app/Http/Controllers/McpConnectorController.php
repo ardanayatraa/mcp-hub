@@ -67,7 +67,7 @@ class McpConnectorController extends Controller
             foreach ((array) $tool['input_schema']['properties'] as $field => $schema) {
                 $rules[$field] = match ($field) {
                     'limit' => ['sometimes', 'integer', 'min:1', 'max:50'],
-                    'cursor' => ['sometimes', 'string', 'regex:/^page_[0-9]{1,5}$/D'],
+                    'cursor' => ['sometimes', 'string', 'regex:/^page_[0-9]{1,9}$/D'],
                     default => $action === 'get'
                         ? ['required', 'string', 'min:1', 'max:'.$schema['maxLength']]
                         : ['sometimes', 'string', Rule::in($schema['enum'])],

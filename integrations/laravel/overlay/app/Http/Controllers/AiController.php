@@ -8,6 +8,7 @@ use App\Services\AI\AiChatOrchestrator;
 use App\Services\AI\AiResourceExecutor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -175,11 +176,7 @@ class AiController extends Controller
 
     public function downloadReport(string $token): BinaryFileResponse
     {
-        abort_unless(preg_match('/^[a-f0-9]{32}$/', $token), 404);
-
-        $meta = Cache::get('hireach.ai.report.'.$token);
-        abort_unless(is_array($meta), 404);
-        abort_unless((int) ($meta['user_id'] ?? 0) === (int) auth()->id(), 404);
+        $meta = $this->reportMeta($token);
         abort_unless(is_string($meta['path'] ?? null) && is_file($meta['path']), 404);
 
         $response = response()->download($meta['path'], (string) ($meta['name'] ?? 'report'));
@@ -187,6 +184,37 @@ class AiController extends Controller
         $response->headers->set('X-Content-Type-Options', 'nosniff');
 
         return $response;
+    }
+
+    public function previewReport(string $token): Response
+    {
+        $meta = $this->reportMeta($token);
+        $path = $meta['preview_path'] ?? null;
+        abort_unless(is_string($path) && is_file($path), 404);
+
+        return response(file_get_contents($path), 200)
+            ->header('Content-Type', 'text/html; charset=UTF-8')
+            ->header('Cache-Control', 'private, no-store, max-age=0')
+            ->header('X-Content-Type-Options', 'nosniff')
+            ->header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    }
+
+    private function reportMeta(string $token): array
+    {
+        abort_unless(preg_match('/^[a-f0-9]{32}$/', $token), 404);
+        $meta = Cache::get('hireach.ai.report.'.$token);
+        abort_unless(is_array($meta), 404);
+        abort_unless((int) ($meta['user_id'] ?? 0) === (int) auth()->id(), 404);
+        $resource = $meta['resource'] ?? null;
+        $executor = app(AiResourceExecutor::class);
+        $signature = is_string($resource)
+            ? $executor->reportAccessSignature($resource, auth()->user())
+            : null;
+        abort_unless(is_string($signature) && hash_equals($signature, (string) ($meta['access_signature'] ?? '')), 404);
+        abort_unless(is_array($meta['record_ids'] ?? null)
+            && $executor->reportRowsStillAccessible($resource, auth()->user(), $meta['record_ids'], $meta['status_filter'] ?? null), 404);
+
+        return $meta;
     }
 
     public function confirm(Request $request, AiResourceExecutor $executor): JsonResponse

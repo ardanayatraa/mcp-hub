@@ -349,3 +349,102 @@ def test_delegation_must_be_short_lived():
     long_token = sign_payload("dummy", {"aud": "mcp-hub"}, ttl_seconds=86400)
     with pytest.raises(HubError):
         verify_signed_payload("dummy", long_token, audience="mcp-hub")
+
+
+def test_mfa_enrollment_closes_after_its_window_until_a_super_admin_resets_it(client, monkeypatch):
+    from datetime import timedelta
+
+    from app.ids import utcnow
+    from app.security.auth import reset_mfa
+
+    monkeypatch.setattr(get_settings(), "mfa_required", True)
+    login = {"email": "admin@localhost", "password": "ChangeMe-Now-12"}
+    with open_session() as db:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == "admin@localhost"))
+        user.mfa_enabled = False
+        user.mfa_enroll_until = utcnow() + timedelta(hours=1)
+        db.commit()
+    assert client.post("/api/admin/v1/auth/login", json=login).json()["data"]["enrollment_required"] is True
+    with open_session() as db:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == "admin@localhost"))
+        user.mfa_enroll_until = utcnow() - timedelta(minutes=1)
+        db.commit()
+    late = client.post("/api/admin/v1/auth/login", json=login)
+    assert late.status_code == 403 and late.json()["error"]["code"] == "MFA_ENROLLMENT_EXPIRED"
+    with open_session() as db:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == "admin@localhost"))
+        reset_mfa(db, user, get_settings().mfa_enroll_hours)
+        db.commit()
+    assert client.post("/api/admin/v1/auth/login", json=login).json()["data"]["enrollment_required"] is True
+
+
+def test_responses_carry_csp_and_hsts_over_https(client, monkeypatch):
+    plain = client.get("/health")
+    assert plain.headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'none'"
+    assert "Strict-Transport-Security" not in plain.headers
+    monkeypatch.setattr(get_settings(), "cookie_secure", True)
+    assert client.get("/health").headers["Strict-Transport-Security"].startswith("max-age=31536000")
+
+
+def test_unknown_hosts_are_refused_except_by_the_probes(client):
+    refused = client.get("/api/admin/v1/auth/me", headers={"Host": "evil.example"})
+    assert refused.status_code == 400 and refused.json()["error"]["code"] == "INVALID_HOST"
+    assert client.post("/gateway/v1/models", headers={"Host": "evil.example"}).status_code == 400
+    assert client.get("/health", headers={"Host": "10.0.0.7:8000"}).status_code == 200
+    assert client.get("/api/admin/v1/auth/me", headers={"Host": "localhost:8443"}).status_code != 400
+
+
+def test_the_api_map_is_published_in_development_only(client):
+    assert get_settings().environment != "dev"
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        assert client.get(path).status_code in (401, 404)
+
+
+def test_production_refuses_published_example_secrets():
+    good = {"environment": "production", "cookie_secure": True, "mfa_required": True,
+            "database_url": "postgresql+psycopg://hub@db/hub", "secret_encryption_key": "WyzcJBTgZUDuBhqKXe8GWpoJSvp2nR5J9ag3X5fMf5g=",
+            "session_signing_key": "s" * 40, "admin_initial_password": "Another-Strong-Pass-99",
+            "egress_allowed_hosts": "app.example.com", "mcp_public_url": "https://hub.example.com/mcp",
+            "mcp_issuer_url": "https://hub.example.com", "allowed_origins": "https://hub.example.com",
+            "allow_insecure_http": False, "allow_insecure_tls": False, "egress_allow_loopback": False,
+            "egress_allow_private": False, "allowed_hosts": "hub.example.com"}
+    Settings(**good).assert_production_safe()
+    for change, words in (({"session_signing_key": "replace-with-long-random-string"}, "SESSION_SIGNING_KEY"),
+                          ({"session_signing_key": "short"}, "SESSION_SIGNING_KEY"),
+                          ({"admin_initial_password": "ChangeMe-Now-12"}, "ADMIN_INITIAL_PASSWORD"),
+                          ({"mcp_public_url": "http://hub.example.com/mcp"}, "MCP_PUBLIC_URL"),
+                          ({"allowed_origins": "http://hub.example.com"}, "ALLOWED_ORIGINS"),
+                          ({"allowed_hosts": "localhost"}, "ALLOWED_HOSTS")):
+        with pytest.raises(HubError, match=words):
+            Settings(**{**good, **change}).assert_production_safe()
+
+
+def test_access_logs_keep_method_path_and_status_only():
+    import logging
+
+    from app.security.audit import SafeJSONFormatter
+
+    record = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                               ("203.0.113.9:5000", "GET", "/gateway/v1/models?token=secret", "1.1", 200), None)
+    line = SafeJSONFormatter().format(record)
+    assert '"path": "/gateway/v1/models"' in line and '"status": 200' in line
+    assert "203.0.113.9" not in line and "secret" not in line
+
+
+def test_admins_from_before_the_window_get_one_at_their_first_required_sign_in(client, monkeypatch):
+    from datetime import timedelta
+
+    from app.ids import as_utc, utcnow
+
+    monkeypatch.setattr(get_settings(), "mfa_required", True)
+    with open_session() as db:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == "admin@localhost"))
+        user.created_at = utcnow() - timedelta(days=400)  # long before MFA was turned on
+        user.mfa_enroll_until = None
+        db.commit()
+    login = client.post("/api/admin/v1/auth/login", json={"email": "admin@localhost", "password": "ChangeMe-Now-12"})
+    assert login.json()["data"]["enrollment_required"] is True
+    with open_session() as db:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == "admin@localhost"))
+        hours = (as_utc(user.mfa_enroll_until) - utcnow()).total_seconds() / 3600
+        assert get_settings().mfa_enroll_hours - 1 < hours <= get_settings().mfa_enroll_hours

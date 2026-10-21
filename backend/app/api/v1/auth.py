@@ -14,6 +14,7 @@ from app.security.auth import (
     _session_from_request,
     authenticate_password,
     clear_session,
+    enrollment_open,
     get_current_user,
     issue_mfa_token,
     read_mfa_token,
@@ -61,6 +62,13 @@ def login(body: LoginBody, request: Request, db: Session = Depends(get_db)):
         db.commit()
         return ok({"mfa_required": True, "mfa_token": token})
     if settings.mfa_required:
+        # Trust on first use only within the window, so an old password alone cannot claim the account.
+        if not enrollment_open(user, settings.mfa_enroll_hours):
+            record_audit(db, action="auth.login", actor_ref=f"admin:{user.id}", result="denied",
+                         error_code="MFA_ENROLLMENT_EXPIRED")
+            db.commit()
+            raise HubError("MFA_ENROLLMENT_EXPIRED", "Two-factor sign-in was not set up in time. "
+                           "Ask a super admin to reset it for you.", 403)
         secret = pyotp.random_base32()
         user.totp_secret_encrypted = encrypt_secret(settings.secret_encryption_key, secret)
         user.mfa_enabled = False

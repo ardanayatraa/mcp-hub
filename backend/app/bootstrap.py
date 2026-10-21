@@ -1,9 +1,12 @@
 """Create the initial administrator. The password is read from the environment."""
 
+import sys
+from datetime import timedelta
+
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.ids import new_id
+from app.ids import new_id, utcnow
 from app.persistence.models import AdminUser
 from app.persistence.session import init_engine, open_session
 from app.security.passwords import hash_password, password_is_acceptable
@@ -29,6 +32,7 @@ def seed_admin() -> None:
                 password_hash=hash_password(password),
                 role="super_admin",
                 mfa_enabled=False,
+                mfa_enroll_until=utcnow() + timedelta(hours=settings.mfa_enroll_hours),
             )
         )
         db.commit()
@@ -37,5 +41,31 @@ def seed_admin() -> None:
         db.close()
 
 
+def reset_admin_mfa(email: str) -> None:
+    """Recovery from the server shell: clear an admin's MFA and open a new enrollment window."""
+
+    from app.security.audit import record_audit
+    from app.security.auth import reset_mfa
+
+    settings = get_settings()
+    init_engine(settings.database_url)
+    db = open_session()
+    try:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == email.strip().lower()))
+        if user is None:
+            raise SystemExit("no admin with that email")
+        reset_mfa(db, user, settings.mfa_enroll_hours)
+        record_audit(db, action="admin.mfa_reset", actor_ref="system:cli", result="success")
+        db.commit()
+        print(f"two-factor sign-in reset; enroll within {settings.mfa_enroll_hours} hours")
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
-    seed_admin()
+    if len(sys.argv) == 3 and sys.argv[1] == "--reset-mfa":
+        reset_admin_mfa(sys.argv[2])
+    elif len(sys.argv) == 1:
+        seed_admin()
+    else:
+        raise SystemExit("usage: python -m app.bootstrap [--reset-mfa EMAIL]")

@@ -47,6 +47,24 @@ async def models(provider_key: str, refresh: bool = False, db: Session = Depends
     return ok(catalog)
 
 
+@router.put("/anthropic/key")
+def save_claude_key(payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    """Save the Claude API key in the Hub (encrypted). It wins over ANTHROPIC_API_KEY; no restart needed."""
+
+    require_role(user.role, ADMIN_ROLES)
+    body = registry.save_claude_key(db, user, payload, get_settings())
+    db.commit()
+    return ok(body)
+
+
+@router.delete("/anthropic/key")
+def clear_claude_key(db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    require_role(user.role, ADMIN_ROLES)
+    body = registry.clear_claude_key(db, user, get_settings())
+    db.commit()
+    return ok(body)
+
+
 @router.post("")
 def create(payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     require_role(user.role, ADMIN_ROLES)

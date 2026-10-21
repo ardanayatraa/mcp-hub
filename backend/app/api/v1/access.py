@@ -15,6 +15,7 @@ from app.api.v1.configuration import (
     UserCreate,
     checked,
 )
+from app.config import get_settings
 from app.errors import HubError
 from app.ids import as_utc, new_id, utcnow
 from app.persistence.models import (
@@ -27,7 +28,7 @@ from app.persistence.models import (
 )
 from app.persistence.session import get_db
 from app.security.audit import record_audit
-from app.security.auth import require_csrf
+from app.security.auth import enrollment_deadline, require_csrf, reset_mfa
 from app.security.authorization import (
     ADMIN_ROLES,
     READ_ROLES,
@@ -146,6 +147,7 @@ def revoke_identity(identity_id: str, db: Session = Depends(get_db), user: Admin
 
 def _user_view(db: Session, row: AdminUser) -> dict:
     return {"id": row.id, "email": row.email, "role": row.role, "mfa_enabled": row.mfa_enabled, "is_active": row.is_active,
+            "mfa_enroll_until": None if row.mfa_enabled or enrollment_deadline(row) is None else enrollment_deadline(row).isoformat(),
             "app_ids": list(db.scalars(select(AdminApplicationScope.app_id).where(AdminApplicationScope.user_id == row.id))),
             "created_at": as_utc(row.created_at).isoformat()}
 
@@ -174,7 +176,8 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
         raise HubError("VALIDATION_FAILED", "Use a valid email and a password of 12+ characters with upper, lower and a digit", 422)
     if db.scalar(select(AdminUser).where(AdminUser.email == email)):
         raise HubError("CONFLICT", "An admin with that email already exists", 409)
-    created = AdminUser(id=new_id(), email=email, password_hash=hash_password(data["password"]), role=data["role"])
+    created = AdminUser(id=new_id(), email=email, password_hash=hash_password(data["password"]), role=data["role"],
+                        mfa_enroll_until=utcnow() + timedelta(hours=get_settings().mfa_enroll_hours))
     db.add(created)
     db.flush()
     _set_scopes(db, created, data["app_ids"])
@@ -204,6 +207,12 @@ def update_user(user_id: str, payload: dict, db: Session = Depends(get_db), user
         target.is_active = changes["is_active"]
     if "app_ids" in changes:
         _set_scopes(db, target, changes["app_ids"])
+    if changes.get("reset_mfa"):
+        if target.id == user.id:
+            raise HubError("CONFLICT", "Another super admin must reset your two-factor sign-in", 409)
+        require_role(user.role, ADMIN_ROLES)
+        reset_mfa(db, target, get_settings().mfa_enroll_hours)
+        record_audit(db, action="admin.mfa_reset", actor_ref=f"admin:{user.id}", result="success")
     record_audit(db, action="admin.update", actor_ref=f"admin:{user.id}", result="success")
     db.commit()
     return ok(_user_view(db, target))

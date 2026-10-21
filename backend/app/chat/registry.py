@@ -127,11 +127,27 @@ def _auth_headers(row: ModelProvider, settings: Settings) -> dict[str, str]:
     return headers
 
 
+def stored_claude(db: Session) -> ModelProvider | None:
+    """The Claude key a super admin saved in the Hub, kept as the reserved `anthropic` provider row."""
+
+    return db.scalar(select(ModelProvider).where(ModelProvider.key == ANTHROPIC))
+
+
+def claude_settings(db: Session, settings: Settings) -> Settings:
+    """Settings carrying the Claude key: the one saved in the Hub wins over ANTHROPIC_API_KEY."""
+
+    row = stored_claude(db)
+    if row is None or not row.api_key_ciphertext:
+        return settings
+    return settings.model_copy(update={"anthropic_api_key": decrypt_secret(settings.secret_encryption_key,
+                                                                           row.api_key_ciphertext)})
+
+
 def endpoint_for(db: Session, provider: str, settings: Settings) -> Endpoint | None:
     """The endpoint behind a chat provider key, or None for Claude. Fails when it is not usable."""
 
     if provider == ANTHROPIC:
-        if not settings.anthropic_api_key:
+        if not claude_settings(db, settings).anthropic_api_key:
             raise HubError("CHAT_NOT_CONFIGURED", "The Hub has no Anthropic API key yet. Ask an admin to add it.", 503)
         return None
     if provider == ENV_GATEWAY:
@@ -181,11 +197,21 @@ def view(row: ModelProvider, used_by: list[str] | None = None) -> dict:
             "ready": row.enabled and (row.auth_style == "none" or bool(row.api_key_ciphertext))}
 
 
+def claude_view(db: Session, settings: Settings, used_by: list[str] | None = None) -> dict:
+    """Claude as a built-in provider. key_source tells where its key comes from: hub, environment or none."""
+
+    row = stored_claude(db)
+    saved = row is not None and bool(row.api_key_ciphertext)
+    source = "hub" if saved else ("environment" if settings.anthropic_api_key else None)
+    return {"key": ANTHROPIC, "name": "Claude (Anthropic)", "ready": source is not None,
+            "configured_by": "ANTHROPIC_API_KEY", "key_source": source, "api_key_hint": row.api_key_hint if saved else "",
+            "used_by": sorted(used_by or [])}
+
+
 def listing(db: Session, settings: Settings) -> dict:
     used = _usage(db)
-    rows = db.scalars(select(ModelProvider).order_by(ModelProvider.name))
-    builtin = [{"key": ANTHROPIC, "name": "Claude (Anthropic)", "ready": bool(settings.anthropic_api_key),
-                "configured_by": "ANTHROPIC_API_KEY", "used_by": sorted(used.get(ANTHROPIC, []))}]
+    rows = db.scalars(select(ModelProvider).where(ModelProvider.key != ANTHROPIC).order_by(ModelProvider.name))
+    builtin = [claude_view(db, settings, used.get(ANTHROPIC))]
     if settings.chat_openai_base_url or used.get(ENV_GATEWAY):
         builtin.append({"key": ENV_GATEWAY, "name": "Gateway (environment)", "ready": bool(settings.chat_openai_base_url),
                         "configured_by": "CHAT_OPENAI_BASE_URL", "used_by": sorted(used.get(ENV_GATEWAY, []))})
@@ -301,9 +327,44 @@ def create(db: Session, admin: AdminUser, payload, settings: Settings) -> ModelP
 
 def require(db: Session, provider_id: str) -> ModelProvider:
     row = db.get(ModelProvider, provider_id)
-    if row is None:
+    # The saved Claude key is changed only through save_claude_key and clear_claude_key.
+    if row is None or row.key == ANTHROPIC:
         raise HubError("NOT_FOUND", "Model provider was not found", 404)
     return row
+
+
+def save_claude_key(db: Session, admin: AdminUser, payload, settings: Settings) -> dict:
+    """Store the Claude API key in the Hub, encrypted. It replaces ANTHROPIC_API_KEY without a restart."""
+
+    if not isinstance(payload, dict) or set(payload) != {"api_key"}:
+        raise HubError("VALIDATION_FAILED", "Send only the API key", 422)
+    key = payload["api_key"]
+    if not isinstance(key, str) or not key or len(key) > 1000 or re.search(r"\s", key):
+        raise HubError("VALIDATION_FAILED", "The API key must be one line of at most 1000 characters", 422)
+    row = stored_claude(db)
+    if row is None:
+        row = ModelProvider(key=ANTHROPIC, name="Claude (Anthropic)", base_url="https://api.anthropic.com",
+                            auth_style="header", auth_header="x-api-key", headers={}, token_param="max_tokens",
+                            tool_schema="full", streaming=True, default_model="", models=[], enabled=True,
+                            status_message="", created_by=admin.id, created_at=utcnow())
+        db.add(row)
+    row.api_key_ciphertext = encrypt_secret(settings.secret_encryption_key, key)
+    row.api_key_hint = key[-4:] if len(key) >= 12 else ""
+    row.status, row.updated_at = "untested", utcnow()
+    db.flush()
+    _audit(db, admin, "provider.update", row)
+    return claude_view(db, settings, _usage(db).get(ANTHROPIC))
+
+
+def clear_claude_key(db: Session, admin: AdminUser, settings: Settings) -> dict:
+    """Remove the saved Claude key; ANTHROPIC_API_KEY applies again when it is set."""
+
+    row = stored_claude(db)
+    if row is not None:
+        _audit(db, admin, "provider.delete", row)
+        db.delete(row)
+        db.flush()
+    return claude_view(db, settings, _usage(db).get(ANTHROPIC))
 
 
 def update(db: Session, admin: AdminUser, row: ModelProvider, payload, settings: Settings) -> ModelProvider:
@@ -372,6 +433,7 @@ async def test(db: Session, admin: AdminUser, row: ModelProvider, settings: Sett
            None if status == "ok" else "PROVIDER_UNREACHABLE")
     db.flush()
     return row
+
 
 
 # Model lists ------------------------------------------------------------------------------
@@ -443,10 +505,13 @@ async def model_catalog(db: Session, provider: str, settings: Settings, *, refre
 
     error = None
     if provider == ANTHROPIC:
+        settings = claude_settings(db, settings)
         recommended = [dict(item) for item in CLAUDE_MODELS]
         if not settings.anthropic_api_key:
             return {"provider": provider, "models": recommended, "source": "builtin", "fetched_at": None,
-                    "default_model": "claude-opus-5-5", "error": "The Hub has no ANTHROPIC_API_KEY yet; showing the recommended models."}
+                    "default_model": "claude-opus-5-5",
+                    "error": "The Hub has no Claude API key yet (add it under AI providers, or set ANTHROPIC_API_KEY); "
+                             "showing the recommended models."}
         fingerprint = hashlib.sha256(settings.anthropic_api_key.encode()).hexdigest()[:16]
         source = "cache"
         if refresh or _stale(_claude["at"]) or _claude["key"] != fingerprint or not _claude["models"]:

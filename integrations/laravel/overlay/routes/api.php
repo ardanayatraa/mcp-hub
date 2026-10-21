@@ -86,7 +86,7 @@ Route::post('/testing',  [TestApiController::class, 'post']);
 Route::get('/send/smsbulk',  [TestApiController::class, 'smsbulk']);
 Route::put('/test/{id}',  [TestApiController::class, 'put']);
 
-Route::get('/team-auth',  [ApiTeamWaController::class, 'getAuth']);
+Route::middleware('auth:sanctum')->get('/team-auth', [ApiTeamWaController::class, 'getAuth']);
 Route::post('/post-team-auth',  [ApiTeamWaController::class, 'postTeamAuth'])->name('wa.session');
 Route::get('/test/{id}',  [ApiTeamWaController::class, 'getTeam']);
 Route::put('/team-auth/{id}',  [ApiTeamWaController::class, 'put']);
@@ -106,7 +106,7 @@ Route::get('/callback-status/{model}/{id}',  [ApiRequestController::class, 'call
 Route::post('/callback-status/{model}/{id}',  [ApiRequestController::class, 'callBackStatus']);
 
 //ManualDN
-Route::get('/update-status-sms',  [ApiRequestController::class, 'updateManual'])->name('update.sms');
+Route::middleware('auth:sanctum')->get('/update-status-sms', [ApiRequestController::class, 'updateManual'])->name('update.sms');
 
 //Route::get('/log-request-status',  [ApiRequestController::class, 'logStatus']);
 Route::get('/delivery-notification',  [ApiBulkSmsController::class, 'status']);

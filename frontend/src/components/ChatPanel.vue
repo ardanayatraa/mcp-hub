@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 import ChatMarkdown from "@/components/ChatMarkdown.vue";
 import CodeBlock from "@/components/CodeBlock.vue";
+import GatewayPanel from "@/components/GatewayPanel.vue";
 import LoadingSkeleton from "@/components/LoadingSkeleton.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import { hub, type AppSummary, type ChatSettings, type ChatSettingsUpdate, type ChatToolEvent, type ModelCatalog } from "@/services/hub";
@@ -18,7 +19,7 @@ const toast = useToast();
 const settings = ref<ChatSettings | null>(null);
 const error = ref("");
 const pending = ref<"" | "toggle" | "save">("");
-const form = ref<Required<Omit<ChatSettingsUpdate, "enabled">>>({
+const form = ref<Required<Omit<ChatSettingsUpdate, "enabled" | "gateway_models" | "monthly_token_limit">>>({
   provider: "anthropic", model: "claude-opus-5-5", effort: "medium", instructions: "", welcome_message: "",
   suggestions: [], max_steps: 6, daily_limit: 200,
 });
@@ -122,6 +123,12 @@ async function save(body: ChatSettingsUpdate, action: "toggle" | "save", message
   }
 }
 
+// Saving model access keeps any unsaved edits in the chat form.
+function gatewaySaved(view: ChatSettings) {
+  if (settings.value) settings.value = { ...settings.value, gateway_models: view.gateway_models,
+    monthly_token_limit: view.monthly_token_limit, gateway_usage: view.gateway_usage };
+}
+
 const newSuggestion = ref("");
 function addSuggestion() {
   const text = newSuggestion.value.trim();
@@ -201,6 +208,10 @@ Content-Type: application/json
               A chat window your users open inside {{ app.name }}. The Hub runs the model with this app's tools and rules;
               {{ app.name }} only passes the signed-in user and shows the answer. Conversations are never stored in the Hub.
             </p>
+            <p class="card-description mt-1.5 max-w-xl">
+              While this is on, {{ app.name }} may also run its own chat on the Hub's models: it lists the models allowed
+              under Model gateway access and calls the one its users pick through <code class="code">/gateway</code>, with the keys kept here.
+            </p>
           </div>
           <span class="flex items-center gap-2">
             <span v-if="pending === 'toggle'" class="spinner text-subtle" />
@@ -210,9 +221,11 @@ Content-Type: application/json
         </div>
         <div v-if="provider && !provider.ready" class="mx-6 mb-5 flex items-start gap-3 rounded-lg border border-warn/40 bg-warn-soft p-3 text-sm">
           <AppIcon name="alert" class="mt-0.5 shrink-0 text-warn" />
-          <p v-if="form.provider === 'anthropic' || form.provider === 'openai_compatible'">The Hub has no key for {{ provider.label }} yet. Add
-            <code class="code">{{ form.provider === "anthropic" ? "ANTHROPIC_API_KEY" : "CHAT_OPENAI_BASE_URL" }}</code>
-            to the Hub's environment and restart it. Chat answers fail until then.</p>
+          <p v-if="form.provider === 'openai_compatible'">The Hub has no address for {{ provider.label }} yet. Add
+            <code class="code">CHAT_OPENAI_BASE_URL</code> to the Hub's environment and restart it, or add the gateway under
+            <RouterLink to="/providers" class="font-medium underline">AI providers</RouterLink>. Chat answers fail until then.</p>
+          <p v-else-if="form.provider === 'anthropic'">The Hub has no key for {{ provider.label }} yet. A super admin can paste it under
+            <RouterLink to="/providers" class="font-medium underline">AI providers</RouterLink>. Chat answers fail until then.</p>
           <p v-else>{{ provider.label }} has no API key or is turned off. A super admin can fix it under
             <RouterLink to="/providers" class="font-medium underline">AI providers</RouterLink>. Chat answers fail until then.</p>
         </div>
@@ -320,6 +333,8 @@ Content-Type: application/json
           </div>
         </form>
       </section>
+
+      <GatewayPanel :app-id="app.id" :app-name="app.name" :settings="settings" :editable="editable && session.isSuper" @saved="gatewaySaved" />
 
       <section class="card card-pad space-y-4">
         <div>

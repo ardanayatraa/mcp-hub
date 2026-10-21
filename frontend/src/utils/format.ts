@@ -115,6 +115,7 @@ const ACTIONS: Record<string, string> = {
   "tool.switch_on": "Tool switched on",
   "tool.switch_off": "Tool switched off",
   "chat.turn": "Chat answer",
+  "model.chat": "Model call (gateway)",
   "chat.settings": "Chat settings changed",
   "provider.create": "AI provider added",
   "provider.update": "AI provider changed",

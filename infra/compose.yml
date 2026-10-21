@@ -38,6 +38,8 @@ services:
       ALLOWED_ORIGINS: "https://localhost:8443,https://127.0.0.1:8443"
       MCP_PUBLIC_URL: "https://localhost:8443/mcp"
       MCP_ISSUER_URL: "https://localhost:8443"
+      # Only the edge proxy reaches the backend on this network. In production name its address or CIDR.
+      FORWARDED_ALLOW_IPS: "*"
     depends_on:
       postgres:
         condition: service_healthy

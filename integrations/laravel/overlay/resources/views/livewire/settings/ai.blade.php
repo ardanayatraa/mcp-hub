@@ -176,7 +176,7 @@
                             @foreach ($modelColumns['fields'] as $field => $type)
                                 <label wire:key="ai-readable-field-{{ $resourceDraft['model'] }}-{{ $field }}" class="flex items-center gap-2 rounded-md border border-gray-200 bg-white p-2 text-sm dark:border-gray-600 dark:bg-gray-700">
                                     <input type="checkbox" value="{{ $field }}" wire:model.defer="resourceDraft.fields" x-model="fields"
-                                        x-on:change="if (!$event.target.checked && lookup === $event.target.value) { lookup = ''; $wire.set('resourceDraft.lookup', '', true); }"
+                                        x-on:change="if (!$event.target.checked) { if (lookup === $event.target.value) { lookup = ''; $wire.set('resourceDraft.lookup', '', true); } $wire.set('resourceDraft.filters.' + $event.target.value, '', true); }"
                                         class="rounded border-gray-300 text-indigo-600">
                                     <span>{{ $field }}</span>
                                 </label>
@@ -204,6 +204,23 @@
                             @endforeach
                         </select>
                         <x-jet-input-error for="resourceDraft.lookup" class="mt-2" />
+                    </div>
+                    <div class="sm:col-span-2">
+                        <x-jet-label value="{{ __('Exact-match filters (optional)') }}" />
+                        <p class="mt-1 text-xs text-gray-500">{{ __('For each selected text field, enter the values AI may filter by, separated by commas. Example: SUCCESS, FAILED.') }}</p>
+                        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            @foreach ($modelColumns['fields'] as $field => $type)
+                                @if (str_starts_with($type, 'string'))
+                                    <div wire:key="ai-filter-{{ $resourceDraft['model'] }}-{{ $field }}" x-show="fields.includes(@js($field))" style="display: none;">
+                                        <x-jet-label for="resource-filter-{{ $field }}" value="{{ $field }}" />
+                                        <x-jet-input id="resource-filter-{{ $field }}" type="text" class="mt-1 block w-full"
+                                            wire:model.defer="resourceDraft.filters.{{ $field }}" placeholder="SUCCESS, FAILED" />
+                                        <x-jet-input-error for="resourceDraft.filters.{{ $field }}" class="mt-2" />
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+                        <x-jet-input-error for="resourceDraft.filters" class="mt-2" />
                     </div>
                 </div>
                 <p class="mt-4 text-xs text-gray-500">{{ __('Access starts disabled. Publish tool changes in MCP Hub.') }}</p>

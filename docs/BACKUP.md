@@ -15,12 +15,13 @@ ids are never granted access. Backups from 0.1 are accepted: their placeholder t
 (MCP profiles, skills) are ignored and tools left in the old `validated`/`approved` states
 come back as drafts. A restore replaces all exported tables, so export first.
 
-Restores need the same `SECRET_ENCRYPTION_KEY`; with another key, stored credentials
-cannot be decrypted. The request limit is 1 MB; use a database dump for larger states.
+Restores need the `SECRET_ENCRYPTION_KEY` the backup was made with, as the current key or in
+`SECRET_ENCRYPTION_KEY_PREVIOUS`; with another key, stored credentials cannot be decrypted. The request limit is 1 MB; use a database dump for larger states.
 
-**Purge** (`POST /operations/purge`) removes activity, health checks, test runs and
-sessions older than `AUDIT_RETENTION_DAYS` (default 90). Schedule it together with
-off-host database dumps. A purged passing test means that tool needs a new test before its
+**Purge** removes activity, health checks, test runs and sessions older than
+`AUDIT_RETENTION_DAYS` (default 90), plus expired MFA challenges and memories and model
+gateway usage older than about a year. It runs every `PURGE_INTERVAL_HOURS` (default 6);
+`POST /operations/purge` runs it at once. A purged passing test means that tool needs a new test before its
 next publish.
 
 ## Database dumps

@@ -37,6 +37,21 @@ async function load() {
 }
 onMounted(load);
 
+async function resetMfa(user: AdminUserRow) {
+  if (!window.confirm(`Reset two-factor sign-in for ${user.email}? They are signed out and set it up again at their next sign-in.`)) return;
+  busy.value = true;
+  try {
+    await hub.updateUser(user.id, { reset_mfa: true });
+    editingUser.value = null;
+    toast.ok("Two-factor sign-in reset");
+    await load();
+  } catch (exc) {
+    toast.error(errorMessage(exc));
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function saveUser() {
   busy.value = true;
   try {
@@ -119,6 +134,12 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
         </label>
       </fieldset>
       <label v-if="editingUser" class="flex items-center gap-2 text-sm"><input v-model="editingUser.is_active" type="checkbox" /> Account active</label>
+      <div v-if="editingUser && editingUser.id !== session.user?.id" class="flex items-center justify-between gap-3 rounded-lg border border-line p-2.5">
+        <span class="text-sm">Two-factor sign-in<span class="block text-xs text-subtle">{{ editingUser.mfa_enabled
+          ? "Set up. Reset it when they lose their authenticator."
+          : "Not set up yet. Resetting gives them a new window to set it up." }}</span></span>
+        <button class="btn-secondary btn-sm" type="button" :disabled="busy" @click="resetMfa(editingUser)">Reset</button>
+      </div>
     </form>
     <template #footer>
       <button class="btn-secondary" type="button" @click="userForm.open = false; editingUser = null">Cancel</button>
