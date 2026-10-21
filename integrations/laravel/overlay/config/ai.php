@@ -35,7 +35,8 @@ return [
 
         // AI models use the bridge above; user-owned data tools use this Hub.
         'hub' => [
-            'enabled' => (bool) env('MCP_HUB_ENABLED', (bool) env('MCP_HUB_CLIENT_KEY')),
+            // On once a Hub URL is set; the Hub shares the bridge token unless given its own.
+            'enabled' => (bool) env('MCP_HUB_ENABLED', env('MCP_HUB_URL', '') !== ''),
             'url' => env('MCP_HUB_URL', ''),
             'token' => env('MCP_HUB_CLIENT_KEY', env('MCP_HUB_TOKEN', env('MCP_BRIDGE_TOKEN', ''))),
             'source_url' => rtrim(env('MCP_HUB_BASE_URL', env('MCP_HUB_SOURCE_URL', env('APP_URL', ''))), '/'),
