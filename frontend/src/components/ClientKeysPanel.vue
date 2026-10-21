@@ -11,7 +11,8 @@ import { useToast } from "@/stores/toast";
 import { errorMessage, timeAgo, untilLabel } from "@/utils/format";
 
 // Client keys let AI clients call one app's tools. `scoped` shows only the keys of apps[0].
-const props = withDefaults(defineProps<{ apps: AppSummary[]; scoped?: boolean }>(), { scoped: false });
+const props = withDefaults(defineProps<{ apps: AppSummary[]; scoped?: boolean; appsLoaded?: boolean; appsError?: string }>(),
+  { scoped: false, appsLoaded: true, appsError: "" });
 const session = useSession();
 const toast = useToast();
 const keys = ref<ClientKey[]>([]);
@@ -115,15 +116,23 @@ async function revoke() {
       </div>
       <label class="flex items-center gap-2 text-xs text-subtle" :class="scoped ? 'ml-auto' : ''">
         <input v-model="showRevoked" type="checkbox" /> Show revoked and expired</label>
-      <button v-if="session.canWrite" class="btn-primary" type="button" :disabled="!activeApps.length" @click="newKey">
+      <button v-if="session.canWrite && activeApps.length" class="btn-primary" type="button" @click="newKey">
         <AppIcon name="plus" :size="16" /> Create client key</button>
+      <RouterLink v-else-if="session.canWrite && appsLoaded && !appsError && !scoped" to="/apps/new" class="btn-primary">
+        <AppIcon name="plus" :size="16" /> Connect app</RouterLink>
     </div>
 
+    <p v-if="appsError" class="mb-4 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">Could not load apps: {{ appsError }}</p>
+    <p v-else-if="appsLoaded && !activeApps.length && !scoped" class="mb-4 text-sm text-subtle">
+      Client keys belong to an app. Connect an app first, then create its key here.
+    </p>
     <LoadingSkeleton v-if="!loaded" label="Loading client keys" />
     <EmptyState v-else-if="!visibleKeys.length" icon="key" title="No client keys"
                 :text="scoped && !activeApps.length ? 'Archived apps cannot issue client keys.'
+                  : appsLoaded && !activeApps.length && !appsError ? 'Connect an app before creating its client key.'
                   : 'A client key lets an AI client (an MCP client or your app\'s AI gateway) call this app\'s tools. It is shown once.'">
       <button v-if="session.canWrite && activeApps.length" class="btn-primary" type="button" @click="newKey">Create client key</button>
+      <RouterLink v-else-if="session.canWrite && appsLoaded && !appsError && !scoped" to="/apps/new" class="btn-primary">Connect your first app</RouterLink>
     </EmptyState>
     <div v-else class="card overflow-x-auto">
       <table class="tbl">

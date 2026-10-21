@@ -17,6 +17,8 @@ const session = useSession();
 const toast = useToast();
 const tab = ref(route.query.tab === "team" && session.isHubAdmin ? "team" : "keys");
 const apps = ref<AppSummary[]>([]);
+const appsLoaded = ref(false);
+const appsError = ref("");
 const users = ref<AdminUserRow[]>([]);
 const usersLoaded = ref(false);
 const mailerReady = ref(false);
@@ -28,17 +30,22 @@ const userForm = ref({ open: false, role: "hub_admin", app_ids: [] as string[] }
 const editingUser = ref<AdminUserRow | null>(null);
 
 async function load() {
-  try {
-    const [nextApps, nextUsers, system] = await Promise.all([hub.apps(), session.isHubAdmin ? hub.users() : Promise.resolve([]),
-      session.isHubAdmin ? hub.system() : Promise.resolve(null)]);
-    apps.value = nextApps;
-    users.value = nextUsers;
-    mailerReady.value = system?.security.email_delivery_ready === true;
-  } catch (exc) {
-    toast.error(errorMessage(exc));
-  } finally {
-    usersLoaded.value = true;
+  const [appResult, userResult, systemResult] = await Promise.allSettled([
+    hub.apps(), session.isHubAdmin ? hub.users() : Promise.resolve([]),
+    session.isHubAdmin ? hub.system() : Promise.resolve(null),
+  ]);
+  if (appResult.status === "fulfilled") {
+    apps.value = appResult.value;
+    appsError.value = "";
+  } else {
+    appsError.value = errorMessage(appResult.reason);
   }
+  if (userResult.status === "fulfilled") users.value = userResult.value;
+  else toast.error(errorMessage(userResult.reason));
+  if (systemResult.status === "fulfilled") mailerReady.value = systemResult.value?.security.email_delivery_ready === true;
+  else toast.error(errorMessage(systemResult.reason));
+  appsLoaded.value = true;
+  usersLoaded.value = true;
 }
 onMounted(load);
 
@@ -117,7 +124,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <PageHeader title="Access" subtitle="Client keys let AI clients call tools for one app. Team members manage the Hub." />
   <TabBar v-if="session.isHubAdmin" v-model="tab" :tabs="[{ key: 'keys', label: 'Client keys' }, { key: 'team', label: 'Team' }]" />
 
-  <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" />
+  <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" :apps-loaded="appsLoaded" :apps-error="appsError" />
 
   <section v-else>
     <div v-if="oneTimeLink" class="card card-pad mb-4 space-y-2">
