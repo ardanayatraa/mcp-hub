@@ -82,7 +82,10 @@ def test_link_real_email_code_password_and_login(admin, monkeypatch):
     assert login.json()["data"]["user"]["is_root"] is False
     assert "mfa_token" not in login.json()["data"]
     assert len(activation_codes) == 1
-    assert client.get("/api/admin/v1/users").status_code == 403
+    team = client.get("/api/admin/v1/users")
+    assert team.status_code == 200
+    assert [row["id"] for row in team.json()["data"]] == [created["id"]]
+    assert "admin@localhost" not in team.text
 
 
 def test_multiple_pending_links_need_no_email(admin, monkeypatch):

@@ -15,7 +15,7 @@ import { errorMessage } from "@/utils/format";
 const route = useRoute();
 const session = useSession();
 const toast = useToast();
-const tab = ref(route.query.tab === "team" && session.isRoot ? "team" : "keys");
+const tab = ref(route.query.tab === "team" && session.isHubAdmin ? "team" : "keys");
 const apps = ref<AppSummary[]>([]);
 const users = ref<AdminUserRow[]>([]);
 const usersLoaded = ref(false);
@@ -29,8 +29,8 @@ const editingUser = ref<AdminUserRow | null>(null);
 
 async function load() {
   try {
-    const [nextApps, nextUsers, system] = await Promise.all([hub.apps(), session.isRoot ? hub.users() : Promise.resolve([]),
-      session.isRoot ? hub.system() : Promise.resolve(null)]);
+    const [nextApps, nextUsers, system] = await Promise.all([hub.apps(), session.isHubAdmin ? hub.users() : Promise.resolve([]),
+      session.isHubAdmin ? hub.system() : Promise.resolve(null)]);
     apps.value = nextApps;
     users.value = nextUsers;
     mailerReady.value = system?.security.email_delivery_ready === true;
@@ -106,7 +106,7 @@ async function copyLink() {
 }
 
 const roles = [
-  ["hub_admin", "Hub admin", "All apps and settings. Only root can manage team access."],
+  ["hub_admin", "Hub admin", "All apps and settings. Can add members; only root can change existing access."],
   ["app_admin", "App admin", "Manage assigned apps, tools and keys"],
   ["auditor", "Auditor", "Read-only access to assigned apps"],
 ] as const;
@@ -115,7 +115,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
 
 <template>
   <PageHeader title="Access" subtitle="Client keys let AI clients call tools for one app. Team members manage the Hub." />
-  <TabBar v-if="session.isRoot" v-model="tab" :tabs="[{ key: 'keys', label: 'Client keys' }, { key: 'team', label: 'Team' }]" />
+  <TabBar v-if="session.isHubAdmin" v-model="tab" :tabs="[{ key: 'keys', label: 'Client keys' }, { key: 'team', label: 'Team' }]" />
 
   <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" />
 
@@ -142,7 +142,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
             <td class="text-xs text-subtle">{{ ["super_admin", "hub_admin"].includes(user.role) ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
             <td><span :class="user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.pending_activation ? "Activation code" : user.auth_method === "password" ? "Password" : user.mfa_enabled ? "Authenticator" : "Off" }}</span></td>
             <td><span :class="user.is_active && !user.pending_activation ? 'badge-ok' : 'badge-neutral'">{{ !user.is_active ? "Disabled" : user.pending_activation ? "Pending" : "Active" }}</span></td>
-            <td class="text-right whitespace-nowrap"><button v-if="user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="resendInvite(user)">New link</button><button v-if="!user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
+            <td class="text-right whitespace-nowrap"><button v-if="session.isRoot && user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="resendInvite(user)">New link</button><button v-if="session.isRoot && !user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
           </tr>
         </tbody>
       </table>

@@ -393,7 +393,18 @@ def test_root_cannot_be_removed(admin):
     assert weak.status_code == 422
 
 
-def test_hub_admin_has_hub_access_but_cannot_manage_team(admin):
+def test_hub_admin_can_create_keys_and_invite_but_cannot_change_team(admin, monkeypatch):
+    from app.config import get_settings
+    from app.persistence.models import Application
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
+    monkeypatch.setattr(settings, "smtp_username", "sender@example.test")
+    monkeypatch.setattr(settings, "smtp_password", "test-smtp-password")
+    monkeypatch.setattr(settings, "smtp_from", "sender@example.test")
+    with open_session() as db:
+        db.add(Application(key="your_app", name="Your App", environment="dev"))
+        db.commit()
     root_id = api(admin, "GET", "/auth/me", expect=200).json()["data"]["id"]
     peer = api(admin, "POST", "/users", {"email": "peer@localhost", "role": "hub_admin",
                                               "password": "ChangeMe-Now-12"}, expect=201).json()["data"]
@@ -403,11 +414,27 @@ def test_hub_admin_has_hub_access_but_cannot_manage_team(admin):
     assert login.status_code == 200
     assert login.json()["data"]["user"]["is_root"] is False
     headers = {"X-CSRF-Token": login.json()["data"]["csrf_token"]}
-    assert client.get("/api/admin/v1/users", headers=headers).status_code == 403
+    team = client.get("/api/admin/v1/users", headers=headers)
+    assert team.status_code == 200
+    assert [row["id"] for row in team.json()["data"]] == [peer["id"]]
+    assert "admin@localhost" not in team.text
     assert client.post("/api/admin/v1/users", headers=headers, json={"email": "third@localhost", "role": "auditor",
                                                                   "password": "ChangeMe-Now-12"}).status_code == 403
+    key = client.post("/api/admin/v1/service-identities", headers=headers, json={
+        "name": "peer key", "app_key": "your_app", "environment": "dev"})
+    assert key.status_code == 201
+    assert key.json()["data"]["token"].startswith("hub_")
+    invited = client.post("/api/admin/v1/users", headers=headers, json={"role": "app_admin"})
+    assert invited.status_code == 201
+    invite = invited.json()["data"]
+    assert invite["pending_activation"] is True and invite["activation_url"]
+    team = client.get("/api/admin/v1/users", headers=headers).json()["data"]
+    assert {row["id"] for row in team} == {peer["id"], invite["id"]}
+    assert all(not row["is_root"] for row in team)
     assert client.patch(f"/api/admin/v1/users/{root_id}", headers=headers, json={"is_active": False}).status_code == 403
     assert client.patch(f"/api/admin/v1/users/{peer['id']}", headers=headers, json={"role": "super_admin"}).status_code == 403
+    assert client.patch(f"/api/admin/v1/users/{invite['id']}", headers=headers, json={"is_active": False}).status_code == 403
+    assert client.post(f"/api/admin/v1/users/{invite['id']}/resend-invite", headers=headers).status_code == 403
     assert client.post("/api/admin/v1/operations/export", headers=headers).status_code == 200
     assert client.post("/api/admin/v1/operations/import", headers=headers,
                        json={"format": "mcp-hub-metadata-v1", "tables": {}}).status_code == 403

@@ -167,16 +167,26 @@ def _set_scopes(db: Session, target: AdminUser, app_ids: list[str]) -> None:
         db.add(AdminApplicationScope(user_id=target.id, app_id=app_id))
 
 
+def _require_team_creator(user: AdminUser) -> None:
+    if not ((user.is_root and user.role == "super_admin") or (not user.is_root and user.role == "hub_admin")):
+        raise HubError("PERMISSION_DENIED", "Operation is not permitted", 403)
+
+
 @router.get("/users")
 def users(db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
-    require_root(user)
-    return ok([_user_view(db, row) for row in db.scalars(select(AdminUser).order_by(AdminUser.created_at))])
+    _require_team_creator(user)
+    query = select(AdminUser).order_by(AdminUser.created_at)
+    if not user.is_root:
+        query = query.where(AdminUser.is_root.is_(False))
+    return ok([_user_view(db, row) for row in db.scalars(query)])
 
 
 @router.post("/users")
 def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
-    require_root(user)
+    _require_team_creator(user)
     data = checked(UserCreate, payload)
+    if not user.is_root and data["password"] is not None:
+        raise HubError("PERMISSION_DENIED", "Invite new members with an activation link", 403)
     invited = data["password"] is None
     if invited:
         if data["email"] is not None:
