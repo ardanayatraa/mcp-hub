@@ -55,6 +55,13 @@ def _published_tool(db: Session, name: str, caller: Caller) -> ToolDefinition:
     return tool
 
 
+def _input_for(schema: dict, arguments: dict) -> dict:
+    """A tool that takes no input gets none. Some model proxies add an argument such as "reason" to
+    every tool without parameters; it would fail the schema and is never used, so it is dropped."""
+
+    return arguments if (schema or {}).get("properties") else {}
+
+
 async def run_tool(db: Session, caller: Caller, name, arguments, *, delegation: str | None, trace: str,
                    state: dict) -> dict:
     if state["tool_key"] == "unrecognized":
@@ -70,7 +77,8 @@ async def run_tool(db: Session, caller: Caller, name, arguments, *, delegation: 
     switches.require_on(db, caller.application.id, name)
     await sync_source_permissions(db, caller.connector, caller.application, get_settings())
     if name == catalog.LIST_SOURCES:
-        validate_arguments(catalog.BUILTINS[name].input_schema, arguments)
+        schema = catalog.BUILTINS[name].input_schema
+        validate_arguments(schema, _input_for(schema, arguments))
         if caller.connector is None or caller.connector.status != "active":
             raise HubError("CONNECTOR_INACTIVE", "Connector is not active", 409)
         settings = get_settings()
@@ -94,8 +102,8 @@ async def run_tool(db: Session, caller: Caller, name, arguments, *, delegation: 
     state["tool_key"], state["module_key"] = tool.tool_key, tool.module_key
     if tool.template in WRITE_TEMPLATES and not caller.can_write:
         raise HubError("PERMISSION_DENIED", "This client key does not have write permission", 403)
-    return await execute_tool(db, tool=tool, arguments=arguments, actor_ref=caller.actor_ref,
-                              delegation_header=delegation, trace_id=trace)
+    return await execute_tool(db, tool=tool, arguments=_input_for(tool.input_schema, arguments),
+                              actor_ref=caller.actor_ref, delegation_header=delegation, trace_id=trace)
 
 
 def _audit(db: Session, state: dict, trace: str, started: float, error: HubError | None) -> None:

@@ -346,6 +346,17 @@ def test_generated_laravel_contract_works_with_crud_templates_and_actor_permissi
             assert "MODULE_DISABLED" in error_text(call(admin["client"], writer, tool["mcp_name"], arguments, actor))
 
 
+def test_tools_without_input_ignore_stray_arguments(admin, monkeypatch):
+    # Some model proxies add a "reason" to every tool without parameters; only those tools drop it.
+    helpers.dns(monkeypatch)
+    with helpers.source():
+        connect_app(admin, enable={"projects": ["read"]})
+        token = issue_key(admin)
+        assert result(call(admin["client"], token, "list_data_sources", {"reason": "User asked"}))["success"]
+        stray = call(admin["client"], token, "run_report", {"source": "projects", "reason": "User asked"}, delegation())
+        assert "VALIDATION_FAILED" in error_text(stray)
+
+
 def test_key_permissions_can_change_and_revocation_is_immediate(admin, monkeypatch):
     helpers.dns(monkeypatch)
     with helpers.source():
