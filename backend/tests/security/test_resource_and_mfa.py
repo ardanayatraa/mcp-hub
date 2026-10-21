@@ -409,6 +409,7 @@ def test_production_refuses_published_example_secrets():
             "allow_insecure_http": False, "allow_insecure_tls": False, "egress_allow_loopback": False,
             "egress_allow_private": False, "allowed_hosts": "hub.example.com"}
     Settings(**good).assert_production_safe()
+    Settings(**{**good, "mfa_required": False}).assert_production_safe()  # password-only admins are allowed
     for change, words in (({"session_signing_key": "replace-with-long-random-string"}, "SESSION_SIGNING_KEY"),
                           ({"session_signing_key": "short"}, "SESSION_SIGNING_KEY"),
                           ({"admin_initial_password": "ChangeMe-Now-12"}, "ADMIN_INITIAL_PASSWORD"),

@@ -15,7 +15,8 @@ The Hub refuses to start in production when any of these is unsafe, and names th
 | `SECRET_ENCRYPTION_KEY` | A Fernet key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep it in your secret manager; without it stored keys cannot be read. |
 | `SESSION_SIGNING_KEY` | 32+ random characters: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD` | The first super admin. Not the example password. |
-| `COOKIE_SECURE`, `MFA_REQUIRED` | `true` |
+| `COOKIE_SECURE` | `true` |
+| `MFA_REQUIRED` | `true` is recommended. `false` lets admins sign in with the password alone. |
 | `ALLOWED_HOSTS` | `hub.example.com` (the public name; add others only if used) |
 | `ALLOWED_ORIGINS` | `https://hub.example.com` |
 | `MCP_PUBLIC_URL`, `MCP_ISSUER_URL` | `https://hub.example.com/mcp`, `https://hub.example.com` |
@@ -62,9 +63,10 @@ Check with `nginx -t`, then `curl -I https://hub.example.com/` should show
 
 ## 4. First sign-in
 
-Sign in as the first super admin within `MFA_ENROLL_HOURS` (72) and scan the QR code. If
-the window passed, run on the server: `python -m app.bootstrap --reset-mfa admin@example.com`.
-Add the other admins under **Access → Team**; each must set up MFA within the same window.
+Sign in as the first super admin. With `MFA_REQUIRED=true`, do it within `MFA_ENROLL_HOURS` (72)
+and scan the QR code. If the window passed, run on the server:
+`python -m app.bootstrap --reset-mfa admin@example.com`. Add the other admins under
+**Access → Team**; with MFA required, each must set it up within the same window.
 
 ## 5. Connect apps
 
@@ -102,5 +104,5 @@ budget is therefore not a production-wide allowance.
 - [ ] PostgreSQL with scheduled, tested off-server dumps
 - [ ] Secrets in a secret manager or a root-only env file, never in git
 - [ ] One backend process, restarted automatically, behind the proxy
-- [ ] Every admin has MFA
+- [ ] Every admin has MFA, or `MFA_REQUIRED=false` is deliberate and every admin has a strong, unique password
 - [ ] Each app's allowed models and token budget set

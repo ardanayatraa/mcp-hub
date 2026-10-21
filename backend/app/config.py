@@ -103,8 +103,7 @@ class Settings(BaseSettings):
         problems: list[str] = []
         if not self.cookie_secure:
             problems.append("COOKIE_SECURE must be true")
-        if not self.mfa_required:
-            problems.append("MFA_REQUIRED must be true")
+        # MFA_REQUIRED is the operator's choice: recommended, but password-only admins may run in production.
         if self.allow_insecure_http or self.allow_insecure_tls:
             problems.append("insecure HTTP/TLS is disabled in production")
         if self.egress_allow_loopback or self.egress_allow_private:

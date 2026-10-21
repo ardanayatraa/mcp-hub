@@ -123,7 +123,7 @@ Copy `.env.example` to `.env`, fill in the secrets, then run
 `https://localhost:8443` (development certificate). The Compose file is a development
 stack: it allows private HTTP egress so the Hub can reach the reference app.
 
-Production refuses to start without PostgreSQL, HTTPS-only cookies, MFA, an egress
+Production refuses to start without PostgreSQL, HTTPS-only cookies, an egress
 allowlist and disabled insecure HTTP/TLS. Run one worker process: rate limits are kept in
 memory. See [Deploying to production](docs/DEPLOY.md).
 

@@ -119,7 +119,7 @@ async function purge() {
           <span>{{ label }}: <span class="font-medium">{{ system.security[key] ? "yes" : "no" }}</span></span>
         </li>
       </ul>
-      <p class="text-xs text-subtle">Production refuses to start unless MFA, secure cookies, HTTPS, PostgreSQL and an egress allowlist are configured.</p>
+      <p class="text-xs text-subtle">Production refuses to start unless secure cookies, HTTPS, PostgreSQL and an egress allowlist are configured. Two-step sign-in is recommended.</p>
     </section>
 
     <section class="card card-pad space-y-3">

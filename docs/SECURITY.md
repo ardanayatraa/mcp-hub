@@ -7,7 +7,7 @@ top of the app's own checks. It never replaces them.
 
 - Argon2 passwords (12+ characters, upper, lower, digit). Unknown emails take the same verification path as known ones.
 - Session cookie: `HttpOnly`, `SameSite=Strict`, `Secure` in production. Every non-GET request needs the `X-CSRF-Token`.
-- TOTP MFA with single-use, expiring challenges and replay-protected codes. Production refuses to start without `MFA_REQUIRED=true`.
+- TOTP MFA with single-use, expiring challenges and replay-protected codes. `MFA_REQUIRED=true` makes it mandatory for every admin and is recommended in production; with it off, admins who never enrolled sign in with the password alone.
 - An admin who never enrolled may enroll with the password alone only within `MFA_ENROLL_HOURS` (72) of being created or reset; later the password alone is refused (`MFA_ENROLLMENT_EXPIRED`) until a super admin resets it, or `python -m app.bootstrap --reset-mfa EMAIL` is run on the server. A reset clears the authenticator and ends the admin's sessions.
 - Login and MFA attempts are rate limited per client address without logging the submitted address or code. Behind a proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the limit sees each client, not the proxy.
 - Roles: `super_admin` (everything, users and backups), `app_admin` and `auditor` (only assigned apps; auditors are read-only and never see tokens or hashes). The last active super admin cannot be demoted or disabled. Disabled admins lose access on their next request.
@@ -147,6 +147,6 @@ key names and admin emails by resolving ids at display time.
 
 ## Production configuration
 
-`ENVIRONMENT=production` refuses to start with insecure cookies, MFA off, insecure HTTP/TLS,
+`ENVIRONMENT=production` refuses to start with insecure cookies, insecure HTTP/TLS,
 private or loopback egress, no egress allowlist, SQLite, or missing encryption/session
 keys. The Compose file is a development stack.
