@@ -1,5 +1,6 @@
 """Who can use the hub: client keys for AI clients and admin users for people."""
 
+import re
 import secrets
 from datetime import timedelta
 
@@ -39,6 +40,7 @@ from app.security.authorization import (
 )
 from app.security.clients import READ_SCOPE, WRITE_SCOPE
 from app.security.crypto import sha256_hex
+from app.security.mailer import require_mailer, send_invitation
 from app.security.passwords import hash_password, password_is_acceptable
 from app.tools.catalog import HUB_TOOL_NAMES
 
@@ -147,6 +149,7 @@ def revoke_identity(identity_id: str, db: Session = Depends(get_db), user: Admin
 
 def _user_view(db: Session, row: AdminUser) -> dict:
     return {"id": row.id, "email": row.email, "role": row.role, "is_root": row.is_root,
+            "auth_method": row.auth_method, "pending_activation": row.activation_token_hash is not None,
             "mfa_enabled": row.mfa_enabled, "is_active": row.is_active,
             "mfa_enroll_until": None if row.mfa_enabled or enrollment_deadline(row) is None else enrollment_deadline(row).isoformat(),
             "app_ids": list(db.scalars(select(AdminApplicationScope.app_id).where(AdminApplicationScope.user_id == row.id))),
@@ -173,18 +176,52 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
     require_root(user)
     data = checked(UserCreate, payload)
     email = data["email"].strip().lower()
-    if "@" not in email or not password_is_acceptable(data["password"]):
-        raise HubError("VALIDATION_FAILED", "Use a valid email and a password of 12+ characters with upper, lower and a digit", 422)
+    if not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9][A-Za-z0-9.\-]*", email):
+        raise HubError("VALIDATION_FAILED", "Use a valid email address", 422)
+    if data["password"] is not None and not password_is_acceptable(data["password"]):
+        raise HubError("VALIDATION_FAILED", "Use a password of 12+ characters with upper, lower and a digit", 422)
+    if data["password"] is not None and get_settings().environment == "production":
+        raise HubError("VALIDATION_FAILED", "Invite new administrators by email", 422)
     if db.scalar(select(AdminUser).where(AdminUser.email == email)):
         raise HubError("CONFLICT", "An admin with that email already exists", 409)
-    created = AdminUser(id=new_id(), email=email, password_hash=hash_password(data["password"]), role=data["role"],
-                        mfa_enroll_until=utcnow() + timedelta(hours=get_settings().mfa_enroll_hours))
+    invited = data["password"] is None
+    if invited:
+        require_mailer()
+    activation_token = secrets.token_urlsafe(32) if invited else None
+    created = AdminUser(id=new_id(), email=email,
+                        password_hash=hash_password(data["password"] or secrets.token_urlsafe(48)), role=data["role"],
+                        auth_method="email_otp" if invited else "totp",
+                        activation_token_hash=sha256_hex(activation_token) if activation_token else None,
+                        activation_expires_at=utcnow() + timedelta(hours=24) if invited else None,
+                        mfa_enroll_until=utcnow() + timedelta(hours=get_settings().mfa_enroll_hours) if not invited else None)
     db.add(created)
     db.flush()
     _set_scopes(db, created, data["app_ids"])
+    if activation_token:
+        send_invitation(email, activation_token)
     record_audit(db, action="admin.create", actor_ref=f"admin:{user.id}", result="success")
     db.commit()
     return ok(_user_view(db, created), 201)
+
+
+@router.post("/users/{user_id}/resend-invite")
+def resend_invite(user_id: str, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    require_root(user)
+    target = db.get(AdminUser, user_id)
+    if target is None:
+        raise HubError("NOT_FOUND", "Administrator was not found", 404)
+    if target.auth_method != "email_otp" or target.activation_token_hash is None or not target.is_active:
+        raise HubError("CONFLICT", "This account has no pending invitation", 409)
+    if target.activation_expires_at and as_utc(target.activation_expires_at) > utcnow() + timedelta(hours=23, minutes=59):
+        raise HubError("RATE_LIMITED", "Please wait before resending this invitation", 429)
+    require_mailer()
+    token = secrets.token_urlsafe(32)
+    target.activation_token_hash = sha256_hex(token)
+    target.activation_expires_at = utcnow() + timedelta(hours=24)
+    send_invitation(target.email, token)
+    record_audit(db, action="admin.invite_resend", actor_ref=f"admin:{user.id}", result="success")
+    db.commit()
+    return ok({"sent": True})
 
 
 @router.patch("/users/{user_id}")
@@ -205,6 +242,8 @@ def update_user(user_id: str, payload: dict, db: Session = Depends(get_db), user
     if changes.get("reset_mfa"):
         if target.id == user.id:
             raise HubError("CONFLICT", "Your own two-factor sign-in cannot be reset here", 409)
+        if target.auth_method == "email_otp":
+            raise HubError("CONFLICT", "Email-code accounts do not use an authenticator app", 409)
         reset_mfa(db, target, get_settings().mfa_enroll_hours)
         record_audit(db, action="admin.mfa_reset", actor_ref=f"admin:{user.id}", result="success")
     record_audit(db, action="admin.update", actor_ref=f"admin:{user.id}", result="success")

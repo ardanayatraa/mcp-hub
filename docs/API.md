@@ -18,9 +18,15 @@ configure, test, publish, issue keys), and `auditor` (read-only on assigned apps
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/auth/login` | `{email, password}`. Returns `{user, csrf_token}`, or an MFA challenge/enrollment. |
+| POST | `/auth/activate` | `{token, password}` from the email invitation. Single use; does not sign in. |
 | POST | `/auth/mfa` | `{mfa_token, code}`; single use, replay-protected. |
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | Current admin and CSRF token. |
+
+Root can create a Team user with `POST /users` and `{email, role, app_ids}`. Without a
+password, this sends an activation invitation and assigns email-code sign-in. Root can
+resend a pending invitation with `POST /users/{id}/resend-invite`. Password-based
+creation is accepted only for non-production compatibility; production requires invitations.
 
 ### Apps (connectors)
 

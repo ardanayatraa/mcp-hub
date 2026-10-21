@@ -89,7 +89,7 @@ class UserCreate(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
     email: str = Field(min_length=3, max_length=320)
     role: Literal["hub_admin", "app_admin", "auditor"]
-    password: str = Field(min_length=12, max_length=200)
+    password: str | None = Field(default=None, min_length=12, max_length=200)
     app_ids: list[str] = Field(default_factory=list, max_length=500)
 
 

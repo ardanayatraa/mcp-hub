@@ -14,6 +14,7 @@ interface LoginResult {
   user?: AdminUser;
   csrf_token?: string;
   mfa_required?: boolean;
+  mfa_channel?: "email" | "authenticator";
   enrollment_required?: boolean;
   mfa_token?: string;
   otpauth_uri?: string;

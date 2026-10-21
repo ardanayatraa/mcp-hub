@@ -35,8 +35,8 @@ def test_existing_super_admins_get_one_root_and_peer_roles(tmp_path, monkeypatch
             ), {"id": user_id, "email": f"{user_id}@localhost", "created_at": created_at})
     command.upgrade(config, "head")
     with engine.connect() as connection:
-        rows = connection.execute(text("SELECT id, role, is_root FROM admin_users ORDER BY created_at")).all()
-        assert rows == [("first", "super_admin", 1), ("second", "hub_admin", 0)]
+        rows = connection.execute(text("SELECT id, role, is_root, auth_method FROM admin_users ORDER BY created_at")).all()
+        assert rows == [("first", "super_admin", 1, "totp"), ("second", "hub_admin", 0, "totp")]
     engine.dispose()
 
 

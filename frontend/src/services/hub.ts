@@ -388,7 +388,8 @@ export interface ClientKey {
 }
 
 export interface AdminUserRow {
-  id: string; email: string; role: string; is_root: boolean; mfa_enabled: boolean; is_active: boolean; app_ids: string[]; created_at: string;
+  id: string; email: string; role: string; is_root: boolean; auth_method: string; pending_activation: boolean;
+  mfa_enabled: boolean; is_active: boolean; app_ids: string[]; created_at: string;
   /** While MFA is required, the time by which this admin must set it up; null once set up. */
   mfa_enroll_until: string | null;
 }
@@ -581,6 +582,7 @@ export const hub = {
   users: () => api<AdminUserRow[]>("/users"),
   createUser: (body: Record<string, unknown>) => post<AdminUserRow>("/users", body),
   updateUser: (id: string, body: Record<string, unknown>) => patch<AdminUserRow>(`/users/${id}`, body),
+  resendInvite: (id: string) => post<{ sent: boolean }>(`/users/${id}/resend-invite`),
 
   activity: (query: URLSearchParams) => api<AuditRow[]>(`/executions?${query.toString()}`),
   exportBackup: () => post<unknown>("/operations/export"),

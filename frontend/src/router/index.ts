@@ -7,6 +7,7 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
   routes: [
     { path: "/login", component: () => import("@/views/LoginView.vue"), meta: { public: true } },
+    { path: "/activate", component: () => import("@/views/ActivateView.vue"), meta: { public: true } },
     { path: "/", component: () => import("@/views/OverviewView.vue") },
     { path: "/apps", component: () => import("@/views/AppsView.vue") },
     { path: "/apps/new", component: () => import("@/views/AppConnectView.vue"), meta: { write: true } },

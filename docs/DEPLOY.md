@@ -17,6 +17,8 @@ The Hub refuses to start in production when any of these is unsafe, and names th
 | `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD` | The first super admin. Not the example password. |
 | `COOKIE_SECURE` | `true` |
 | `MFA_REQUIRED` | `true` is recommended. `false` lets admins sign in with the password alone. |
+| `ADMIN_CONSOLE_URL` | Public HTTPS URL of the admin UI for invitation links; defaults to `MCP_ISSUER_URL`. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated TLS SMTP for invitations and email login codes. Use `starttls` on port 587 or `ssl` on 465. Keep credentials in the server env file. |
 | `ALLOWED_HOSTS` | `hub.example.com` (the public name; add others only if used) |
 | `ALLOWED_ORIGINS` | `https://hub.example.com` |
 | `MCP_PUBLIC_URL`, `MCP_ISSUER_URL` | `https://hub.example.com/mcp`, `https://hub.example.com` |
@@ -64,10 +66,12 @@ Check with `nginx -t`, then `curl -I https://hub.example.com/` should show
 
 ## 4. First sign-in
 
-Sign in as the first super admin. With `MFA_REQUIRED=true`, do it within `MFA_ENROLL_HOURS` (72)
-and scan the QR code. If the window passed, run on the server:
-`python -m app.bootstrap --reset-mfa admin@example.com`. Add the other admins under
-**Access → Team**; with MFA required, each must set it up within the same window.
+Sign in as the first root admin and scan the authenticator QR code within `MFA_ENROLL_HOURS` (72).
+Root uses authenticator MFA in production even if `MFA_REQUIRED=false`. If the window passed,
+run on the server: `python -m app.bootstrap --reset-mfa admin@example.com`. Set SMTP first,
+then invite other admins under **Access → Team**. Each receives a 24-hour activation link,
+sets a password, and uses a one-time email code at each sign-in. An expired invite can be
+resent by root.
 
 ## 5. Connect apps
 
@@ -106,5 +110,5 @@ budget is therefore not a production-wide allowance.
 - [ ] PostgreSQL with scheduled, tested off-server dumps
 - [ ] Secrets in a secret manager or a root-only env file, never in git
 - [ ] One backend process, restarted automatically, behind the proxy
-- [ ] Every admin has MFA, or `MFA_REQUIRED=false` is deliberate and every admin has a strong, unique password
+- [ ] Root has authenticator MFA; invited admins can receive email codes over authenticated TLS SMTP
 - [ ] Each app's allowed models and token budget set

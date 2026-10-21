@@ -15,6 +15,7 @@ const password = ref("");
 const code = ref("");
 const mfaToken = ref("");
 const otpauth = ref("");
+const mfaChannel = ref("");
 const error = ref("");
 const busy = ref(false);
 
@@ -51,6 +52,7 @@ async function submit() {
     }
     mfaToken.value = data.mfa_token || "";
     otpauth.value = data.otpauth_uri || "";
+    mfaChannel.value = data.mfa_channel || "authenticator";
   } catch (exc) {
     error.value = errorMessage(exc, "Sign-in failed");
   } finally {
@@ -91,12 +93,15 @@ async function submit() {
             <p class="break-all font-mono text-sm text-ink">{{ setupKeyGroups }}</p>
             <CopyButton :text="setupKey" label="Copy key" />
           </div>
-          <p v-else class="text-sm text-subtle">Enter the 6-digit code from your authenticator app.</p>
+          <p v-else class="text-sm text-subtle">{{ mfaChannel === "email"
+            ? "Enter the 6-digit code we sent to your email. It expires in 10 minutes."
+            : "Enter the 6-digit code from your authenticator app." }}</p>
           <label class="block"><span class="label">Code</span>
             <input v-model="code" class="input text-center font-mono text-lg tracking-[0.4em]" inputmode="numeric"
                    autocomplete="one-time-code" maxlength="6" required /></label>
         </template>
         <button class="btn-primary w-full" type="submit" :disabled="busy">{{ mfaToken ? "Verify" : "Sign in" }}</button>
+        <button v-if="mfaToken" class="btn-ghost w-full" type="button" @click="mfaToken = ''; code = ''; error = ''">Start again</button>
       </form>
     </div>
   </main>

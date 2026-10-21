@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     session_signing_key: str = ""
     admin_initial_email: str = "admin@localhost"
     admin_initial_password: str = ""
+    # Optional until invitations are enabled; invite and email-code endpoints fail closed without it.
+    admin_console_url: str = ""
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_tls_mode: str = "starttls"
     mfa_required: bool = False
     # Hours a new (or reset) admin has to set up MFA while it is required; later a super admin resets it.
     mfa_enroll_hours: int = Field(default=72, ge=1, le=720)
@@ -98,6 +106,13 @@ class Settings(BaseSettings):
     @property
     def port_list(self) -> set[int]:
         return {int(item) for item in self.csv(self.egress_allowed_ports)}
+
+    @property
+    def smtp_configured(self) -> bool:
+        base = self.admin_console_url or self.mcp_issuer_url
+        return (all((self.smtp_host, self.smtp_username, self.smtp_password, self.smtp_from))
+                and self.smtp_tls_mode in {"starttls", "ssl"}
+                and (self.environment != "production" or base.startswith("https://")))
 
     def assert_production_safe(self) -> None:
         if self.environment != "production":

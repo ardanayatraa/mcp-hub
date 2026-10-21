@@ -19,16 +19,19 @@ const tab = ref(route.query.tab === "team" && session.isRoot ? "team" : "keys");
 const apps = ref<AppSummary[]>([]);
 const users = ref<AdminUserRow[]>([]);
 const usersLoaded = ref(false);
+const mailerReady = ref(false);
 const busy = ref(false);
 
-const userForm = ref({ open: false, email: "", role: "app_admin", password: "", app_ids: [] as string[] });
+const userForm = ref({ open: false, email: "", role: "hub_admin", app_ids: [] as string[] });
 const editingUser = ref<AdminUserRow | null>(null);
 
 async function load() {
   try {
-    const [nextApps, nextUsers] = await Promise.all([hub.apps(), session.isRoot ? hub.users() : Promise.resolve([])]);
+    const [nextApps, nextUsers, system] = await Promise.all([hub.apps(), session.isRoot ? hub.users() : Promise.resolve([]),
+      session.isRoot ? hub.system() : Promise.resolve(null)]);
     apps.value = nextApps;
     users.value = nextUsers;
+    mailerReady.value = system?.security.email_delivery_ready === true;
   } catch (exc) {
     toast.error(errorMessage(exc));
   } finally {
@@ -52,8 +55,22 @@ async function resetMfa(user: AdminUserRow) {
   }
 }
 
+async function resendInvite(user: AdminUserRow) {
+  busy.value = true;
+  try {
+    await hub.resendInvite(user.id);
+    toast.ok(`Invitation sent to ${user.email}`);
+    await load();
+  } catch (exc) {
+    toast.error(errorMessage(exc));
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function saveUser() {
   busy.value = true;
+  const wasEditing = !!editingUser.value;
   try {
     if (editingUser.value) {
       const { id, role, is_active, app_ids } = editingUser.value;
@@ -61,10 +78,10 @@ async function saveUser() {
       editingUser.value = null;
     } else {
       const form = userForm.value;
-      await hub.createUser({ email: form.email, role: form.role, password: form.password, app_ids: form.role === "hub_admin" ? [] : form.app_ids });
-      userForm.value = { open: false, email: "", role: "app_admin", password: "", app_ids: [] };
+      await hub.createUser({ email: form.email, role: form.role, app_ids: form.role === "hub_admin" ? [] : form.app_ids });
+      userForm.value = { open: false, email: "", role: "hub_admin", app_ids: [] };
     }
-    toast.ok("Team updated");
+    toast.ok(wasEditing ? "Team updated" : "Invitation sent");
     await load();
   } catch (exc) {
     toast.error(errorMessage(exc));
@@ -88,8 +105,10 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" />
 
   <section v-else>
-    <div class="mb-4 flex justify-end">
-      <button class="btn-primary" type="button" @click="userForm.open = true"><AppIcon name="plus" :size="16" /> Add team member</button>
+    <div class="mb-4 flex items-center justify-between gap-3">
+      <p v-if="!mailerReady" class="text-xs text-subtle">Email delivery needs SMTP settings before you can invite a new admin.</p>
+      <span v-else />
+      <button class="btn-primary" type="button" :disabled="!mailerReady" @click="userForm.open = true"><AppIcon name="plus" :size="16" /> Add team member</button>
     </div>
     <LoadingSkeleton v-if="!usersLoaded" label="Loading team" />
     <div v-else class="card overflow-x-auto">
@@ -100,9 +119,9 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
             <td class="font-medium">{{ user.email }}<span v-if="user.id === session.user?.id" class="badge-brand ml-2">you</span></td>
             <td class="text-xs">{{ user.is_root ? "Root" : roles.find((role) => role[0] === user.role)?.[1] ?? user.role }}</td>
             <td class="text-xs text-subtle">{{ ["super_admin", "hub_admin"].includes(user.role) ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
-            <td><span :class="user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.mfa_enabled ? "On" : "Off" }}</span></td>
-            <td><span :class="user.is_active ? 'badge-ok' : 'badge-neutral'">{{ user.is_active ? "Active" : "Disabled" }}</span></td>
-            <td class="text-right"><button v-if="!user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
+            <td><span :class="user.auth_method === 'email_otp' || user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.auth_method === "email_otp" ? "Email code" : user.mfa_enabled ? "Authenticator" : "Off" }}</span></td>
+            <td><span :class="user.is_active && !user.pending_activation ? 'badge-ok' : 'badge-neutral'">{{ !user.is_active ? "Disabled" : user.pending_activation ? "Pending" : "Active" }}</span></td>
+            <td class="text-right whitespace-nowrap"><button v-if="user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="resendInvite(user)">Resend invite</button><button v-if="!user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
           </tr>
         </tbody>
       </table>
@@ -113,9 +132,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
     <form id="user-form" class="space-y-4" @submit.prevent="saveUser">
       <template v-if="!editingUser">
         <label class="block"><span class="label">Email</span><input v-model="userForm.email" class="input" type="email" required /></label>
-        <label class="block"><span class="label">Temporary password</span>
-          <input v-model="userForm.password" class="input" type="password" autocomplete="new-password" minlength="12" required />
-          <span class="hint">12+ characters with upper and lower case letters and a digit.</span></label>
+        <p class="text-xs text-subtle">They'll receive an email invitation, set their own password, then use an email code to sign in.</p>
       </template>
       <fieldset class="space-y-2">
         <legend class="label">Role</legend>
@@ -134,7 +151,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
         </label>
       </fieldset>
       <label v-if="editingUser" class="flex items-center gap-2 text-sm"><input v-model="editingUser.is_active" type="checkbox" /> Account active</label>
-      <div v-if="editingUser && editingUser.id !== session.user?.id" class="flex items-center justify-between gap-3 rounded-lg border border-line p-2.5">
+      <div v-if="editingUser && editingUser.auth_method === 'totp' && editingUser.id !== session.user?.id" class="flex items-center justify-between gap-3 rounded-lg border border-line p-2.5">
         <span class="text-sm">Two-factor sign-in<span class="block text-xs text-subtle">{{ editingUser.mfa_enabled
           ? "Set up. Reset it when they lose their authenticator."
           : "Not set up yet. Resetting gives them a new window to set it up." }}</span></span>

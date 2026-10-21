@@ -1,5 +1,7 @@
 """Admin session dependencies and MCP service-token lookup."""
 
+import hashlib
+import hmac
 import secrets
 from datetime import timedelta
 
@@ -24,15 +26,24 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(get_settings().session_signing_key, salt="hub-mfa")
 
 
-def issue_mfa_token(db: Session, user_id: str, purpose: str) -> str:
-    challenge = MfaChallenge(id=new_id(), user_id=user_id, purpose=purpose, expires_at=utcnow() + timedelta(minutes=5))
+def issue_mfa_token(db: Session, user_id: str, purpose: str, *, code: str | None = None) -> str:
+    minutes = 10 if purpose == "email_otp" else 5
+    challenge = MfaChallenge(id=new_id(), user_id=user_id, purpose=purpose,
+                             expires_at=utcnow() + timedelta(minutes=minutes))
+    if code is not None:
+        challenge.code_hash = email_code_hash(challenge.id, code)
     db.add(challenge)
     return _serializer().dumps({"uid": user_id, "purpose": purpose, "nonce": challenge.id})
 
 
+def email_code_hash(challenge_id: str, code: str) -> str:
+    payload = f"{challenge_id}:{code}".encode()
+    return hmac.new(get_settings().session_signing_key.encode(), payload, hashlib.sha256).hexdigest()
+
+
 def read_mfa_token(db: Session, token: str) -> MfaChallenge:
     try:
-        payload = _serializer().loads(token, max_age=300)
+        payload = _serializer().loads(token, max_age=600)
     except (BadSignature, SignatureExpired) as exc:
         raise HubError("UNAUTHENTICATED", "MFA challenge expired", 401) from exc
     challenge = db.get(MfaChallenge, payload.get("nonce"))
@@ -82,7 +93,7 @@ def _session_from_request(request: Request, db: Session) -> tuple[AdminSession, 
     if row is None or as_utc(row.expires_at) < utcnow():
         raise HubError("UNAUTHENTICATED", "Authentication is required", 401)
     user = db.get(AdminUser, row.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.activation_token_hash is not None:
         raise HubError("UNAUTHENTICATED", "Authentication is required", 401)
     return row, user
 

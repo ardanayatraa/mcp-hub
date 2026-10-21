@@ -31,6 +31,7 @@ def system(user: AdminUser = Depends(require_csrf)):
                    "tool_rate_limit": settings.tool_rate_limit, "tool_rate_window_seconds": settings.tool_rate_window_seconds,
                    "audit_retention_days": settings.audit_retention_days},
         "security": {"mfa_required": settings.mfa_required, "secure_cookies": settings.cookie_secure,
+                     "email_delivery_ready": settings.smtp_configured,
                      "egress_allowlist": bool(settings.egress_allowed_hosts or settings.egress_allowed_cidrs),
                      "insecure_http_allowed": settings.allow_insecure_http,
                      "private_egress_allowed": settings.egress_allow_private or settings.egress_allow_loopback},
