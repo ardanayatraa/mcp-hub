@@ -21,7 +21,7 @@ export const USER_SECTIONS: GuideSection[] = [
     table: {
       head: ["In the Hub", "What it is"],
       rows: [
-        ["App", "A connected application, such as a shop or a CRM, with the bearer token it issued for the Hub."],
+        ["App", "A connected application, such as a shop or a CRM, with the bearer token the Hub sends it."],
         ["Data source", "One kind of record the app publishes, such as orders. Off until you allow it, with per-field visibility."],
         ["Tool", "Something an AI client can call: built-in tools that work on every data source, and tools you generate or create."],
         ["Skill", "A saved instruction, such as Weekly report, that AI clients show like a slash command."],
@@ -59,13 +59,13 @@ export const USER_SECTIONS: GuideSection[] = [
         ["App key", "Lowercase id that matches `application` in the app's manifest, for example `your_app`. It cannot change later."],
         ["Base URL", "The app's address, for example `https://app.example.com`. The Hub calls only routes under it."],
         ["Environment", "Development, Test, Staging or Production. Production apps allow live tests only for public totals."],
-        ["Bearer token", "The token the app issued for the Hub. The Hub sends it as `Authorization: Bearer <token>` on every call. Stored encrypted and never shown again."],
         ["Permission management", "Set up in Hub (you choose data sources and tools), or follow the app's own permissions automatically."],
-        ["Advanced", "Manifest and health paths, timeout (100 to 30,000 ms), TLS check, and the user delegation secret. Leave the secret blank and the Hub generates one and shows it once."],
+        ["Advanced", "Manifest and health paths, timeout (100 to 30,000 ms), TLS check, and two values only for an app that already has them: its bearer token and user delegation secret. Left blank, the Hub creates both."],
       ],
     },
     list: [
-      "**Save and check** tests the connection, then syncs the manifest. A slow app shows a \"still waiting\" note, not a frozen screen.",
+      "**Continue** creates the app with a bearer token (sent as `Authorization: Bearer <token>`, stored encrypted), a delegation secret and a read-only client key, and shows them as one `.env` block. Paste it into the app's `.env` and run `php artisan config:clear`; the block is shown only once.",
+      "**Check connection** tests the connection, then syncs the manifest. A slow app shows a \"still waiting\" note, not a frozen screen.",
       "**Choose tools**, the wizard's last step, lists every tool by data source with a tick box. Reading tools are ticked; tools that create, update or delete start unticked, and where the app's API is read-only their boxes are greyed out with the reason. Unticked tools are switched off. Ticked write tools are tested with sample data (nothing is sent to the app) and published when you press **Activate app**.",
       "**API keys tab** on the app page is where the app's bearer token lives: see when it was last updated, paste a replacement (it is tested right away), change the delegation secret or test the saved token.",
       "**Edit** connection settings on the **Connection** tab. Changing the base URL or manifest path returns the app to setup, so test and sync again.",

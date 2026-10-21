@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 
+import CodeBlock from "@/components/CodeBlock.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SecretInput from "@/components/SecretInput.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
@@ -11,7 +11,6 @@ import { useToast } from "@/stores/toast";
 import { errorMessage, slugify } from "@/utils/format";
 import { useSlowFlag } from "@/utils/loading";
 
-const router = useRouter();
 const toast = useToast();
 const step = ref(1);
 const busy = ref(false);
@@ -25,6 +24,11 @@ const form = ref({
 });
 const app = ref<AppSummary | null>(null);
 const delegation = ref("");
+// Kept only in this page for the .env block: the Hub stores the token encrypted and the key hashed.
+const appToken = ref("");
+const clientKey = ref("");
+const mcpUrl = ref("");
+const checkedOnce = ref(false);
 const check = ref<{ health: Health | null; syncing: boolean; sources: number; syncError: string }>({ health: null, syncing: false, sources: 0, syncError: "" });
 // Set while the Hub is waiting on the app, so a slow answer shows a notice instead of a frozen screen.
 const waiting = ref(false);
@@ -39,13 +43,30 @@ const done = ref(false);
 watch(() => form.value.name, (name) => { if (!keyEdited.value) form.value.app_key = slugify(name); });
 
 const sourceManaged = computed(() => form.value.connector_type === "source_managed");
-const steps = computed(() => sourceManaged.value ? ["App details", "Check connection", "Choose tools"]
-  : ["App details", "Check connection", "Choose data", "Choose tools"]);
+const steps = computed(() => sourceManaged.value ? ["App details", "Set up the app", "Choose tools"]
+  : ["App details", "Set up the app", "Choose data", "Choose tools"]);
 const toolsStep = computed(() => steps.value.length);
-const canNext = computed(() => form.value.name && form.value.app_key && form.value.base_url && form.value.secret.length >= 8);
+const canNext = computed(() => form.value.name && form.value.app_key && form.value.base_url
+  && (!form.value.secret || form.value.secret.length >= 8));
+
+// Everything the app needs, in the variable names of the Laravel guide, ready to paste into its .env.
+const envBlock = computed(() => appToken.value ? [
+  "# MCP Hub",
+  `MCP_HUB_APP_KEY=${form.value.app_key}`,
+  `MCP_HUB_BASE_URL=${form.value.base_url.replace(/\/+$/, "")}`,
+  `MCP_HUB_APP_TOKEN=${appToken.value}`,
+  `MCP_HUB_DELEGATION_SECRET=${delegation.value}`,
+  `MCP_HUB_URL=${mcpUrl.value}`,
+  `MCP_HUB_CLIENT_KEY=${clientKey.value}`,
+].join("\n") : "");
+
+function randomToken() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 async function runChecks() {
   if (!app.value) return;
+  checkedOnce.value = true;
   busy.value = true;
   waiting.value = true;
   check.value = { health: null, syncing: false, sources: 0, syncError: "" };
@@ -75,13 +96,30 @@ async function save() {
   busy.value = true;
   try {
     if (!app.value) {
-      const created = await hub.createApp({ ...form.value, delegation_secret: form.value.delegation_secret || "" });
-      delegation.value = created.delegation_secret ?? "";
+      // The Hub makes the bearer token unless the app already has one, so there is nothing to generate by hand.
+      const secret = form.value.secret || randomToken();
+      const created = await hub.createApp({ ...form.value, secret, delegation_secret: form.value.delegation_secret || "" });
       app.value = created;
+      appToken.value = secret;
+      delegation.value = created.delegation_secret || form.value.delegation_secret;
     } else {
       const { name, base_url, manifest_path, health_path, timeout_ms, tls_verify, connector_type } = form.value;
       await hub.updateApp(app.value.id, { name, base_url, manifest_path, health_path, timeout_ms, tls_verify, connector_type });
-      if (form.value.secret) await hub.rotateSecret(app.value.id, { secret: form.value.secret });
+      if (form.value.secret) {
+        await hub.rotateSecret(app.value.id, { secret: form.value.secret });
+        appToken.value = form.value.secret;
+      }
+    }
+    form.value.secret = "";
+    if (!clientKey.value) {
+      // One read-only key for the app's own server (AI tools, chat, model gateway); write access is granted later.
+      const key = await hub.createKey({ name: "App server", app_key: form.value.app_key, environment: form.value.environment,
+                                        ttl_days: 365 });
+      clientKey.value = key.token ?? "";
+      mcpUrl.value = (await hub.system()).mcp_url;
+      // The app needs the .env block before the Hub can reach it, so the first check waits for the button.
+      step.value = 2;
+      return;
     }
     step.value = 2;
     busy.value = false;
@@ -216,10 +254,6 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
         <select v-model="form.environment" class="input" :disabled="!!app">
           <option value="dev">Development</option><option value="test">Test</option><option value="staging">Staging</option><option value="production">Production</option>
         </select></label>
-      <label class="sm:col-span-2"><span class="label">Bearer token</span>
-        <SecretInput v-model="form.secret" :required="!app" minlength="8" maxlength="500"
-                     :placeholder="app ? 'Leave blank to keep the saved token' : 'Issued by the app for the Hub'" />
-        <span class="hint">Sent as <code class="code">Authorization: Bearer &lt;token&gt;</code> on every call. Stored encrypted; never shown again or sent to AI clients.</span></label>
       <label class="sm:col-span-2"><span class="label">Permission management</span>
         <select v-model="form.connector_type" class="input" :disabled="!!app">
           <option value="http_contract">Set up in Hub</option>
@@ -232,26 +266,40 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
       <AppIcon :name="advanced ? 'chevron-down' : 'chevron-right'" :size="14" /> Advanced settings
     </button>
     <div v-if="advanced" class="grid gap-4 rounded-lg bg-muted/60 p-4 sm:grid-cols-2">
+      <label class="sm:col-span-2"><span class="label">Bearer token (optional)</span>
+        <SecretInput v-model="form.secret" minlength="8" maxlength="500"
+                     :placeholder="app ? 'Leave blank to keep the saved token' : 'Leave blank and the Hub creates one'" />
+        <span class="hint">Only if the app already has a token. Sent as <code class="code">Authorization: Bearer &lt;token&gt;</code> on every call; stored encrypted and never sent to AI clients.</span></label>
       <label><span class="label">Manifest path</span><input v-model="form.manifest_path" class="input font-mono" /></label>
       <label><span class="label">Health path</span><input v-model="form.health_path" class="input font-mono" /></label>
       <label><span class="label">Timeout (ms)</span><input v-model.number="form.timeout_ms" class="input" type="number" min="100" max="30000" /></label>
       <label class="flex items-center gap-3 pt-6"><ToggleSwitch v-model="form.tls_verify" label="Verify TLS" /> Verify TLS certificate</label>
       <label v-if="!app" class="sm:col-span-2"><span class="label">User delegation secret (optional)</span>
         <SecretInput v-model="form.delegation_secret" />
-        <span class="hint">Shared with the app to sign which user is asking. Leave blank and the Hub generates one and shows it once.</span></label>
+        <span class="hint">Shared with the app to sign which user is asking. Leave blank and the Hub creates one.</span></label>
     </div>
 
     <div class="flex justify-end gap-2 border-t border-line pt-4">
       <RouterLink to="/apps" class="btn-secondary">Cancel</RouterLink>
       <button class="btn-primary" type="submit" :disabled="busy || !canNext">
         <template v-if="busy"><span class="spinner" /> Saving…</template>
-        <template v-else>Save and check <AppIcon name="chevron-right" :size="16" /></template>
+        <template v-else>{{ app ? "Save and check" : "Continue" }} <AppIcon name="chevron-right" :size="16" /></template>
       </button>
     </div>
   </form>
 
   <section v-else-if="!done && step === 2" class="card card-pad max-w-3xl space-y-4">
-    <div class="flex items-start gap-3 rounded-lg border border-line p-4">
+    <div v-if="envBlock" class="space-y-3">
+      <div>
+        <h2 class="section-title">1. Paste this into {{ form.name }}'s .env</h2>
+        <p class="text-xs text-subtle">Every value is filled in, including a read-only client key (valid for a year) for the app's own server.
+          It is shown only on this page, so copy it now. Replace any older <code class="code">MCP_HUB_</code> lines, then run
+          <code class="code">php artisan config:clear</code>.</p>
+      </div>
+      <CodeBlock :code="envBlock" />
+      <h2 class="section-title">2. Check the connection</h2>
+    </div>
+    <div v-if="checkedOnce" class="flex items-start gap-3 rounded-lg border border-line p-4">
       <span v-if="!check.health" class="spinner mt-0.5 h-5 w-5 text-brand" />
       <AppIcon v-else :name="check.health.status === 'ok' ? 'check' : 'alert'" :size="20"
                :class="check.health.status === 'ok' ? 'text-ok' : 'text-bad'" />
@@ -281,15 +329,11 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
     <p v-if="slow" role="status" class="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-subtle">
       <AppIcon name="info" :size="14" /> Still waiting for {{ form.name || "the app" }}. The Hub gives each request up to {{ Math.round(form.timeout_ms / 1000) }} s; slow apps can take a moment.
     </p>
-    <div v-if="delegation" class="rounded-lg border border-warn/40 bg-warn-soft p-4">
-      <p class="font-medium text-ink">Save the user delegation secret now</p>
-      <p class="mb-2 text-xs text-subtle">Configure it in the app so it can sign which user is asking. It is shown only once.</p>
-      <div class="flex items-center gap-2"><code class="code flex-1 truncate py-1.5">{{ delegation }}</code><CopyButton :text="delegation" /></div>
-    </div>
     <div class="flex justify-between gap-2 border-t border-line pt-4">
       <button type="button" class="btn-secondary" @click="step = 1">Edit details</button>
       <div class="flex gap-2">
-        <button type="button" class="btn-secondary" :disabled="busy" @click="runChecks"><AppIcon name="refresh" :size="16" /> Retry</button>
+        <button type="button" :class="check.health?.status === 'ok' ? 'btn-secondary' : 'btn-primary'" :disabled="busy" @click="runChecks">
+          <AppIcon :name="checkedOnce ? 'refresh' : 'plug'" :size="16" /> {{ checkedOnce ? "Check again" : "Check connection" }}</button>
         <button type="button" class="btn-primary" :disabled="busy || check.health?.status !== 'ok' || !!check.syncError || (!sourceManaged && !check.sources)" @click="sourceManaged ? toTools() : toSources()">
           <span v-if="busy && check.health?.status === 'ok' && !check.syncing" class="spinner" />
           Continue <AppIcon name="chevron-right" :size="16" />
@@ -351,7 +395,7 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
     <div class="mt-5 flex flex-wrap justify-center gap-2">
       <RouterLink :to="`/apps/${app?.id}`" class="btn-secondary">Review fields</RouterLink>
       <RouterLink v-if="!sourceManaged" :to="`/tools/new?connector=${app?.id}`" class="btn-secondary">Create a tool</RouterLink>
-      <button type="button" class="btn-primary" @click="router.push('/access')">Create a client key</button>
+      <RouterLink :to="`/apps/${app?.id}?tab=keys`" class="btn-primary">Manage API keys</RouterLink>
     </div>
   </section>
 </template>

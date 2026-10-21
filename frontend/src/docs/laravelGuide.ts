@@ -114,21 +114,14 @@ class Order extends Model
     title: "Add the settings",
     step: 1,
     body: [
-      "Generate the bearer token the Hub will send, and a delegation secret for user context. Each must be at least 8 characters; 64 random hex characters is a good default.",
+      "Add these lines with empty values. There is nothing to generate: when you connect the app in step 7, the Hub fills in every value and shows them as one block to paste over these lines.",
     ],
     files: [
-      {
-        path: "terminal",
-        lang: "bash",
-        kind: "snippet",
-        caption: "Run twice: once for each value",
-        code: String.raw`php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`,
-      },
       {
         path: ".env",
         lang: "dotenv",
         kind: "snippet",
-        caption: "Add to your .env (never commit it)",
+        caption: "Add to your .env (never commit it); step 7 gives you the values",
         code: String.raw`# MCP Hub: the Hub calls this app
 MCP_HUB_APP_KEY=your_app
 # Exactly the Base URL you enter in the Hub: scheme, host and port, no trailing slash
@@ -892,25 +885,23 @@ class HubProposalController extends Controller
     id: "connect",
     title: "Connect the app in MCP Hub",
     step: 7,
-    body: ["Open Apps → Connect app and fill in the form from your `.env`:"],
+    body: ["Open Apps → Connect app and fill in three fields:"],
     table: {
       head: ["Hub field", "Value"],
       rows: [
         ["App name", "Your app's display name"],
-        ["App key", "`MCP_HUB_APP_KEY`"],
-        ["Base URL", "`MCP_HUB_BASE_URL`"],
-        ["Manifest path / Health path", "`/api/ai/v1/capabilities` and `/api/ai/v1/health`"],
-        ["Bearer token", "`MCP_HUB_APP_TOKEN`"],
-        ["Permission management", "Set up in Hub"],
-        ["Advanced → User delegation secret", "`MCP_HUB_DELEGATION_SECRET`, or leave it blank and copy the generated value into `.env`"],
+        ["App key", "`your_app` (it becomes `MCP_HUB_APP_KEY`)"],
+        ["Base URL", "The app's address, such as `https://app.example.com` (it becomes `MCP_HUB_BASE_URL`)"],
       ],
     },
     steps: [
-      "Save and **Test**: the Hub calls your health route. Then **Sync contract** to read the manifest.",
+      "Click **Continue**. The Hub creates the bearer token, the delegation secret and a read-only client key, and shows every `MCP_HUB_` value as one block. It is shown once, so copy it now.",
+      "Paste the block into `.env` over the empty `MCP_HUB_` lines, then run `php artisan config:clear`.",
+      "Click **Check connection**: the Hub calls your health route and reads the manifest.",
       "On **Data sources**, open Orders and allow **Read**, **Create**, **Update** and **Delete**. Leave out what the AI should never do.",
       "On **Tools**, click **Generate tools**. You get List orders, Get one order and Orders summary (live), and Create an order, Update an order and Delete an order (drafts, so a person reviews every write).",
       "Open each write tool, click **Run test** (sample data, nothing is sent to your app), then **Publish**.",
-      "**Activate** the app. On **API keys**, create a client key and tick **Allow write tools**; a read-only key never sees the write tools.",
+      "**Activate** the app. The client key in your `.env` is read-only; to let your chat use the write tools, open **API keys**, edit that key and tick **Allow write tools**.",
     ],
     after: [
       "Prefer your app to decide everything? Choose **Follow application permissions automatically** instead, add `'managed_by' => 'application'` to the manifest and a `tool_key` such as `your_app.orders.create` to every route: the Hub then publishes exactly the routes you list, without review.",

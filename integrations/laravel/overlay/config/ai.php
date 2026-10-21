@@ -21,21 +21,25 @@ return [
         ],
     ],
 
-    // AI model bridge and user-owned data Hub connections.
+    // AI model bridge and user-owned data Hub connections. The names the Hub's connect screen prints
+    // (MCP_HUB_CLIENT_KEY, MCP_HUB_APP_TOKEN, MCP_HUB_BASE_URL) win; the older names keep working.
     'mcp' => [
-        'bridge_url' => env('MCP_BRIDGE_URL', 'http://127.0.0.1:8000/mcp'),
-        'access_token' => env('MCP_BRIDGE_TOKEN', ''),
+        // Without MCP_BRIDGE_*, models come from the Hub's model gateway next to MCP_HUB_URL, with the client key.
+        'bridge_url' => env('MCP_BRIDGE_URL', env('MCP_HUB_URL')
+            ? preg_replace('#/mcp$#', '/gateway/mcp', rtrim((string) env('MCP_HUB_URL'), '/'))
+            : 'http://127.0.0.1:8000/mcp'),
+        'access_token' => env('MCP_BRIDGE_TOKEN', env('MCP_HUB_CLIENT_KEY', '')),
         'timeout' => (int) env('MCP_BRIDGE_TIMEOUT', 210),
         'ai_provider' => env('MCP_AI_PROVIDER', 'telixcell'),
         'ai_only' => true,
 
         // AI models use the bridge above; user-owned data tools use this Hub.
         'hub' => [
-            'enabled' => (bool) env('MCP_HUB_ENABLED', false),
+            'enabled' => (bool) env('MCP_HUB_ENABLED', (bool) env('MCP_HUB_CLIENT_KEY')),
             'url' => env('MCP_HUB_URL', ''),
-            'token' => env('MCP_HUB_TOKEN', ''),
-            'source_url' => rtrim(env('MCP_HUB_SOURCE_URL', env('APP_URL', '')), '/'),
-            'source_key' => env('MCP_HUB_SOURCE_KEY', ''),
+            'token' => env('MCP_HUB_CLIENT_KEY', env('MCP_HUB_TOKEN', env('MCP_BRIDGE_TOKEN', ''))),
+            'source_url' => rtrim(env('MCP_HUB_BASE_URL', env('MCP_HUB_SOURCE_URL', env('APP_URL', ''))), '/'),
+            'source_key' => env('MCP_HUB_APP_TOKEN', env('MCP_HUB_SOURCE_KEY', '')),
             'delegation_secret' => env('MCP_HUB_DELEGATION_SECRET', ''),
             'timeout' => (int) env('MCP_HUB_TIMEOUT', 12),
             // Refuse connector calls over plain HTTP; on by default in production (behind a proxy, trust it in TrustProxies).

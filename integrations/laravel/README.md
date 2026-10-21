@@ -15,16 +15,21 @@ cleaned before the Hub can publish its tools.
 
 ## Connection
 
-Laravel reads its connection settings from `.env` through `config/ai.php`:
+Laravel reads its connection settings from `.env` through `config/ai.php`. **Apps → Connect app**
+in the Hub prints them as one block to paste (app key `hireach`, base URL = `APP_URL`):
 
-- `MCP_HUB_ENABLED`, `MCP_HUB_URL`, `MCP_HUB_TOKEN`
-- `MCP_HUB_SOURCE_URL`, `MCP_HUB_SOURCE_KEY`, `MCP_HUB_DELEGATION_SECRET`
+- `MCP_HUB_URL`, `MCP_HUB_CLIENT_KEY`: the Hub's MCP address and the app's client key
+- `MCP_HUB_BASE_URL`, `MCP_HUB_APP_TOKEN`, `MCP_HUB_DELEGATION_SECRET`: how the Hub reaches this app
 
-`MCP_BRIDGE_*` configures where AI models come from. Point it at the Hub's model gateway so the
-models and their keys are managed under **AI providers** in the Hub:
+The older names (`MCP_HUB_ENABLED`, `MCP_HUB_TOKEN`, `MCP_HUB_SOURCE_URL`, `MCP_HUB_SOURCE_KEY`)
+still work; when both are set, the names above win.
 
-- `MCP_BRIDGE_URL=https://<hub>/gateway/mcp` (locally `http://127.0.0.1:18000/gateway/mcp`)
-- `MCP_BRIDGE_TOKEN=<a Hub client key for the app>` (the `MCP_HUB_TOKEN` key works)
+`MCP_BRIDGE_*` configures where AI models come from. Left out, the adapter uses the Hub's model
+gateway next to `MCP_HUB_URL` with the same client key, so models and their keys are managed under
+**AI providers** in the Hub. Set both only to use another bridge:
+
+- `MCP_BRIDGE_URL=https://<bridge>/mcp`
+- `MCP_BRIDGE_TOKEN=<its token>`
 
 The app's **Chat** must be on in the Hub. HiReach's model picker then lists the Hub models the app
 may use (`provider/model` ids; narrow them under **Model gateway access** on the app's Chat tab) and
