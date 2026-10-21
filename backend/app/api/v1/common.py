@@ -19,6 +19,7 @@ def user_view(user: AdminUser) -> dict:
         "id": user.id,
         "email": user.email,
         "role": user.role,
+        "is_root": user.is_root,
         "mfa_enabled": user.mfa_enabled,
     }
 

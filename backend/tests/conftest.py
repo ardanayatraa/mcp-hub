@@ -50,6 +50,7 @@ def client() -> Generator[TestClient, None, None]:
                     email="admin@localhost",
                     password_hash=hash_password("ChangeMe-Now-12"),
                     role="super_admin",
+                    is_root=True,
                 )
             )
             db.commit()

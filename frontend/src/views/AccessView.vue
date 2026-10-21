@@ -15,7 +15,7 @@ import { errorMessage } from "@/utils/format";
 const route = useRoute();
 const session = useSession();
 const toast = useToast();
-const tab = ref(route.query.tab === "team" && session.isSuper ? "team" : "keys");
+const tab = ref(route.query.tab === "team" && session.isRoot ? "team" : "keys");
 const apps = ref<AppSummary[]>([]);
 const users = ref<AdminUserRow[]>([]);
 const usersLoaded = ref(false);
@@ -26,7 +26,7 @@ const editingUser = ref<AdminUserRow | null>(null);
 
 async function load() {
   try {
-    const [nextApps, nextUsers] = await Promise.all([hub.apps(), session.isSuper ? hub.users() : Promise.resolve([])]);
+    const [nextApps, nextUsers] = await Promise.all([hub.apps(), session.isRoot ? hub.users() : Promise.resolve([])]);
     apps.value = nextApps;
     users.value = nextUsers;
   } catch (exc) {
@@ -57,11 +57,11 @@ async function saveUser() {
   try {
     if (editingUser.value) {
       const { id, role, is_active, app_ids } = editingUser.value;
-      await hub.updateUser(id, { role, is_active, app_ids: role === "super_admin" ? [] : app_ids });
+      await hub.updateUser(id, { role, is_active, app_ids: role === "hub_admin" ? [] : app_ids });
       editingUser.value = null;
     } else {
       const form = userForm.value;
-      await hub.createUser({ email: form.email, role: form.role, password: form.password, app_ids: form.role === "super_admin" ? [] : form.app_ids });
+      await hub.createUser({ email: form.email, role: form.role, password: form.password, app_ids: form.role === "hub_admin" ? [] : form.app_ids });
       userForm.value = { open: false, email: "", role: "app_admin", password: "", app_ids: [] };
     }
     toast.ok("Team updated");
@@ -74,7 +74,7 @@ async function saveUser() {
 }
 
 const roles = [
-  ["super_admin", "Super admin", "Everything, including users and backups"],
+  ["hub_admin", "Hub admin", "All apps and settings. Only root can manage team access."],
   ["app_admin", "App admin", "Manage assigned apps, tools and keys"],
   ["auditor", "Auditor", "Read-only access to assigned apps"],
 ] as const;
@@ -83,7 +83,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
 
 <template>
   <PageHeader title="Access" subtitle="Client keys let AI clients call tools for one app. Team members manage the Hub." />
-  <TabBar v-if="session.isSuper" v-model="tab" :tabs="[{ key: 'keys', label: 'Client keys' }, { key: 'team', label: 'Team' }]" />
+  <TabBar v-if="session.isRoot" v-model="tab" :tabs="[{ key: 'keys', label: 'Client keys' }, { key: 'team', label: 'Team' }]" />
 
   <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" />
 
@@ -98,11 +98,11 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
         <tbody>
           <tr v-for="user in users" :key="user.id">
             <td class="font-medium">{{ user.email }}<span v-if="user.id === session.user?.id" class="badge-brand ml-2">you</span></td>
-            <td class="text-xs">{{ roles.find((role) => role[0] === user.role)?.[1] ?? user.role }}</td>
-            <td class="text-xs text-subtle">{{ user.role === "super_admin" ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
+            <td class="text-xs">{{ user.is_root ? "Root" : roles.find((role) => role[0] === user.role)?.[1] ?? user.role }}</td>
+            <td class="text-xs text-subtle">{{ ["super_admin", "hub_admin"].includes(user.role) ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
             <td><span :class="user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.mfa_enabled ? "On" : "Off" }}</span></td>
             <td><span :class="user.is_active ? 'badge-ok' : 'badge-neutral'">{{ user.is_active ? "Active" : "Disabled" }}</span></td>
-            <td class="text-right"><button class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
+            <td class="text-right"><button v-if="!user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
           </tr>
         </tbody>
       </table>
@@ -125,7 +125,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
           <span><span class="text-sm font-medium">{{ label }}</span><span class="block text-xs text-subtle">{{ help }}</span></span>
         </label>
       </fieldset>
-      <fieldset v-if="(editingUser ? editingUser.role : userForm.role) !== 'super_admin'" class="space-y-1.5">
+      <fieldset v-if="(editingUser ? editingUser.role : userForm.role) !== 'hub_admin'" class="space-y-1.5">
         <legend class="label">Apps</legend>
         <label v-for="app in apps" :key="app.app_id" class="flex items-center gap-2 text-sm">
           <input v-if="editingUser" v-model="editingUser.app_ids" type="checkbox" :value="app.app_id" />

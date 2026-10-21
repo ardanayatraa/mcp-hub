@@ -7,9 +7,9 @@ from sqlalchemy import select
 from app.errors import HubError
 from app.persistence.models import AdminApplicationScope, Connector, ToolDefinition
 
-READ_ROLES = {"super_admin", "app_admin", "auditor"}
-WRITE_ROLES = {"super_admin", "app_admin"}
-ADMIN_ROLES = {"super_admin"}
+READ_ROLES = {"super_admin", "hub_admin", "app_admin", "auditor"}
+WRITE_ROLES = {"super_admin", "hub_admin", "app_admin"}
+ADMIN_ROLES = {"super_admin", "hub_admin"}
 
 RANK = {
     "blocked": 0,
@@ -83,8 +83,13 @@ def require_role(role: str, allowed: set[str]) -> None:
         raise HubError("PERMISSION_DENIED", "Operation is not permitted", 403)
 
 
+def require_root(user) -> None:
+    if not user.is_root or user.role != "super_admin":
+        raise HubError("PERMISSION_DENIED", "Only the root administrator can manage team access", 403)
+
+
 def allowed_app_ids(db, user) -> set[str] | None:
-    if user.role == "super_admin":
+    if user.role in ADMIN_ROLES:
         return None
     require_role(user.role, READ_ROLES)
     return set(db.scalars(select(AdminApplicationScope.app_id).where(AdminApplicationScope.user_id == user.id)))

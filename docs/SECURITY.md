@@ -8,9 +8,10 @@ top of the app's own checks. It never replaces them.
 - Argon2 passwords (12+ characters, upper, lower, digit). Unknown emails take the same verification path as known ones.
 - Session cookie: `HttpOnly`, `SameSite=Strict`, `Secure` in production. Every non-GET request needs the `X-CSRF-Token`.
 - TOTP MFA with single-use, expiring challenges and replay-protected codes. `MFA_REQUIRED=true` makes it mandatory for every admin and is recommended in production; with it off, admins who never enrolled sign in with the password alone.
-- An admin who never enrolled may enroll with the password alone only within `MFA_ENROLL_HOURS` (72) of being created or reset; later the password alone is refused (`MFA_ENROLLMENT_EXPIRED`) until a super admin resets it, or `python -m app.bootstrap --reset-mfa EMAIL` is run on the server. A reset clears the authenticator and ends the admin's sessions.
+- An admin who never enrolled may enroll with the password alone only within `MFA_ENROLL_HOURS` (72) of being created or reset; later the password alone is refused (`MFA_ENROLLMENT_EXPIRED`) until root resets it, or `python -m app.bootstrap --reset-mfa EMAIL` is run on the server. A reset clears the authenticator and ends the admin's sessions.
 - Login and MFA attempts are rate limited per client address without logging the submitted address or code. Behind a proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so the limit sees each client, not the proxy.
-- Roles: `super_admin` (everything, users and backups), `app_admin` and `auditor` (only assigned apps; auditors are read-only and never see tokens or hashes). The last active super admin cannot be demoted or disabled. Disabled admins lose access on their next request.
+- Roles: the initial `super_admin` is root and alone can create, change or disable team accounts, reset another admin's MFA, and restore configuration backups (which can replace app assignments). `hub_admin` has all-app and Hub settings access, but cannot manage team access or restore a backup. `app_admin` and `auditor` are limited to assigned apps; auditors are read-only and never see tokens or hashes. Root cannot be demoted or disabled through the API. Disabled admins lose access on their next request.
+- When upgrading an existing installation, the oldest active `super_admin` becomes root. Any other `super_admin` becomes `hub_admin`.
 
 ## Client keys (MCP callers)
 

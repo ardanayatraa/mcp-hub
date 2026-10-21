@@ -25,12 +25,14 @@ def seed_admin() -> None:
         password = settings.admin_initial_password
         if not password_is_acceptable(password):
             raise SystemExit("ADMIN_INITIAL_PASSWORD must be at least 12 characters and include upper, lower, and a digit")
+        first_root = db.scalar(select(AdminUser.id).where(AdminUser.is_root.is_(True))) is None
         db.add(
             AdminUser(
                 id=new_id(),
                 email=email,
                 password_hash=hash_password(password),
-                role="super_admin",
+                role="super_admin" if first_root else "hub_admin",
+                is_root=first_root,
                 mfa_enabled=False,
                 mfa_enroll_until=utcnow() + timedelta(hours=settings.mfa_enroll_hours),
             )

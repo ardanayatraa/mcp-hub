@@ -6,6 +6,7 @@ export interface AdminUser {
   id: string;
   email: string;
   role: string;
+  is_root: boolean;
   mfa_enabled: boolean;
 }
 
@@ -24,8 +25,9 @@ export const useSession = defineStore("session", {
     ready: false,
   }),
   getters: {
-    canWrite: (state) => ["super_admin", "app_admin"].includes(state.user?.role ?? ""),
-    isSuper: (state) => state.user?.role === "super_admin",
+    canWrite: (state) => ["super_admin", "hub_admin", "app_admin"].includes(state.user?.role ?? ""),
+    isHubAdmin: (state) => ["super_admin", "hub_admin"].includes(state.user?.role ?? ""),
+    isRoot: (state) => state.user?.is_root === true && state.user.role === "super_admin",
   },
   actions: {
     async login(email: string, password: string) {

@@ -21,6 +21,25 @@ def test_code_expects_the_alembic_head():
     assert ScriptDirectory.from_config(Config("alembic.ini")).get_current_head() == SCHEMA_REVISION
 
 
+def test_existing_super_admins_get_one_root_and_peer_roles(tmp_path, monkeypatch):
+    url = "sqlite+pysqlite:///" + (tmp_path / "roles.db").as_posix()
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    config = Config("alembic.ini")
+    command.upgrade(config, "a9d4c2e7f615")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for user_id, created_at in (("first", "2026-01-01 00:00:00"), ("second", "2026-02-01 00:00:00")):
+            connection.execute(text(
+                "INSERT INTO admin_users (id, email, password_hash, role, mfa_enabled, is_active, created_at) "
+                "VALUES (:id, :email, 'hash', 'super_admin', false, true, :created_at)"
+            ), {"id": user_id, "email": f"{user_id}@localhost", "created_at": created_at})
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        rows = connection.execute(text("SELECT id, role, is_root FROM admin_users ORDER BY created_at")).all()
+        assert rows == [("first", "super_admin", 1), ("second", "hub_admin", 0)]
+    engine.dispose()
+
+
 def test_populated_upgrade_downgrade_preserves_fk_children(published, tmp_path, monkeypatch):  # noqa: F811
     with open_session() as db:
         document = export_metadata(db)

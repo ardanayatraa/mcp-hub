@@ -297,7 +297,7 @@ Content-Type: application/json
         </form>
       </section>
 
-      <GatewayPanel :app-id="app.id" :app-name="app.name" :settings="settings" :editable="editable && session.isSuper" @saved="gatewaySaved" />
+      <GatewayPanel :app-id="app.id" :app-name="app.name" :settings="settings" :editable="editable && session.isHubAdmin" @saved="gatewaySaved" />
 
       <section class="card card-pad space-y-4">
         <div>

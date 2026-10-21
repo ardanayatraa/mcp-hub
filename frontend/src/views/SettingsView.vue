@@ -4,10 +4,12 @@ import { onMounted, ref } from "vue";
 import ModalDialog from "@/components/ModalDialog.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import { hub, type SystemInfo } from "@/services/hub";
+import { useSession } from "@/stores/session";
 import { useToast } from "@/stores/toast";
 import { errorMessage } from "@/utils/format";
 
 const toast = useToast();
+const session = useSession();
 const system = ref<SystemInfo | null>(null);
 const busy = ref(false);
 const pending = ref<unknown>(null);
@@ -133,7 +135,7 @@ async function purge() {
       <h2 class="section-title">Backup and maintenance</h2>
       <div class="flex flex-wrap gap-2">
         <button class="btn-secondary" type="button" :disabled="busy" @click="download"><AppIcon name="download" :size="16" /> Export configuration</button>
-        <label class="btn-secondary cursor-pointer"><AppIcon name="upload" :size="16" /> Restore from file
+        <label v-if="session.isRoot" class="btn-secondary cursor-pointer"><AppIcon name="upload" :size="16" /> Restore from file
           <input class="hidden" type="file" accept="application/json" @change="choose" /></label>
         <button class="btn-secondary" type="button" :disabled="busy" @click="purge"><AppIcon name="trash" :size="16" /> Purge expired records</button>
       </div>

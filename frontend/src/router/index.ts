@@ -39,7 +39,7 @@ router.beforeEach(async (to) => {
   if (!session.ready) await session.restore();
   if (!to.meta.public && !session.user) return { path: "/login", query: to.path !== "/" ? { next: to.fullPath } : {} };
   if (to.path === "/login" && session.user) return "/";
-  if (to.meta.superAdmin && session.user?.role !== "super_admin") return "/";
+  if (to.meta.superAdmin && !session.isHubAdmin) return "/";
   if (to.meta.write && session.user?.role === "auditor") return "/";
   return true;
 });

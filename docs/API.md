@@ -9,8 +9,9 @@ secrets or record values; validation errors name the field, not the value.
 Authentication is a session cookie from `POST /auth/login`. Every request except GET needs
 the `X-CSRF-Token` header returned by login and `GET /auth/me`.
 
-Roles: `super_admin` (everything), `app_admin` (assigned apps: configure, test, publish,
-issue keys) and `auditor` (read-only on assigned apps).
+Roles: `super_admin` (the initial root, including team access and restore), `hub_admin`
+(all apps and Hub settings except team access and restore), `app_admin` (assigned apps:
+configure, test, publish, issue keys), and `auditor` (read-only on assigned apps).
 
 ### Auth
 

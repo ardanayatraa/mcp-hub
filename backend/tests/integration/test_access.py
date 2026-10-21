@@ -378,15 +378,43 @@ def test_key_permissions_can_change_and_revocation_is_immediate(admin, monkeypat
         assert used["status"] == "revoked" and used["last_used_at"] is not None
 
 
-def test_last_super_admin_cannot_be_removed(admin):
+def test_root_cannot_be_removed(admin):
     me = api(admin, "GET", "/auth/me", expect=200).json()["data"]
+    assert me["is_root"] is True
     assert api(admin, "PATCH", f"/users/{me['id']}", {"role": "auditor"}).status_code == 409
-    other = api(admin, "POST", "/users", {"email": "second@localhost", "role": "super_admin", "password": "ChangeMe-Now-12"},
+    assert api(admin, "POST", "/users", {"email": "duplicate-root@localhost", "role": "super_admin",
+                                            "password": "ChangeMe-Now-12"}).status_code == 422
+    other = api(admin, "POST", "/users", {"email": "second@localhost", "role": "hub_admin", "password": "ChangeMe-Now-12"},
                 expect=201).json()["data"]
+    assert other["is_root"] is False
     api(admin, "PATCH", f"/users/{other['id']}", {"is_active": False}, expect=200)
     assert api(admin, "PATCH", f"/users/{me['id']}", {"is_active": False}).status_code == 409
     weak = api(admin, "POST", "/users", {"email": "weak@localhost", "role": "auditor", "password": "short"})
     assert weak.status_code == 422
+
+
+def test_hub_admin_has_hub_access_but_cannot_manage_team(admin):
+    root_id = api(admin, "GET", "/auth/me", expect=200).json()["data"]["id"]
+    peer = api(admin, "POST", "/users", {"email": "peer@localhost", "role": "hub_admin",
+                                              "password": "ChangeMe-Now-12"}, expect=201).json()["data"]
+    client = admin["client"]
+    client.cookies.clear()
+    login = client.post("/api/admin/v1/auth/login", json={"email": "peer@localhost", "password": "ChangeMe-Now-12"})
+    assert login.status_code == 200
+    assert login.json()["data"]["user"]["is_root"] is False
+    headers = {"X-CSRF-Token": login.json()["data"]["csrf_token"]}
+    assert client.get("/api/admin/v1/users", headers=headers).status_code == 403
+    assert client.post("/api/admin/v1/users", headers=headers, json={"email": "third@localhost", "role": "auditor",
+                                                                  "password": "ChangeMe-Now-12"}).status_code == 403
+    assert client.patch(f"/api/admin/v1/users/{root_id}", headers=headers, json={"is_active": False}).status_code == 403
+    assert client.patch(f"/api/admin/v1/users/{peer['id']}", headers=headers, json={"role": "super_admin"}).status_code == 403
+    assert client.post("/api/admin/v1/operations/export", headers=headers).status_code == 200
+    assert client.post("/api/admin/v1/operations/import", headers=headers,
+                       json={"format": "mcp-hub-metadata-v1", "tables": {}}).status_code == 403
+    assert client.get("/api/admin/v1/model-providers", headers=headers).status_code == 200
+    assert client.post("/api/admin/v1/model-providers", headers=headers,
+                       json={"key": "peer_provider", "name": "Peer Provider",
+                             "base_url": "https://models.example.test/v1"}).status_code == 201
 
 
 def test_every_attempt_carries_a_fresh_one_time_assertion(admin, monkeypatch):

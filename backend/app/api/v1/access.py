@@ -30,12 +30,12 @@ from app.persistence.session import get_db
 from app.security.audit import record_audit
 from app.security.auth import enrollment_deadline, require_csrf, reset_mfa
 from app.security.authorization import (
-    ADMIN_ROLES,
     READ_ROLES,
     WRITE_ROLES,
     allowed_app_ids,
     require_app_access,
     require_role,
+    require_root,
 )
 from app.security.clients import READ_SCOPE, WRITE_SCOPE
 from app.security.crypto import sha256_hex
@@ -146,7 +146,8 @@ def revoke_identity(identity_id: str, db: Session = Depends(get_db), user: Admin
 
 
 def _user_view(db: Session, row: AdminUser) -> dict:
-    return {"id": row.id, "email": row.email, "role": row.role, "mfa_enabled": row.mfa_enabled, "is_active": row.is_active,
+    return {"id": row.id, "email": row.email, "role": row.role, "is_root": row.is_root,
+            "mfa_enabled": row.mfa_enabled, "is_active": row.is_active,
             "mfa_enroll_until": None if row.mfa_enabled or enrollment_deadline(row) is None else enrollment_deadline(row).isoformat(),
             "app_ids": list(db.scalars(select(AdminApplicationScope.app_id).where(AdminApplicationScope.user_id == row.id))),
             "created_at": as_utc(row.created_at).isoformat()}
@@ -163,13 +164,13 @@ def _set_scopes(db: Session, target: AdminUser, app_ids: list[str]) -> None:
 
 @router.get("/users")
 def users(db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
-    require_role(user.role, ADMIN_ROLES)
+    require_root(user)
     return ok([_user_view(db, row) for row in db.scalars(select(AdminUser).order_by(AdminUser.created_at))])
 
 
 @router.post("/users")
 def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
-    require_role(user.role, ADMIN_ROLES)
+    require_root(user)
     data = checked(UserCreate, payload)
     email = data["email"].strip().lower()
     if "@" not in email or not password_is_acceptable(data["password"]):
@@ -188,19 +189,13 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
 
 @router.patch("/users/{user_id}")
 def update_user(user_id: str, payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
-    require_role(user.role, ADMIN_ROLES)
+    require_root(user)
     target = db.get(AdminUser, user_id)
     if target is None:
         raise HubError("NOT_FOUND", "Administrator was not found", 404)
     changes = checked(UserChanges, payload, partial=True)
-    demoting = changes.get("role", target.role) != "super_admin" or changes.get("is_active", target.is_active) is False
-    if target.role == "super_admin" and demoting:
-        if target.id == user.id:
-            raise HubError("CONFLICT", "You cannot remove your own super admin access", 409)
-        others = db.scalar(select(AdminUser.id).where(AdminUser.role == "super_admin", AdminUser.is_active.is_(True),
-                                                      AdminUser.id != target.id))
-        if others is None:
-            raise HubError("CONFLICT", "At least one active super admin is required", 409)
+    if target.is_root and ("role" in changes or changes.get("is_active") is False or "app_ids" in changes):
+        raise HubError("CONFLICT", "Root access cannot be changed through the team page", 409)
     if "role" in changes:
         target.role = changes["role"]
     if "is_active" in changes:
@@ -209,8 +204,7 @@ def update_user(user_id: str, payload: dict, db: Session = Depends(get_db), user
         _set_scopes(db, target, changes["app_ids"])
     if changes.get("reset_mfa"):
         if target.id == user.id:
-            raise HubError("CONFLICT", "Another super admin must reset your two-factor sign-in", 409)
-        require_role(user.role, ADMIN_ROLES)
+            raise HubError("CONFLICT", "Your own two-factor sign-in cannot be reset here", 409)
         reset_mfa(db, target, get_settings().mfa_enroll_hours)
         record_audit(db, action="admin.mfa_reset", actor_ref=f"admin:{user.id}", result="success")
     record_audit(db, action="admin.update", actor_ref=f"admin:{user.id}", result="success")

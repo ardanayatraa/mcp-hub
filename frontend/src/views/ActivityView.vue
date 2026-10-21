@@ -58,7 +58,7 @@ onMounted(async () => {
   try {
     apps.value = await hub.apps();
     const keys = await hub.keys();
-    const users = session.isSuper ? await hub.users() : [];
+    const users = session.isRoot ? await hub.users() : [];
     names.value = Object.fromEntries([
       ...keys.map((key) => [`service:${key.id}`, key.name]),
       ...users.map((user) => [`admin:${user.id}`, user.email]),

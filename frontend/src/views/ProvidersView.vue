@@ -24,7 +24,7 @@ const error = ref("");
 const dialog = ref<{ provider?: ModelProvider } | null>(null);
 const removing = ref<ModelProvider | null>(null);
 const busy = ref("");
-const canEdit = computed(() => session.isSuper);
+const canEdit = computed(() => session.isHubAdmin);
 const claudeKey = ref("");
 
 async function load() {

@@ -25,14 +25,14 @@ const groups = computed(() => [
       { label: "Access", to: "/access", icon: "key" },
       { label: "AI providers", to: "/providers", icon: "sparkles" },
       { label: "Activity", to: "/activity", icon: "activity" },
-      ...(session.user?.role === "super_admin" ? [{ label: "Settings", to: "/settings", icon: "settings" }] : []),
+      ...(session.isHubAdmin ? [{ label: "Settings", to: "/settings", icon: "settings" }] : []),
     ],
   },
   { label: "Docs", links: [{ label: "Assistant", to: "/assistant", icon: "chat" }, { label: "User guide", to: "/docs/guide", icon: "book" },
     { label: "Laravel guide", to: "/docs/laravel", icon: "code" }] },
 ]);
 const showShell = computed(() => !route.meta.public);
-const roleLabel = computed(() => ({ super_admin: "Super admin", app_admin: "App admin", auditor: "Auditor" })[session.user?.role ?? ""] ?? "");
+const roleLabel = computed(() => ({ super_admin: "Root", hub_admin: "Hub admin", app_admin: "App admin", auditor: "Auditor" })[session.user?.role ?? ""] ?? "");
 const initials = computed(() => (session.user?.email ?? "?").split("@")[0].split(/[._-]/).filter(Boolean).slice(0, 2)
   .map((part) => part[0]?.toUpperCase()).join("") || "?");
 const section = computed(() => groups.value.flatMap((group) => group.links).find((link) => active(link.to)));
