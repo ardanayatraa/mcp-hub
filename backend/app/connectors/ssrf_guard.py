@@ -15,6 +15,12 @@ BLOCKED_HOSTS = {
 }
 
 
+def _resolve_host(host: str, port: int):
+    """Resolve a connector target without replacing process-wide DNS in tests."""
+
+    return socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+
+
 def _ip_allowed(ip: ipaddress.IPv4Address | ipaddress.IPv6Address, settings: Settings) -> bool:
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         return _ip_allowed(ip.ipv4_mapped, settings)
@@ -63,7 +69,7 @@ def validate_destination(url: str, settings: Settings) -> tuple[str, int, list[s
             raise HubError("SSRF_BLOCKED", "Destination is outside approved egress destinations", 422)
         return host, port, [str(literal)]
     try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        infos = _resolve_host(host, port)
     except socket.gaierror as exc:
         raise HubError("CONNECTOR_DNS", "Connector host could not be resolved", 422) from exc
     addresses: list[str] = []

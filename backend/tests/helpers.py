@@ -35,7 +35,7 @@ def dns(monkeypatch) -> None:
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
 
-    monkeypatch.setattr("app.connectors.ssrf_guard.socket.getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr("app.connectors.ssrf_guard._resolve_host", fake_getaddrinfo)
 
 
 def _assertion_tenant(request: httpx.Request) -> str | None:

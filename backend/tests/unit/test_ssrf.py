@@ -4,6 +4,7 @@ import pytest
 from app.config import Settings
 from app.connectors.ssrf_guard import validate_destination
 from app.errors import HubError
+from tests import helpers
 
 
 def _settings(**overrides) -> Settings:
@@ -45,7 +46,7 @@ def test_public_host_is_allowed_when_every_address_is_public(monkeypatch):
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
 
-    monkeypatch.setattr("app.connectors.ssrf_guard.socket.getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr("app.connectors.ssrf_guard._resolve_host", fake_getaddrinfo)
     host, port, addresses = validate_destination("https://projects.example/api", _settings(allow_insecure_http=False))
     assert host == "projects.example"
     assert port == 443
@@ -56,7 +57,14 @@ def test_rebinding_to_a_private_address_is_rejected(monkeypatch):
     def fake_getaddrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.8", port))]
 
-    monkeypatch.setattr("app.connectors.ssrf_guard.socket.getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr("app.connectors.ssrf_guard._resolve_host", fake_getaddrinfo)
     with pytest.raises(HubError) as raised:
         validate_destination("https://projects.example/api", _settings(allow_insecure_http=False))
     assert raised.value.code == "SSRF_BLOCKED"
+
+
+def test_fake_connector_dns_does_not_change_database_resolution(monkeypatch):
+    resolver = socket.getaddrinfo
+    helpers.dns(monkeypatch)
+    assert socket.getaddrinfo is resolver
+    assert validate_destination("https://projects.test/api", _settings())[2] == ["93.184.216.34"]
