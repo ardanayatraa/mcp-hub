@@ -188,14 +188,17 @@ function stop() {
       <div v-for="(entry, index) in entries" :key="index" :class="entry.role === 'user' ? 'flex justify-end' : 'space-y-3'">
         <p v-if="entry.role === 'user'" class="max-w-[75%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand px-4 py-2 text-sm text-brand-ink">{{ entry.text }}</p>
         <template v-else>
-          <div v-if="entry.tools.length" class="flex flex-wrap gap-1.5">
-            <span v-for="tool in entry.tools" :key="tool.id" class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
-                  :class="tool.status === 'error' ? 'border-bad/40 text-bad' : 'border-line text-subtle'">
+          <ol v-if="entry.tools.length" class="flex flex-wrap gap-1.5" aria-label="Research activity">
+            <li v-for="tool in entry.tools" :key="tool.id" :title="tool.detail"
+                class="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] leading-4"
+                :class="tool.status === 'error' ? 'border-bad/30 bg-bad-soft text-bad' : tool.status === 'running' ? 'border-warn/30 bg-warn-soft text-warn' : 'border-line bg-surface text-subtle'">
               <span v-if="tool.status === 'running'" class="spinner h-3 w-3" />
-              <AppIcon v-else :name="VERBS[tool.name]?.icon ?? 'check'" :size="12" />
-              {{ VERBS[tool.name]?.verb ?? tool.title }} <span class="truncate font-mono">{{ tool.detail }}</span>
-            </span>
-          </div>
+              <AppIcon v-else :name="tool.status === 'error' ? 'alert' : VERBS[tool.name]?.icon ?? 'check'" :size="12" />
+              <span class="shrink-0 font-medium">{{ VERBS[tool.name]?.verb ?? tool.title }}</span>
+              <code class="max-w-44 min-w-0 truncate text-[11px]">{{ tool.detail }}</code>
+              <span v-if="tool.status === 'error'" class="shrink-0 font-medium">failed</span>
+            </li>
+          </ol>
           <ChatMarkdown v-if="entry.text" :text="entry.text" />
           <p v-else-if="streaming && index === entries.length - 1 && !entry.error" class="flex items-center gap-2 text-sm text-subtle">
             <span class="spinner" /> Reading the repository…</p>
