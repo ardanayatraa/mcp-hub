@@ -211,7 +211,10 @@ class AdminPreviewCaller(Caller):
 
 @router.post("/{connector_id}/chat/try")
 async def try_chat(connector_id: str, request: Request, user: AdminUser = Depends(require_csrf)):
-    """Stream a read-only answer, without a signed-in app user, so admins can check the setup."""
+    """Stream a read-only answer, without a signed-in app user, so admins can check the setup.
+
+    The admin may pick another provider and model for the turn, and sees what each tool returned.
+    """
 
     body = await read_body(request)
     db = open_session()
@@ -220,7 +223,8 @@ async def try_chat(connector_id: str, request: Request, user: AdminUser = Depend
         identity = ServiceIdentity(id="preview", name="Admin preview", token_hash="", app_id=application.id,
                                    scopes=[READ_SCOPE], allowed_tools=None)
         caller = AdminPreviewCaller(identity, application, connector, admin_id=user.id)
-        turn = await chat_engine.Turn(db, caller, chat_engine.parse_request(body), None).prepare()
+        turn = await chat_engine.Turn(db, caller, chat_engine.parse_request(body), None,
+                                      model=chat_settings.chosen_model(db, body), show_results=True).prepare()
     except BaseException:
         db.close()
         raise

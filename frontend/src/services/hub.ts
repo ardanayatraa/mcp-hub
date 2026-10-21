@@ -331,6 +331,8 @@ export interface ChatToolEvent {
   status: "running" | "done" | "error";
   write?: boolean;
   error?: { code: string; message: string };
+  /** Try it only: what the tool returned (data, summary, chart, meta), at most 50 rows. */
+  result?: Record<string, any>;
 }
 
 export interface ChatProposal { tool: string; title: string; operation: string | null; data: unknown; trace_id: string }

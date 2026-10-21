@@ -14,6 +14,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 from mcp.types import Tool
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ from app.config import Settings, get_settings
 from app.connectors.discovery import connector_secret, sync_source_permissions
 from app.errors import HubError
 from app.ids import new_trace_id, utcnow
+from app.persistence.models import ChatSetting
 from app.privacy.pii_inspector import tree_contains_pii
 from app.security.audit import record_audit
 from app.security.clients import Caller
@@ -38,6 +40,7 @@ MAX_MESSAGE = 4000
 MAX_HISTORY = 40
 MAX_HISTORY_CHARS = 60000
 MAX_RESULT_CHARS = 40000
+SHOWN_ROWS = 50
 # Large apps can publish hundreds of tools; run_report reaches every source, so the rest are trimmed first.
 MAX_TOOLS = 64
 LOCALE_RE = re.compile(r"^[a-z]{2}(-[A-Z]{2})?$")
@@ -107,6 +110,22 @@ def _messages(history: list[dict], user_text: str) -> list[dict]:
         else:
             merged.append({"role": item["role"], "content": item["text"]})
     return merged
+
+
+def _shown(payload) -> dict | None:
+    """What Try it shows of a tool's answer: its data, summary, chart and meta, at most SHOWN_ROWS rows."""
+
+    if not isinstance(payload, dict):
+        return None
+    shown = {key: payload[key] for key in ("data", "summary", "chart", "meta") if key in payload}
+    data = shown.get("data")
+    if isinstance(data, list) and len(data) > SHOWN_ROWS:
+        shown["data"], shown["truncated"] = data[:SHOWN_ROWS], True
+    elif isinstance(data, dict) and isinstance(data.get("rows"), list) and len(data["rows"]) > SHOWN_ROWS:
+        shown["data"], shown["truncated"] = {**data, "rows": data["rows"][:SHOWN_ROWS]}, True
+    if len(json.dumps(shown, ensure_ascii=False, default=str)) > MAX_RESULT_CHARS:
+        return {"summary": payload.get("summary"), "too_large": True}
+    return shown
 
 
 def _trim(tools: list[Tool]) -> list[Tool]:
@@ -218,13 +237,21 @@ class Turn:
     """A prepared turn: every check that can fail with a plain HTTP error has already passed."""
 
     def __init__(self, db: Session, caller: Caller, request: TurnRequest, delegation_header: str | None,
-                 settings: Settings | None = None) -> None:
+                 settings: Settings | None = None, *, model: tuple[str, str] | None = None,
+                 show_results: bool = False) -> None:
         self.db, self.caller, self.request = db, caller, request
         self.delegation_header = delegation_header
         self.settings = settings or get_settings()
         self.trace = new_trace_id()
         self.started = time.perf_counter()
         self.config = chat_settings.setting(db, caller.application.id)
+        if model:
+            # Another model for this turn only: a detached copy, so the saved setting never changes.
+            self.config = SimpleNamespace(**{column.key: getattr(self.config, column.key)
+                                             for column in ChatSetting.__table__.columns})
+            self.config.provider, self.config.model = model
+        # Admins trying the chat see what each tool returned; apps' chats only get progress.
+        self.show_results = show_results
         self.tools: list[Tool] = []
         self.user_text = request.message
         self.skill_used: str | None = None
@@ -347,6 +374,8 @@ class Turn:
                              "write": name in writes}
                     if failure:
                         event["error"] = {"code": failure.code, "message": failure.message}
+                    elif self.show_results:
+                        event["result"] = _shown(payload)
                     used.append(event)
                     await emit("tool", event)
                     meta = payload.get("meta") if isinstance(payload, dict) else None

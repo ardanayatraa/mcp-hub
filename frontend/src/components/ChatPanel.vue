@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
-import ChatMarkdown from "@/components/ChatMarkdown.vue";
 import CodeBlock from "@/components/CodeBlock.vue";
 import GatewayPanel from "@/components/GatewayPanel.vue";
 import LoadingSkeleton from "@/components/LoadingSkeleton.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
-import { hub, type AppSummary, type ChatSettings, type ChatSettingsUpdate, type ChatToolEvent, type ModelCatalog } from "@/services/hub";
-import { postStream } from "@/services/stream";
+import { hub, type AppSummary, type ChatSettings, type ChatSettingsUpdate, type ModelCatalog } from "@/services/hub";
 import { useSession } from "@/stores/session";
 import { useToast } from "@/stores/toast";
 import { errorMessage, timeAgo } from "@/utils/format";
 
 // The Hub-hosted chat: the Hub is the kitchen (model, tools, rules); the app brings the user and the data.
 const props = defineProps<{ app: AppSummary }>();
+const emit = defineEmits<{ try: [] }>();
 const session = useSession();
 const toast = useToast();
 const settings = ref<ChatSettings | null>(null);
@@ -136,57 +135,6 @@ function addSuggestion() {
   newSuggestion.value = "";
 }
 
-// Try it: a read-only preview streamed from the Hub, as an admin with no signed-in app user.
-interface Entry { role: "user" | "assistant"; text: string; tools: ChatToolEvent[]; notices: string[]; error?: string }
-const entries = ref<Entry[]>([]);
-const draft = ref("");
-const streaming = ref(false);
-const log = ref<HTMLElement | null>(null);
-let controller: AbortController | null = null;
-onBeforeUnmount(() => controller?.abort());
-
-async function scroll() {
-  await nextTick();
-  log.value?.scrollTo({ top: log.value.scrollHeight });
-}
-
-async function send(text = draft.value) {
-  const message = text.trim();
-  if (!message || streaming.value) return;
-  const history = entries.value.filter((entry) => entry.text && !entry.error).map(({ role, text: body }) => ({ role, text: body }));
-  entries.value.push({ role: "user", text: message, tools: [], notices: [] });
-  const answer: Entry = { role: "assistant", text: "", tools: [], notices: [] };
-  entries.value.push(answer);
-  const live = entries.value[entries.value.length - 1];
-  draft.value = "";
-  streaming.value = true;
-  controller = new AbortController();
-  void scroll();
-  try {
-    await postStream(`/connectors/${props.app.id}/chat/try`, { message, history }, (event, data) => {
-      if (event === "text") live.text += String(data.delta ?? "");
-      else if (event === "tool") {
-        const tool = data as unknown as ChatToolEvent;
-        const index = live.tools.findIndex((item) => item.id === tool.id);
-        if (index >= 0) live.tools[index] = tool;
-        else live.tools.push(tool);
-      } else if (event === "notice") live.notices.push(String(data.message ?? ""));
-      else if (event === "error") live.error = String(data.message ?? "The chat failed");
-      void scroll();
-    }, controller.signal);
-  } catch (exc) {
-    if ((exc as Error).name !== "AbortError") live.error = errorMessage(exc);
-  } finally {
-    streaming.value = false;
-    controller = null;
-    void scroll();
-  }
-}
-
-function stop() {
-  controller?.abort();
-}
-
 const request = computed(() => `POST ${hubUrl.value}/chat/v1/turn
 Authorization: Bearer <a client key from the API keys tab>
 X-Hub-Delegation: <the signed-in user, signed with this app's delegation secret>
@@ -198,8 +146,8 @@ Content-Type: application/json
 <template>
   <p v-if="error" class="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>
   <LoadingSkeleton v-else-if="!settings" variant="panel" :count="5" label="Loading chat settings" />
-  <div v-else class="grid gap-6 xl:grid-cols-5">
-    <div class="space-y-6 xl:col-span-3">
+  <div v-else class="max-w-4xl">
+    <div class="space-y-6">
       <section class="card">
         <div class="flex items-start justify-between gap-4 p-6">
           <div>
@@ -213,7 +161,9 @@ Content-Type: application/json
               under Model gateway access and calls the one its users pick through <code class="code">/gateway</code>, with the keys kept here.
             </p>
           </div>
-          <span class="flex items-center gap-2">
+          <span class="flex items-center gap-3">
+            <button v-if="settings.enabled" type="button" class="btn-secondary btn-sm" @click="emit('try')">
+              <AppIcon name="sparkles" :size="14" /> Try it</button>
             <span v-if="pending === 'toggle'" class="spinner text-subtle" />
             <ToggleSwitch :model-value="settings.enabled" label="Chat" :disabled="!editable || pending !== ''"
                           @update:model-value="(on: boolean) => save({ enabled: on }, 'toggle', on ? 'Chat turned on' : 'Chat turned off')" />
@@ -351,51 +301,5 @@ Content-Type: application/json
         <RouterLink to="/docs/laravel#chat" class="btn-secondary"><AppIcon name="book" :size="16" /> Laravel route and browser helper</RouterLink>
       </section>
     </div>
-
-    <section class="card flex h-[640px] flex-col xl:col-span-2 xl:sticky xl:top-4">
-      <div class="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
-        <div>
-          <h2 class="card-title">Try it</h2>
-          <p class="text-xs text-subtle">Read-only, as you, with no signed-in {{ app.name }} user.</p>
-        </div>
-        <button v-if="entries.length" type="button" class="btn-ghost text-xs" :disabled="streaming" @click="entries = []">Clear</button>
-      </div>
-      <div ref="log" class="flex-1 space-y-4 overflow-y-auto p-5" aria-live="polite">
-        <div v-if="!entries.length" class="space-y-3 text-sm text-subtle">
-          <p v-if="!settings.enabled" class="rounded-lg bg-muted px-3 py-2.5">Turn the chat on to try it.</p>
-          <template v-else>
-            <p class="rounded-lg bg-muted px-3 py-2.5">{{ settings.welcome_message || "Ask a question about this app's data." }}</p>
-            <div v-if="settings.suggestions.length" class="flex flex-wrap gap-2">
-              <button v-for="text in settings.suggestions" :key="text" type="button" class="badge-outline cursor-pointer hover:bg-muted"
-                      @click="send(text)">{{ text }}</button>
-            </div>
-            <p class="text-xs">Tools that need a signed-in user answer only inside {{ app.name }}.</p>
-          </template>
-        </div>
-        <div v-for="(entry, index) in entries" :key="index" :class="entry.role === 'user' ? 'flex justify-end' : ''">
-          <p v-if="entry.role === 'user'" class="max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-3.5 py-2 text-sm text-brand-ink">{{ entry.text }}</p>
-          <div v-else class="space-y-2">
-            <div v-if="entry.tools.length" class="flex flex-wrap gap-1.5">
-              <span v-for="tool in entry.tools" :key="tool.id" class="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-xs"
-                    :class="tool.status === 'error' ? 'text-bad' : 'text-subtle'" :title="tool.error?.message">
-                <span v-if="tool.status === 'running'" class="spinner h-3 w-3" />
-                <AppIcon v-else :name="tool.status === 'error' ? 'alert' : 'check'" :size="12" />{{ tool.title }}</span>
-            </div>
-            <ChatMarkdown v-if="entry.text" :text="entry.text" />
-            <p v-else-if="streaming && index === entries.length - 1 && !entry.error" class="flex items-center gap-2 text-sm text-subtle">
-              <span class="spinner" /> Thinking…</p>
-            <p v-for="note in entry.notices" :key="note" class="rounded-md bg-warn-soft px-3 py-1.5 text-xs">{{ note }}</p>
-            <p v-if="entry.error" class="rounded-md bg-bad-soft px-3 py-1.5 text-xs text-bad">{{ entry.error }}</p>
-          </div>
-        </div>
-      </div>
-      <form class="flex items-end gap-2 border-t border-line p-3" @submit.prevent="send()">
-        <textarea v-model="draft" rows="1" class="input max-h-32 min-h-[38px] flex-1 resize-none" :disabled="!settings.enabled"
-                  placeholder="Ask about this app's data" aria-label="Message" @keydown.enter.exact.prevent="send()" />
-        <button v-if="streaming" type="button" class="btn-secondary" @click="stop"><AppIcon name="pause" :size="16" /> Stop</button>
-        <button v-else type="submit" class="btn-primary" :disabled="!settings.enabled || !draft.trim()" aria-label="Send">
-          <AppIcon name="send" :size="16" /></button>
-      </form>
-    </section>
   </div>
 </template>

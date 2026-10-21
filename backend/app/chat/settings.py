@@ -115,6 +115,21 @@ def _text(value, field: str, maximum: int) -> str:
     return cleaned
 
 
+def chosen_model(db: Session, payload) -> tuple[str, str] | None:
+    """A provider and model picked for one Try it turn, checked like a saved setting; None keeps the saved one."""
+
+    if not isinstance(payload, dict) or ("provider" not in payload and "model" not in payload):
+        return None
+    provider, model = payload.get("provider"), payload.get("model")
+    if not isinstance(provider, str) or not registry.exists(db, provider):
+        raise HubError("VALIDATION_FAILED", "Choose Claude or a provider added under AI providers", 422)
+    if not isinstance(model, str) or not MODEL_RE.fullmatch(model):
+        raise HubError("VALIDATION_FAILED", "Model name is invalid", 422)
+    if provider == "anthropic" and not registry.CLAUDE_MODEL_RE.fullmatch(model):
+        raise HubError("VALIDATION_FAILED", "Choose a Claude model from the list", 422)
+    return provider, model
+
+
 def update_settings(db: Session, application: Application, payload) -> ChatSetting:
     if not isinstance(payload, dict) or not payload or set(payload) - FIELDS:
         raise HubError("VALIDATION_FAILED", "Chat settings are invalid", 422)

@@ -31,6 +31,12 @@ const chart = computed(() => {
 function cell(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "number") return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  // Nested values (a source's fields, say) read as short text instead of "[object Object]".
+  if (typeof value === "object") {
+    const text = Array.isArray(value) ? value.map((item) => (typeof item === "object" && item !== null
+      ? String((item as Record<string, unknown>).name ?? JSON.stringify(item)) : String(item))).join(", ") : JSON.stringify(value);
+    return text.length > 160 ? `${text.slice(0, 160)}…` : text;
+  }
   return String(value);
 }
 </script>

@@ -170,6 +170,7 @@ def test_chat_turn_streams_answer_and_tool_calls(admin, monkeypatch, model):
         assert kinds[0] == "start" and kinds[-1] == "done"
         tools = [data for kind, data in got if kind == "tool"]
         assert [tool["status"] for tool in tools] == ["running", "done"] and tools[1]["name"] == "run_report"
+        assert "result" not in tools[1]  # an app's chat gets progress, not the data
         assert "".join(data["delta"] for kind, data in got if kind == "text") == "Let me check. You have 4 campaigns."
         sent = json.loads(record["results"][0][0].content)
         assert sent["success"] is True and sent["data"]["totals"]["count"] == 4
@@ -181,6 +182,25 @@ def test_chat_turn_streams_answer_and_tool_calls(admin, monkeypatch, model):
         turn_audit = audits("chat.turn")[-1]
         assert turn_audit.result == "success" and turn_audit.trace_id == trace
         assert [event.trace_id for event in audits("tool.execute")][-1] == trace  # a turn's calls share its trace
+
+
+def test_try_it_uses_the_picked_model_once_and_shows_tool_results(admin, monkeypatch, model):
+    script, record = model
+    helpers.dns(monkeypatch)
+    with helpers.source():
+        app = connect_app(admin)
+        enable_chat(admin, app["connector_id"])
+        path = f"/connectors/{app['connector_id']}/chat"
+        script += [providers.Step(calls=[providers.ToolCall("c1", "list_data_sources", {})], stop="tool_use"),
+                   providers.Step(text="Two data sources.")]
+        got = events(api(admin, "POST", f"{path}/try",
+                         {"message": "What data is there?", "provider": "anthropic", "model": "claude-haiku-5-5"}))
+        done = [data for kind, data in got if kind == "tool" and data["status"] == "done"][0]
+        assert done["name"] == "list_data_sources" and isinstance(done["result"]["data"], list) and done["result"]["data"]
+        assert record["model"] == "claude-haiku-5-5"
+        assert api(admin, "GET", path, expect=200).json()["data"]["model"] == "claude-opus-5-5"  # saved setting unchanged
+        assert api(admin, "POST", f"{path}/try", {"message": "Hi", "provider": "anthropic", "model": "gpt-x"}).status_code == 422
+        assert api(admin, "POST", f"{path}/try", {"message": "Hi", "provider": "nowhere", "model": "m1"}).status_code == 422
 
 
 def test_chat_refuses_before_calling_the_model(admin, monkeypatch, model):

@@ -16,6 +16,7 @@ import PageHeader from "@/components/PageHeader.vue";
 import TabBar from "@/components/TabBar.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import ToolGenerator from "@/components/ToolGenerator.vue";
+import TryItPanel from "@/components/TryItPanel.vue";
 import { hub, type AppDetail, type DataSource, type Tool, type ToolSwitches } from "@/services/hub";
 import { useSession } from "@/stores/session";
 import { useToast } from "@/stores/toast";
@@ -29,7 +30,7 @@ const router = useRouter();
 const session = useSession();
 const toast = useToast();
 const id = String(route.params.id);
-const TABS = ["sources", "tools", "skills", "chat", "keys", "memory", "connection", "history"];
+const TABS = ["sources", "tools", "skills", "chat", "try", "keys", "memory", "connection", "history"];
 // Skills that are on, reported by the Skills tab once it has loaded.
 const skillsOn = ref<number | undefined>(undefined);
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : "sources");
@@ -231,6 +232,7 @@ const tabs = computed(() => [
   { key: "tools", label: "Tools", count: catalogLoaded.value ? tools.value.length : undefined },
   { key: "skills", label: "Skills", count: skillsOn.value },
   { key: "chat", label: "Chat" },
+  { key: "try", label: "Try it" },
   { key: "keys", label: "API keys" },
   { key: "memory", label: "Memory" },
   { key: "connection", label: "Connection" },
@@ -372,7 +374,9 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
 
     <AppSkillsPanel v-else-if="tab === 'skills'" :app="app" :editable="session.canWrite && !archived" @changed="(count: number) => (skillsOn = count)" />
 
-    <ChatPanel v-else-if="tab === 'chat'" :app="app" />
+    <ChatPanel v-else-if="tab === 'chat'" :app="app" @try="tab = 'try'" />
+
+    <TryItPanel v-else-if="tab === 'try'" :app="app" @settings="tab = 'chat'" />
 
     <section v-else-if="tab === 'keys'" class="space-y-8">
       <AppCredentials :app="app" @changed="load()" />

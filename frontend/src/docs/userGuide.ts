@@ -179,7 +179,7 @@ export const USER_SECTIONS: GuideSection[] = [
       "Model names are never typed: the Chat tab loads each provider's model list by itself (Claude's from Anthropic) and keeps it for a few hours. Use **Refresh list** after a provider adds models.",
       "Open the app's **Chat** tab and switch the chat on. Choose the provider and model (Claude Opus 5.5 by default; with other providers pick a model that supports tool calling), the effort, tool steps per answer and messages per user per day.",
       "Write instructions in your users' words, a welcome message and up to six suggested questions. The Hub's safety rules always apply on top.",
-      "Check it with **Try it** on the same tab (read-only, without a signed-in app user).",
+      "Check it on the app's **Try it** tab: pick any model the Hub has (only for that page), ask, and open each tool's answer as a table, totals or a chart. It is read-only and has no signed-in app user.",
       "In the app, build the chat window your way. The app's server calls the Hub's chat API with a client key and the signed-in user, and streams the answer to the page. The **Laravel guide** under Docs (Add an AI chat) has the server route and a small browser helper.",
       "If the app runs its own chat and only borrows the Hub's models (the model gateway), use **Model gateway access** on the same tab: **Choose models** to allow only the ones it needs (all are open while the list is empty), set **Tokens per month** as a budget, and watch this month's calls and tokens per model there.",
     ],
