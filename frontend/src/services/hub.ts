@@ -322,6 +322,16 @@ export interface GatewayUsage {
 
 export interface GatewayModel { id: string; provider: string; name: string }
 
+/** The console assistant: whether the Hub found its repository, and the models it may answer with. */
+export interface AssistantOptions {
+  available: boolean;
+  providers: ChatSettings["options"]["providers"];
+  default: { provider: string; model: string } | null;
+}
+
+/** A repository read while answering: read_file, search_repo or list_files, with the path or the searched text. */
+export interface AssistantToolEvent { id: string; name: string; title: string; detail: string; status: "running" | "done" | "error" }
+
 export type ChatSettingsUpdate = Partial<Omit<ChatSettings, "fallbacks" | "updated_at" | "options" | "gateway_usage">>;
 
 export interface ChatToolEvent {
@@ -547,6 +557,7 @@ export const hub = {
   updateToolSwitches: (connectorId: string, tools: Record<string, boolean>) =>
     api<ToolSwitches>(`/connectors/${connectorId}/tool-switches`, { method: "PUT", body: JSON.stringify({ tools }) }),
   providers: () => api<{ builtin: BuiltinProvider[]; providers: ModelProvider[] }>("/model-providers"),
+  assistant: () => api<AssistantOptions>("/assistant"),
   providerPresets: () => api<ProviderPreset[]>("/model-providers/presets"),
   createProvider: (body: ProviderDraft) => post<ModelProvider>("/model-providers", body),
   updateProvider: (id: string, body: ProviderDraft) => patch<ModelProvider>(`/model-providers/${id}`, body),

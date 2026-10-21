@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     chat_max_tokens: int = Field(default=16000, ge=1024, le=64000)
     chat_timeout_seconds: int = Field(default=120, ge=10, le=600)
     chat_rate_limit: int = Field(default=20, ge=1, le=1000)
+    # The console assistant reads this repository (README, docs, code); empty means the one this code runs from.
+    assistant_repo_path: str = ""
     # Model gateway calls per app per minute, across all its users (end_user_id comes from the app).
     gateway_app_rate_limit: int = Field(default=300, ge=1, le=100000)
     # Where admin-added model providers may live. Empty hosts means any public host; private and

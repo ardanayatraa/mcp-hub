@@ -19,6 +19,7 @@ const router = createRouter({
     { path: "/providers", component: () => import("@/views/ProvidersView.vue") },
     { path: "/activity", component: () => import("@/views/ActivityView.vue") },
     { path: "/settings", component: () => import("@/views/SettingsView.vue"), meta: { superAdmin: true } },
+    { path: "/assistant", component: () => import("@/views/AssistantView.vue") },
     { path: "/docs/guide", component: () => import("@/views/UserGuideView.vue") },
     { path: "/docs/laravel", component: () => import("@/views/LaravelGuideView.vue") },
     { path: "/docs", redirect: "/docs/guide" },

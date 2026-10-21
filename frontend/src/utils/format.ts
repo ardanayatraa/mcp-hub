@@ -98,6 +98,7 @@ const ACTIONS: Record<string, string> = {
   "admin.create": "Admin added",
   "admin.update": "Admin changed",
   "admin.scope_update": "Admin access changed",
+  "assistant.turn": "Assistant question",
   "auth.login": "Sign-in",
   "auth.logout": "Sign-out",
   "auth.mfa": "MFA check",

@@ -23,6 +23,7 @@ The Hub refuses to start in production when any of these is unsafe, and names th
 | `EGRESS_ALLOWED_HOSTS` or `EGRESS_ALLOWED_CIDRS` | The apps the Hub may call, such as `app.example.com` |
 | `FORWARDED_ALLOW_IPS` | The reverse proxy's address (`127.0.0.1` when it runs on the same server) |
 | `MODEL_EGRESS_ALLOWED_HOSTS` | Optional: limit where AI providers may live |
+| `ASSISTANT_REPO_PATH` | Optional: the repository checkout the console **Assistant** reads, mounted read-only (for example `/repo`). Without it in a container, the Assistant is off. |
 
 Leave `ALLOW_INSECURE_HTTP`, `ALLOW_INSECURE_TLS`, `EGRESS_ALLOW_PRIVATE` and
 `EGRESS_ALLOW_LOOPBACK` unset. Optional tuning (`GATEWAY_APP_RATE_LIMIT`,

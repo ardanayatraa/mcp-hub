@@ -28,7 +28,8 @@ const groups = computed(() => [
       ...(session.user?.role === "super_admin" ? [{ label: "Settings", to: "/settings", icon: "settings" }] : []),
     ],
   },
-  { label: "Docs", links: [{ label: "User guide", to: "/docs/guide", icon: "book" }, { label: "Laravel guide", to: "/docs/laravel", icon: "code" }] },
+  { label: "Docs", links: [{ label: "Assistant", to: "/assistant", icon: "chat" }, { label: "User guide", to: "/docs/guide", icon: "book" },
+    { label: "Laravel guide", to: "/docs/laravel", icon: "code" }] },
 ]);
 const showShell = computed(() => !route.meta.public);
 const roleLabel = computed(() => ({ super_admin: "Super admin", app_admin: "App admin", auditor: "Auditor" })[session.user?.role ?? ""] ?? "");

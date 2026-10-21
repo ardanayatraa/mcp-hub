@@ -13,7 +13,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
 from app.api import chat, gateway
-from app.api.v1 import access, activity, auth, connectors, modules, providers, skills, system, tools
+from app.api.v1 import (
+    access,
+    activity,
+    assistant,
+    auth,
+    connectors,
+    modules,
+    providers,
+    skills,
+    system,
+    tools,
+)
 from app.config import get_settings
 from app.errors import HubError
 from app.mcp.server import build_mcp_server, transport_security
@@ -219,7 +230,7 @@ def create_app() -> FastAPI:
             db.close()
         return {"status": "ready"}
 
-    for module in (auth, connectors, modules, tools, skills, providers, access, activity, system):
+    for module in (auth, connectors, modules, tools, skills, providers, access, activity, system, assistant):
         app.include_router(module.router, prefix="/api/admin/v1")
     # Called by apps' servers with a client key, like /mcp.
     app.include_router(chat.router)
