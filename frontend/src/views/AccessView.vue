@@ -21,6 +21,7 @@ const users = ref<AdminUserRow[]>([]);
 const usersLoaded = ref(false);
 const mailerReady = ref(false);
 const busy = ref(false);
+const oneTimeLink = ref("");
 
 const userForm = ref({ open: false, email: "", role: "hub_admin", app_ids: [] as string[] });
 const editingUser = ref<AdminUserRow | null>(null);
@@ -58,8 +59,9 @@ async function resetMfa(user: AdminUserRow) {
 async function resendInvite(user: AdminUserRow) {
   busy.value = true;
   try {
-    await hub.resendInvite(user.id);
-    toast.ok(`Invitation sent to ${user.email}`);
+    const result = await hub.resendInvite(user.id);
+    oneTimeLink.value = result.activation_url;
+    toast.ok("New activation link ready");
     await load();
   } catch (exc) {
     toast.error(errorMessage(exc));
@@ -78,15 +80,25 @@ async function saveUser() {
       editingUser.value = null;
     } else {
       const form = userForm.value;
-      await hub.createUser({ email: form.email, role: form.role, app_ids: form.role === "hub_admin" ? [] : form.app_ids });
+      const result = await hub.createUser({ email: form.email, role: form.role, app_ids: form.role === "hub_admin" ? [] : form.app_ids });
+      oneTimeLink.value = result.activation_url;
       userForm.value = { open: false, email: "", role: "hub_admin", app_ids: [] };
     }
-    toast.ok(wasEditing ? "Team updated" : "Invitation sent");
+    toast.ok(wasEditing ? "Team updated" : "Activation link ready");
     await load();
   } catch (exc) {
     toast.error(errorMessage(exc));
   } finally {
     busy.value = false;
+  }
+}
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(oneTimeLink.value);
+    toast.ok("Activation link copied");
+  } catch {
+    toast.error("Copy failed. Select and copy the link below.");
   }
 }
 
@@ -105,6 +117,12 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" />
 
   <section v-else>
+    <div v-if="oneTimeLink" class="card card-pad mb-4 space-y-2">
+      <p class="text-sm font-semibold">One-time activation link</p>
+      <p class="text-xs text-subtle">Share this link privately with the team member. It expires in 24 hours and cannot be shown again after you close it. They will enter their real email, verify a code, then set a password.</p>
+      <input class="input w-full" :value="oneTimeLink" readonly aria-label="Activation link" @focus="($event.target as HTMLInputElement).select()" />
+      <div class="flex gap-2"><button class="btn-primary btn-sm" type="button" @click="copyLink">Copy link</button><button class="btn-secondary btn-sm" type="button" @click="oneTimeLink = ''">Done</button></div>
+    </div>
     <div class="mb-4 flex items-center justify-between gap-3">
       <p v-if="!mailerReady" class="text-xs text-subtle">Email delivery needs SMTP settings before you can invite a new admin.</p>
       <span v-else />
@@ -121,7 +139,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
             <td class="text-xs text-subtle">{{ ["super_admin", "hub_admin"].includes(user.role) ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
             <td><span :class="user.auth_method === 'email_otp' || user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.auth_method === "email_otp" ? "Email code" : user.mfa_enabled ? "Authenticator" : "Off" }}</span></td>
             <td><span :class="user.is_active && !user.pending_activation ? 'badge-ok' : 'badge-neutral'">{{ !user.is_active ? "Disabled" : user.pending_activation ? "Pending" : "Active" }}</span></td>
-            <td class="text-right whitespace-nowrap"><button v-if="user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="resendInvite(user)">Resend invite</button><button v-if="!user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
+            <td class="text-right whitespace-nowrap"><button v-if="user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="resendInvite(user)">New link</button><button v-if="!user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
           </tr>
         </tbody>
       </table>
@@ -131,8 +149,8 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <ModalDialog v-if="userForm.open || editingUser" :title="editingUser ? `Edit ${editingUser.email}` : 'Add team member'" @close="userForm.open = false; editingUser = null">
     <form id="user-form" class="space-y-4" @submit.prevent="saveUser">
       <template v-if="!editingUser">
-        <label class="block"><span class="label">Email</span><input v-model="userForm.email" class="input" type="email" required /></label>
-        <p class="text-xs text-subtle">They'll receive an email invitation, set their own password, then use an email code to sign in.</p>
+        <label class="block"><span class="label">Temporary account email</span><input v-model="userForm.email" class="input" type="email" required /></label>
+        <p class="text-xs text-subtle">No email is sent to this address. After saving, share the one-time link privately. The member enters their real email, verifies its code, and sets a password.</p>
       </template>
       <fieldset class="space-y-2">
         <legend class="label">Role</legend>

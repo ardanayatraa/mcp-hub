@@ -1,4 +1,4 @@
-"""Send short-lived admin invitations and email login codes over authenticated TLS SMTP."""
+"""Build manual activation links and send email codes over authenticated TLS SMTP."""
 
 import smtplib
 import ssl
@@ -38,16 +38,18 @@ def send_email(recipient: str, subject: str, body: str) -> None:
         raise HubError("EMAIL_UNAVAILABLE", "Email could not be delivered. Try again later.", 503) from exc
 
 
-def send_invitation(recipient: str, token: str) -> None:
+def activation_url(token: str) -> str:
     settings = get_settings()
     base = (settings.admin_console_url or settings.mcp_issuer_url).rstrip("/")
     if settings.environment == "production" and not base.startswith("https://"):
         raise HubError("EMAIL_UNAVAILABLE", "Admin console URL must use HTTPS", 503)
     # A fragment stays out of HTTP requests and server access logs.
-    link = f"{base}/activate#{token}"
-    send_email(recipient, "Activate your MCP Hub account", f"Your MCP Hub administrator invited you.\n\n"
-               f"Open this link to set your password:\n{link}\n\nThe link expires in 24 hours. "
-               "If you did not expect this invitation, ignore this email.\n")
+    return f"{base}/activate#{token}"
+
+
+def send_activation_code(recipient: str, code: str) -> None:
+    send_email(recipient, "Verify your MCP Hub email", f"Your MCP Hub activation code is {code}.\n\n"
+               "It expires in 10 minutes and works once. If you did not request it, ignore this email.\n")
 
 
 def send_login_code(recipient: str, code: str) -> None:

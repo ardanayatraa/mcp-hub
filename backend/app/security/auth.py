@@ -26,10 +26,11 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(get_settings().session_signing_key, salt="hub-mfa")
 
 
-def issue_mfa_token(db: Session, user_id: str, purpose: str, *, code: str | None = None) -> str:
-    minutes = 10 if purpose == "email_otp" else 5
+def issue_mfa_token(db: Session, user_id: str, purpose: str, *, code: str | None = None,
+                    recipient_email: str | None = None) -> str:
+    minutes = 10 if purpose in {"email_otp", "activation_code"} else 5
     challenge = MfaChallenge(id=new_id(), user_id=user_id, purpose=purpose,
-                             expires_at=utcnow() + timedelta(minutes=minutes))
+                             recipient_email=recipient_email, expires_at=utcnow() + timedelta(minutes=minutes))
     if code is not None:
         challenge.code_hash = email_code_hash(challenge.id, code)
     db.add(challenge)

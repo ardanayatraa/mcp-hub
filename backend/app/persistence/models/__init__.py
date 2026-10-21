@@ -81,6 +81,7 @@ class MfaChallenge(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
     purpose: Mapped[str] = mapped_column(String(16), nullable=False)
     code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recipient_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,4 +1,5 @@
 import hmac
+import re
 import secrets
 from datetime import timedelta
 
@@ -6,6 +7,7 @@ import pyotp
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.common import client_host, ok, user_view
@@ -30,7 +32,7 @@ from app.security.auth import (
     write_session_cookie,
 )
 from app.security.crypto import encrypt_secret, sha256_hex
-from app.security.mailer import require_mailer, send_login_code
+from app.security.mailer import require_mailer, send_activation_code, send_login_code
 from app.security.passwords import hash_password, password_is_acceptable
 from app.security.rate_limit import hit
 
@@ -55,9 +57,89 @@ class MfaBody(BaseModel):
     code: str = Field(max_length=20)
 
 
+class ActivationEmailBody(BaseModel):
+    token: str = Field(min_length=32, max_length=200)
+    email: str = Field(min_length=3, max_length=320)
+
+
+class ActivationCodeBody(BaseModel):
+    token: str = Field(min_length=32, max_length=200)
+    challenge_token: str = Field(min_length=20, max_length=1000)
+    code: str = Field(min_length=6, max_length=6)
+
+
 class ActivationBody(BaseModel):
     token: str = Field(min_length=32, max_length=200)
+    proof_token: str = Field(min_length=20, max_length=1000)
     password: str = Field(min_length=12, max_length=200)
+
+
+def _invited_user(db: Session, token: str) -> AdminUser:
+    user = db.scalar(select(AdminUser).where(
+        AdminUser.activation_token_hash == sha256_hex(token),
+        AdminUser.activation_expires_at > utcnow(),
+        AdminUser.auth_method == "email_otp",
+        AdminUser.is_active.is_(True),
+    ))
+    if user is None:
+        raise HubError("INVALID_INVITATION", "Invitation expired or already used. Ask root for a new link.", 400)
+    return user
+
+
+@router.post("/activation-email")
+def request_activation_email(body: ActivationEmailBody, request: Request, db: Session = Depends(get_db)):
+    hit(f"activation-email-ip:{client_host(request)}", 10, 60)
+    user = _invited_user(db, body.token)
+    email = body.email.strip().lower()
+    if not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9][A-Za-z0-9.\-]*", email):
+        raise HubError("VALIDATION_FAILED", "Use a valid email address", 422)
+    if db.scalar(select(AdminUser.id).where(AdminUser.email == email, AdminUser.id != user.id)):
+        raise HubError("CONFLICT", "This email is already in use", 409)
+    require_mailer()
+    hit(f"activation-email-user:{user.id}", 5, 3600)
+    recent = list(db.scalars(select(MfaChallenge).where(
+        MfaChallenge.user_id == user.id, MfaChallenge.purpose == "activation_code",
+        MfaChallenge.expires_at > utcnow()).order_by(MfaChallenge.expires_at.desc())))
+    if recent and as_utc(recent[0].expires_at) > utcnow() + timedelta(minutes=9):
+        raise HubError("RATE_LIMITED", "Please wait before requesting another email code", 429)
+    db.execute(update(MfaChallenge).where(MfaChallenge.user_id == user.id,
+               MfaChallenge.purpose.in_(["activation_code", "activation_ready"]),
+               MfaChallenge.used_at.is_(None)).values(used_at=utcnow())
+               .execution_options(synchronize_session=False))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    challenge_token = issue_mfa_token(db, user.id, "activation_code", code=code, recipient_email=email)
+    send_activation_code(email, code)
+    record_audit(db, action="admin.activation_email", actor_ref=f"admin:{user.id}", result="success")
+    db.commit()
+    return ok({"challenge_token": challenge_token})
+
+
+@router.post("/activation-code")
+def verify_activation_code(body: ActivationCodeBody, request: Request, db: Session = Depends(get_db)):
+    hit(f"activation-code-ip:{client_host(request)}", 20, 60)
+    user = _invited_user(db, body.token)
+    challenge = read_mfa_token(db, body.challenge_token)
+    if challenge.purpose != "activation_code" or challenge.user_id != user.id or challenge.recipient_email is None:
+        raise HubError("UNAUTHENTICATED", "Invalid email code", 401)
+    if challenge.attempts >= 5:
+        raise HubError("UNAUTHENTICATED", "Invalid email code", 401)
+    expected = email_code_hash(challenge.id, body.code.strip())
+    if challenge.code_hash is None or not hmac.compare_digest(challenge.code_hash, expected):
+        db.execute(update(MfaChallenge).where(MfaChallenge.id == challenge.id,
+                   MfaChallenge.used_at.is_(None), MfaChallenge.attempts < 5)
+                   .values(attempts=MfaChallenge.attempts + 1))
+        db.commit()
+        raise HubError("UNAUTHENTICATED", "Invalid email code", 401)
+    consumed = db.execute(update(MfaChallenge).where(MfaChallenge.id == challenge.id,
+                          MfaChallenge.used_at.is_(None), MfaChallenge.expires_at > utcnow(),
+                          MfaChallenge.attempts < 5).values(used_at=utcnow())
+                          .execution_options(synchronize_session=False))
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HubError("UNAUTHENTICATED", "Email code was already used", 401)
+    proof_token = issue_mfa_token(db, user.id, "activation_ready", recipient_email=challenge.recipient_email)
+    db.commit()
+    return ok({"proof_token": proof_token})
 
 
 @router.post("/activate")
@@ -65,18 +147,28 @@ def activate(body: ActivationBody, request: Request, db: Session = Depends(get_d
     hit(f"activate:{client_host(request)}", 10, 60)
     if not password_is_acceptable(body.password):
         raise HubError("VALIDATION_FAILED", "Use a password of 12+ characters with upper, lower and a digit", 422)
+    user = _invited_user(db, body.token)
+    proof = read_mfa_token(db, body.proof_token)
+    if proof.purpose != "activation_ready" or proof.user_id != user.id or proof.recipient_email is None:
+        raise HubError("UNAUTHENTICATED", "Email verification expired", 401)
     result = db.execute(update(AdminUser).where(
+        AdminUser.id == user.id,
         AdminUser.activation_token_hash == sha256_hex(body.token),
         AdminUser.activation_expires_at > utcnow(),
         AdminUser.auth_method == "email_otp",
         AdminUser.is_active.is_(True),
-    ).values(password_hash=hash_password(body.password), activation_token_hash=None,
+    ).values(email=proof.recipient_email, password_hash=hash_password(body.password), activation_token_hash=None,
              activation_expires_at=None).execution_options(synchronize_session=False))
     if result.rowcount != 1:
         db.rollback()
-        raise HubError("INVALID_INVITATION", "Invitation expired or already used. Ask root to resend it.", 400)
+        raise HubError("INVALID_INVITATION", "Invitation expired or already used. Ask root for a new link.", 400)
+    proof.used_at = utcnow()
     record_audit(db, action="admin.activate", actor_ref="system:invite", result="success")
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HubError("CONFLICT", "This email is already in use", 409) from exc
     return ok({"activated": True})
 
 

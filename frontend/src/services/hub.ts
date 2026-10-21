@@ -394,6 +394,10 @@ export interface AdminUserRow {
   mfa_enroll_until: string | null;
 }
 
+export interface AdminInvitation extends AdminUserRow {
+  activation_url: string;
+}
+
 /** A readable name for a tool key: what it does, where it lives, and a link to its page. */
 export interface ToolCard {
   tool_id: string | null;
@@ -580,9 +584,9 @@ export const hub = {
   revokeKey: (id: string) => post(`/service-identities/${id}/revoke`),
 
   users: () => api<AdminUserRow[]>("/users"),
-  createUser: (body: Record<string, unknown>) => post<AdminUserRow>("/users", body),
+  createUser: (body: Record<string, unknown>) => post<AdminInvitation>("/users", body),
   updateUser: (id: string, body: Record<string, unknown>) => patch<AdminUserRow>(`/users/${id}`, body),
-  resendInvite: (id: string) => post<{ sent: boolean }>(`/users/${id}/resend-invite`),
+  resendInvite: (id: string) => post<{ activation_url: string }>(`/users/${id}/resend-invite`),
 
   activity: (query: URLSearchParams) => api<AuditRow[]>(`/executions?${query.toString()}`),
   exportBackup: () => post<unknown>("/operations/export"),

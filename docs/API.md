@@ -18,15 +18,20 @@ configure, test, publish, issue keys), and `auditor` (read-only on assigned apps
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/auth/login` | `{email, password}`. Returns `{user, csrf_token}`, or an MFA challenge/enrollment. |
-| POST | `/auth/activate` | `{token, password}` from the email invitation. Single use; does not sign in. |
+| POST | `/auth/activation-email` | `{token, email}` sends a six-digit code to the real email; returns `challenge_token`. |
+| POST | `/auth/activation-code` | `{token, challenge_token, code}` verifies the email and returns a short-lived `proof_token`. |
+| POST | `/auth/activate` | `{token, proof_token, password}` sets the verified email and password. Single use; does not sign in. |
 | POST | `/auth/mfa` | `{mfa_token, code}`; single use, replay-protected. |
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | Current admin and CSRF token. |
 
-Root can create a Team user with `POST /users` and `{email, role, app_ids}`. Without a
-password, this sends an activation invitation and assigns email-code sign-in. Root can
-resend a pending invitation with `POST /users/{id}/resend-invite`. Password-based
-creation is accepted only for non-production compatibility; production requires invitations.
+Root can create a Team user with `POST /users` and `{email, role, app_ids}`, where `email`
+is a temporary account address. Without a password, the response shows `activation_url`
+once; no message is sent to the temporary address. Root shares the link privately. The
+recipient enters their real email, verifies the code, and sets a password. Root can issue
+a replacement link with `POST /users/{id}/resend-invite`; it invalidates the previous
+link and activation challenges. Password-based creation is accepted only for non-production
+compatibility; production requires activation.
 
 ### Apps (connectors)
 

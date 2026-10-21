@@ -18,7 +18,7 @@ The Hub refuses to start in production when any of these is unsafe, and names th
 | `COOKIE_SECURE` | `true` |
 | `MFA_REQUIRED` | `true` is recommended. `false` lets admins sign in with the password alone. |
 | `ADMIN_CONSOLE_URL` | Public HTTPS URL of the admin UI for invitation links; defaults to `MCP_ISSUER_URL`. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated TLS SMTP for invitations and email login codes. Use `starttls` on port 587 or `ssl` on 465. Keep credentials in the server env file. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated TLS SMTP for activation and sign-in codes. Use `starttls` on port 587 or `ssl` on 465. Keep credentials in the server env file. |
 | `ALLOWED_HOSTS` | `hub.example.com` (the public name; add others only if used) |
 | `ALLOWED_ORIGINS` | `https://hub.example.com` |
 | `MCP_PUBLIC_URL`, `MCP_ISSUER_URL` | `https://hub.example.com/mcp`, `https://hub.example.com` |
@@ -69,9 +69,10 @@ Check with `nginx -t`, then `curl -I https://hub.example.com/` should show
 Sign in as the first root admin and scan the authenticator QR code within `MFA_ENROLL_HOURS` (72).
 Root uses authenticator MFA in production even if `MFA_REQUIRED=false`. If the window passed,
 run on the server: `python -m app.bootstrap --reset-mfa admin@example.com`. Set SMTP first,
-then invite other admins under **Access → Team**. Each receives a 24-hour activation link,
-sets a password, and uses a one-time email code at each sign-in. An expired invite can be
-resent by root.
+then add other admins under **Access → Team** with a temporary email. Copy the 24-hour
+activation link and share it privately. The member enters their real email, verifies an
+emailed code, and sets a password. Later sign-ins use a one-time email code. Root can
+issue a new link when the previous one expires.
 
 ## 5. Connect apps
 

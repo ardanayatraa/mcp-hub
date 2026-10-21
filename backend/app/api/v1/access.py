@@ -24,6 +24,7 @@ from app.persistence.models import (
     AdminUser,
     Application,
     Connector,
+    MfaChallenge,
     ServiceIdentity,
     ToolDefinition,
 )
@@ -40,7 +41,7 @@ from app.security.authorization import (
 )
 from app.security.clients import READ_SCOPE, WRITE_SCOPE
 from app.security.crypto import sha256_hex
-from app.security.mailer import require_mailer, send_invitation
+from app.security.mailer import activation_url, require_mailer
 from app.security.passwords import hash_password, password_is_acceptable
 from app.tools.catalog import HUB_TOOL_NAMES
 
@@ -181,7 +182,7 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
     if data["password"] is not None and not password_is_acceptable(data["password"]):
         raise HubError("VALIDATION_FAILED", "Use a password of 12+ characters with upper, lower and a digit", 422)
     if data["password"] is not None and get_settings().environment == "production":
-        raise HubError("VALIDATION_FAILED", "Invite new administrators by email", 422)
+        raise HubError("VALIDATION_FAILED", "Invite new administrators with an activation link", 422)
     if db.scalar(select(AdminUser).where(AdminUser.email == email)):
         raise HubError("CONFLICT", "An admin with that email already exists", 409)
     invited = data["password"] is None
@@ -197,11 +198,10 @@ def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = 
     db.add(created)
     db.flush()
     _set_scopes(db, created, data["app_ids"])
-    if activation_token:
-        send_invitation(email, activation_token)
     record_audit(db, action="admin.create", actor_ref=f"admin:{user.id}", result="success")
     db.commit()
-    return ok(_user_view(db, created), 201)
+    return ok({**_user_view(db, created),
+               **({"activation_url": activation_url(activation_token)} if activation_token else {})}, 201)
 
 
 @router.post("/users/{user_id}/resend-invite")
@@ -218,10 +218,11 @@ def resend_invite(user_id: str, db: Session = Depends(get_db), user: AdminUser =
     token = secrets.token_urlsafe(32)
     target.activation_token_hash = sha256_hex(token)
     target.activation_expires_at = utcnow() + timedelta(hours=24)
-    send_invitation(target.email, token)
+    db.execute(delete(MfaChallenge).where(MfaChallenge.user_id == target.id,
+               MfaChallenge.purpose.in_(["activation_code", "activation_ready"])))
     record_audit(db, action="admin.invite_resend", actor_ref=f"admin:{user.id}", result="success")
     db.commit()
-    return ok({"sent": True})
+    return ok({"activation_url": activation_url(token)})
 
 
 @router.patch("/users/{user_id}")
