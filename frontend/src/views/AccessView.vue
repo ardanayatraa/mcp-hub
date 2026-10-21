@@ -122,7 +122,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <section v-else>
     <div v-if="oneTimeLink" class="card card-pad mb-4 space-y-2">
       <p class="text-sm font-semibold">Activation link · Invite {{ oneTimeInviteId.slice(0, 8) }}</p>
-      <p class="text-xs text-subtle">Share this link privately with the team member. It expires in 24 hours and cannot be shown again after you close it. They will enter their real email, verify a code, then set a password.</p>
+      <p class="text-xs text-subtle">Share this link privately with the team member. It expires in 24 hours and cannot be shown again after you close it. They will verify their email once, set a password, then sign in with email and password.</p>
       <input class="input w-full" :value="oneTimeLink" readonly aria-label="Activation link" @focus="($event.target as HTMLInputElement).select()" />
       <div class="flex gap-2"><button class="btn-primary btn-sm" type="button" @click="copyLink">Copy link</button><button class="btn-secondary btn-sm" type="button" @click="oneTimeLink = ''">Done</button></div>
     </div>
@@ -152,7 +152,7 @@ const appName = (appId: string) => apps.value.find((app) => app.app_id === appId
   <ModalDialog v-if="userForm.open || editingUser" :title="editingUser ? `Edit ${editingUser.email || `invite ${editingUser.id.slice(0, 8)}`}` : 'Add team member'" @close="userForm.open = false; editingUser = null">
     <form id="user-form" class="space-y-4" @submit.prevent="saveUser">
       <template v-if="!editingUser">
-        <p class="text-sm text-subtle">Choose the member's role and app access. After saving, share the activation link privately. They will enter their email, verify its code, and set a password.</p>
+        <p class="text-sm text-subtle">Choose the member's role and app access. After saving, share the activation link privately. They will verify their email once and set a password for future sign-ins.</p>
       </template>
       <fieldset class="space-y-2">
         <legend class="label">Role</legend>

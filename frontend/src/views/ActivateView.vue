@@ -90,7 +90,7 @@ async function activate() {
       <p v-else class="text-xs text-subtle">{{ step === "email" ? "Step 1 of 3: Verify your real email" : step === "code" ? "Step 2 of 3: Enter the email code" : "Step 3 of 3: Create a password" }}</p>
       <p v-if="error" role="alert" class="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>
       <form v-if="token && step === 'email'" class="space-y-4" @submit.prevent="requestCode">
-        <p class="text-sm text-subtle">Enter the email address you will use to sign in. We will send a verification code there.</p>
+        <p class="text-sm text-subtle">Enter the email address you will use to sign in. We will send a code to verify it once during activation. Then you will create a password. Future sign-ins use your email and password, without another email code.</p>
         <label class="block"><span class="label">Your real email</span><input v-model="email" class="input" type="email" autocomplete="email" required /></label>
         <button class="btn-primary w-full" type="submit" :disabled="busy">Send verification code</button>
       </form>
