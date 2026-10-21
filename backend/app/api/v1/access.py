@@ -149,7 +149,8 @@ def revoke_identity(identity_id: str, db: Session = Depends(get_db), user: Admin
 
 
 def _user_view(db: Session, row: AdminUser) -> dict:
-    return {"id": row.id, "email": row.email, "role": row.role, "is_root": row.is_root,
+    return {"id": row.id, "email": None if row.activation_token_hash else row.email,
+            "role": row.role, "is_root": row.is_root,
             "auth_method": row.auth_method, "pending_activation": row.activation_token_hash is not None,
             "mfa_enabled": row.mfa_enabled, "is_active": row.is_active,
             "mfa_enroll_until": None if row.mfa_enabled or enrollment_deadline(row) is None else enrollment_deadline(row).isoformat(),
@@ -176,18 +177,24 @@ def users(db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)
 def create_user(payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     require_root(user)
     data = checked(UserCreate, payload)
-    email = data["email"].strip().lower()
-    if not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9][A-Za-z0-9.\-]*", email):
-        raise HubError("VALIDATION_FAILED", "Use a valid email address", 422)
+    invited = data["password"] is None
+    if invited:
+        if data["email"] is not None:
+            raise HubError("VALIDATION_FAILED", "The member enters their email during activation", 422)
+        require_mailer()
+        email = None
+    else:
+        if data["email"] is None:
+            raise HubError("VALIDATION_FAILED", "Email is required with a password", 422)
+        email = data["email"].strip().lower()
+        if not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9][A-Za-z0-9.\-]*", email):
+            raise HubError("VALIDATION_FAILED", "Use a valid email address", 422)
     if data["password"] is not None and not password_is_acceptable(data["password"]):
         raise HubError("VALIDATION_FAILED", "Use a password of 12+ characters with upper, lower and a digit", 422)
     if data["password"] is not None and get_settings().environment == "production":
         raise HubError("VALIDATION_FAILED", "Invite new administrators with an activation link", 422)
-    if db.scalar(select(AdminUser).where(AdminUser.email == email)):
+    if email is not None and db.scalar(select(AdminUser).where(AdminUser.email == email)):
         raise HubError("CONFLICT", "An admin with that email already exists", 409)
-    invited = data["password"] is None
-    if invited:
-        require_mailer()
     activation_token = secrets.token_urlsafe(32) if invited else None
     created = AdminUser(id=new_id(), email=email,
                         password_hash=hash_password(data["password"] or secrets.token_urlsafe(48)), role=data["role"],
@@ -243,8 +250,8 @@ def update_user(user_id: str, payload: dict, db: Session = Depends(get_db), user
     if changes.get("reset_mfa"):
         if target.id == user.id:
             raise HubError("CONFLICT", "Your own two-factor sign-in cannot be reset here", 409)
-        if target.auth_method == "email_otp":
-            raise HubError("CONFLICT", "Email-code accounts do not use an authenticator app", 409)
+        if target.auth_method in {"email_otp", "password"}:
+            raise HubError("CONFLICT", "This account does not use an authenticator app", 409)
         reset_mfa(db, target, get_settings().mfa_enroll_hours)
         record_audit(db, action="admin.mfa_reset", actor_ref=f"admin:{user.id}", result="success")
     record_audit(db, action="admin.update", actor_ref=f"admin:{user.id}", result="success")

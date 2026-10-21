@@ -25,7 +25,7 @@ onMounted(async () => {
 
 const POSTURE: [string, string, boolean][] = [
   ["mfa_required", "Two-step sign-in required", true],
-  ["email_delivery_ready", "Activation and sign-in email codes ready", true],
+  ["email_delivery_ready", "Activation email codes ready", true],
   ["secure_cookies", "Secure (HTTPS-only) session cookies", true],
   ["egress_allowlist", "Outbound calls limited to approved hosts", true],
   ["insecure_http_allowed", "Plain HTTP to apps allowed", false],

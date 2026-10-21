@@ -388,7 +388,7 @@ export interface ClientKey {
 }
 
 export interface AdminUserRow {
-  id: string; email: string; role: string; is_root: boolean; auth_method: string; pending_activation: boolean;
+  id: string; email: string | null; role: string; is_root: boolean; auth_method: string; pending_activation: boolean;
   mfa_enabled: boolean; is_active: boolean; app_ids: string[]; created_at: string;
   /** While MFA is required, the time by which this admin must set it up; null once set up. */
   mfa_enroll_until: string | null;

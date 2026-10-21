@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     session_signing_key: str = ""
     admin_initial_email: str = "admin@localhost"
     admin_initial_password: str = ""
-    # Optional until invitations are enabled; invite and email-code endpoints fail closed without it.
+    # Optional until invitations are enabled; activation email delivery fails closed without it.
     admin_console_url: str = ""
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)

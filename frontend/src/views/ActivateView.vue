@@ -85,7 +85,7 @@ async function activate() {
   <main class="flex min-h-screen items-center justify-center px-4">
     <div class="card card-pad w-full max-w-sm space-y-4">
       <div class="flex items-center gap-2.5"><span class="grid h-9 w-9 place-items-center rounded-lg bg-brand text-brand-ink"><AppIcon name="bolt" :size="18" /></span><h1 class="text-lg font-semibold">Activate MCP Hub</h1></div>
-      <p v-if="step === 'done'" class="text-sm">Your account is ready. Sign in with your real email and new password, then enter the email code.</p>
+      <p v-if="step === 'done'" class="text-sm">Your account is ready. Sign in with your email and new password.</p>
       <p v-else-if="!token" class="text-sm text-subtle">This invitation link is missing or already used. Ask the root administrator to resend it.</p>
       <p v-else class="text-xs text-subtle">{{ step === "email" ? "Step 1 of 3: Verify your real email" : step === "code" ? "Step 2 of 3: Enter the email code" : "Step 3 of 3: Create a password" }}</p>
       <p v-if="error" role="alert" class="rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>

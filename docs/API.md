@@ -25,13 +25,14 @@ configure, test, publish, issue keys), and `auditor` (read-only on assigned apps
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | Current admin and CSRF token. |
 
-Root can create a Team user with `POST /users` and `{email, role, app_ids}`, where `email`
-is a temporary account address. Without a password, the response shows `activation_url`
-once; no message is sent to the temporary address. Root shares the link privately. The
-recipient enters their real email, verifies the code, and sets a password. Root can issue
+Root can create a Team user with `POST /users` and `{role, app_ids}`. The response shows
+`activation_url` once; no email is collected or sent at creation. Root shares the link
+privately. The recipient enters their email, verifies the code, and sets a password. Root can issue
 a replacement link with `POST /users/{id}/resend-invite`; it invalidates the previous
 link and activation challenges. Password-based creation is accepted only for non-production
-compatibility; production requires activation.
+compatibility and requires `email`; production requires activation.
+After activation, invited admins sign in with email and password without another email code.
+Root sign-in still requires an authenticator in production.
 
 ### Apps (connectors)
 

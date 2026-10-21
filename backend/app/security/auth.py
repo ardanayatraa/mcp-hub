@@ -28,7 +28,7 @@ def _serializer() -> URLSafeTimedSerializer:
 
 def issue_mfa_token(db: Session, user_id: str, purpose: str, *, code: str | None = None,
                     recipient_email: str | None = None) -> str:
-    minutes = 10 if purpose in {"email_otp", "activation_code"} else 5
+    minutes = 10 if purpose == "activation_code" else 5
     challenge = MfaChallenge(id=new_id(), user_id=user_id, purpose=purpose,
                              recipient_email=recipient_email, expires_at=utcnow() + timedelta(minutes=minutes))
     if code is not None:
@@ -115,7 +115,7 @@ def require_csrf(request: Request, db: Session = Depends(get_db)) -> AdminUser:
 
 def authenticate_password(db: Session, email: str, password: str) -> AdminUser | None:
     user = db.scalar(select(AdminUser).where(AdminUser.email == email.strip().lower()))
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.activation_token_hash is not None:
         verify_password(_DUMMY_HASH, password)
         return None
     if not verify_password(user.password_hash, password):

@@ -1,17 +1,20 @@
 """Migrations: populated round-trips keep FK children; the simplification upgrade keeps live tools."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from app.config import get_settings
+from app.ids import utcnow
 from app.persistence import SCHEMA_REVISION
 from app.persistence.models import AdminSession, AdminUser
 from app.persistence.session import open_session
+from app.security.passwords import hash_password
 from app.services.backup import export_metadata
 from sqlalchemy import MetaData, create_engine, inspect, select, text
+from sqlalchemy.orm import Session
 from tests.security.test_prd_regressions import published  # noqa: F401
 
 LEGACY = "902b2fc08310"
@@ -19,6 +22,32 @@ LEGACY = "902b2fc08310"
 
 def test_code_expects_the_alembic_head():
     assert ScriptDirectory.from_config(Config("alembic.ini")).get_current_head() == SCHEMA_REVISION
+
+
+def test_activated_email_code_admins_move_to_password_sign_in(tmp_path, monkeypatch):
+    url = "sqlite+pysqlite:///" + (tmp_path / "peer-login.db").as_posix()
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    config = Config("alembic.ini")
+    command.upgrade(config, "e8a1b7c4d930")
+    engine = create_engine(url)
+    with Session(engine) as db:
+        db.add(AdminUser(id="activated", email="peer@example.com", password_hash=hash_password("Passw0rd-1234"),
+                         role="hub_admin", auth_method="email_otp"))
+        db.add(AdminUser(id="pending", email="old-temp@example.com", password_hash=hash_password("Passw0rd-1234"),
+                         role="hub_admin", auth_method="email_otp", activation_token_hash="a" * 64,
+                         activation_expires_at=utcnow() + timedelta(hours=24)))
+        db.commit()
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        rows = {row.id: row.auth_method for row in connection.execute(text("SELECT id, auth_method FROM admin_users"))}
+        assert rows == {"activated": "password", "pending": "email_otp"}
+        connection.execute(text("UPDATE admin_users SET email = NULL WHERE id = 'pending'"))
+    command.downgrade(config, "e8a1b7c4d930")
+    with engine.connect() as connection:
+        rows = {row.id: row for row in connection.execute(text("SELECT id, email, auth_method FROM admin_users"))}
+        assert rows["activated"].auth_method == "email_otp"
+        assert rows["pending"].email == "pending-pending@activation.invalid"
+    engine.dispose()
 
 
 def test_existing_super_admins_get_one_root_and_peer_roles(tmp_path, monkeypatch):

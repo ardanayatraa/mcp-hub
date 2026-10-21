@@ -25,7 +25,7 @@ class AdminUser(Base):
     __table_args__ = (Index("ix_admin_users_activation_token_hash", "activation_token_hash", unique=True),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="super_admin")
     is_root: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

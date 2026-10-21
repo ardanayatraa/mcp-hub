@@ -39,5 +39,5 @@ def test_smtp_uses_starttls_before_authentication_and_delivery(monkeypatch):
             events.append("send")
 
     monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
-    mailer.send_login_code("person@example.test", "123456")
+    mailer.send_activation_code("person@example.test", "123456")
     assert events == ["ehlo", "starttls", "ehlo", "login", "send"]

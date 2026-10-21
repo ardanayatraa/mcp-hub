@@ -18,17 +18,16 @@ def mailer(monkeypatch):
     monkeypatch.setattr(settings, "smtp_username", "sender@example.test")
     monkeypatch.setattr(settings, "smtp_password", "test-smtp-password")
     monkeypatch.setattr(settings, "smtp_from", "sender@example.test")
-    activation_codes, login_codes = [], []
+    activation_codes = []
     monkeypatch.setattr("app.api.v1.auth.send_activation_code",
                         lambda email, code: activation_codes.append((email, code)))
-    monkeypatch.setattr("app.api.v1.auth.send_login_code",
-                        lambda email, code: login_codes.append((email, code)))
-    return activation_codes, login_codes
+    return activation_codes
 
 
-def create_invite(admin, email="temp@localhost", role="hub_admin"):
-    created = api(admin, "POST", "/users", {"email": email, "role": role}, expect=201).json()["data"]
+def create_invite(admin, role="hub_admin"):
+    created = api(admin, "POST", "/users", {"role": role}, expect=201).json()["data"]
     assert created["activation_url"].startswith("http://127.0.0.1:8000/activate#")
+    assert created["email"] is None
     return created, created["activation_url"].split("#", 1)[1]
 
 
@@ -43,16 +42,17 @@ def verify_code(client, token, challenge_token, code):
         "token": token, "challenge_token": challenge_token, "code": code})
 
 
-def test_dummy_email_real_email_code_password_and_login(admin, monkeypatch):
-    activation_codes, login_codes = mailer(monkeypatch)
+def test_link_real_email_code_password_and_login(admin, monkeypatch):
+    activation_codes = mailer(monkeypatch)
     created, token = create_invite(admin)
     assert created["pending_activation"] is True and created["auth_method"] == "email_otp"
     assert "password" not in created and "activation_token_hash" not in created
-    assert activation_codes == []  # Nothing is sent to the temporary address.
+    assert activation_codes == []
     client = admin["client"]
     client.cookies.clear()
     password = "My-New-Password-123"
-    assert client.post("/api/admin/v1/auth/login", json={"email": "temp@localhost", "password": password}).status_code == 401
+    with open_session() as db:
+        assert db.get(AdminUser, created["id"]).email is None
     assert client.post("/api/admin/v1/auth/activate", json={"token": token, "password": password}).status_code == 422
     challenge = get_code(client, token, "Real@Example.com")
     assert activation_codes[-1][0] == "real@example.com"
@@ -71,25 +71,35 @@ def test_dummy_email_real_email_code_password_and_login(admin, monkeypatch):
     with open_session() as db:
         user = db.get(AdminUser, created["id"])
         assert user.email == "real@example.com" and user.activation_token_hash is None
+        assert user.auth_method == "password"
         challenge_row = db.scalar(select(MfaChallenge).where(MfaChallenge.user_id == created["id"],
                                   MfaChallenge.purpose == "activation_code"))
         assert challenge_row.code_hash != sha256_hex(activation_codes[-1][1])
-    assert client.post("/api/admin/v1/auth/login", json={"email": "temp@localhost", "password": password}).status_code == 401
+    monkeypatch.setattr(get_settings(), "mfa_required", True)
+    monkeypatch.setattr(get_settings(), "smtp_password", "")
     login = client.post("/api/admin/v1/auth/login", json={"email": "real@example.com", "password": password})
     assert login.status_code == 200
-    mfa = login.json()["data"]
-    assert mfa["mfa_channel"] == "email" and "user" not in mfa
-    assert login_codes[-1][0] == "real@example.com"
-    verified_login = client.post("/api/admin/v1/auth/mfa", json={"mfa_token": mfa["mfa_token"],
-                                  "code": login_codes[-1][1]})
-    assert verified_login.status_code == 200
-    assert verified_login.json()["data"]["user"]["is_root"] is False
+    assert login.json()["data"]["user"]["is_root"] is False
+    assert "mfa_token" not in login.json()["data"]
+    assert len(activation_codes) == 1
     assert client.get("/api/admin/v1/users").status_code == 403
 
 
+def test_multiple_pending_links_need_no_email(admin, monkeypatch):
+    mailer(monkeypatch)
+    first, first_token = create_invite(admin)
+    second, second_token = create_invite(admin, "auditor")
+    assert first["id"] != second["id"] and first_token != second_token
+    with open_session() as db:
+        assert db.get(AdminUser, first["id"]).email is None
+        assert db.get(AdminUser, second["id"]).email is None
+    rows = api(admin, "GET", "/users", expect=200).json()["data"]
+    assert [row["email"] for row in rows if row["id"] in {first["id"], second["id"]}] == [None, None]
+
+
 def test_five_guesses_and_send_cooldown(admin, monkeypatch):
-    activation_codes, _ = mailer(monkeypatch)
-    _, token = create_invite(admin, "another-temp@localhost")
+    activation_codes = mailer(monkeypatch)
+    _, token = create_invite(admin)
     client = admin["client"]
     challenge = get_code(client, token, "first@example.com")
     assert client.post("/api/admin/v1/auth/activation-email", json={"token": token,
@@ -104,8 +114,8 @@ def test_five_guesses_and_send_cooldown(admin, monkeypatch):
 
 
 def test_new_link_invalidates_old_link(admin, monkeypatch):
-    activation_codes, _ = mailer(monkeypatch)
-    created, old_token = create_invite(admin, "resend-temp@localhost")
+    activation_codes = mailer(monkeypatch)
+    created, old_token = create_invite(admin)
     challenge = get_code(admin["client"], old_token, "first@example.com")
     verified = verify_code(admin["client"], old_token, challenge, activation_codes[-1][1])
     assert verified.status_code == 200
@@ -126,13 +136,15 @@ def test_new_link_invalidates_old_link(admin, monkeypatch):
 
 
 def test_requires_mailer_and_rejects_multiple_addresses(admin, monkeypatch):
-    assert api(admin, "POST", "/users", {"email": "no-mail@localhost", "role": "hub_admin"}).status_code == 503
+    assert api(admin, "POST", "/users", {"role": "hub_admin"}).status_code == 503
     with open_session() as db:
-        assert db.scalar(select(AdminUser).where(AdminUser.email == "no-mail@localhost")) is None
+        assert db.scalar(select(AdminUser).where(AdminUser.role == "hub_admin")) is None
     mailer(monkeypatch)
+    assert api(admin, "POST", "/users", {"email": "dummy@example.com",
+               "role": "hub_admin"}).status_code == 422
     assert api(admin, "POST", "/users", {"email": "a@localhost,b@localhost",
                "role": "hub_admin"}).status_code == 422
-    _, token = create_invite(admin, "valid-temp@localhost")
+    _, token = create_invite(admin)
     assert admin["client"].post("/api/admin/v1/auth/activation-email", json={
         "token": token, "email": "a@example.com,b@example.com"}).status_code == 422
     assert admin["client"].post("/api/admin/v1/auth/activation-email", json={
@@ -141,7 +153,7 @@ def test_requires_mailer_and_rejects_multiple_addresses(admin, monkeypatch):
 
 def test_delivery_failure_and_expired_link_do_not_activate(admin, monkeypatch):
     mailer(monkeypatch)
-    created, token = create_invite(admin, "failed-temp@localhost")
+    created, token = create_invite(admin)
 
     def fail(_email, _code):
         raise HubError("EMAIL_UNAVAILABLE", "Email could not be delivered", 503)

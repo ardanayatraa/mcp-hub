@@ -50,8 +50,3 @@ def activation_url(token: str) -> str:
 def send_activation_code(recipient: str, code: str) -> None:
     send_email(recipient, "Verify your MCP Hub email", f"Your MCP Hub activation code is {code}.\n\n"
                "It expires in 10 minutes and works once. If you did not request it, ignore this email.\n")
-
-
-def send_login_code(recipient: str, code: str) -> None:
-    send_email(recipient, "Your MCP Hub sign-in code", f"Your MCP Hub sign-in code is {code}.\n\n"
-               "It expires in 10 minutes and works once. If you did not try to sign in, ignore this email.\n")

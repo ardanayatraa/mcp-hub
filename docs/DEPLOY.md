@@ -16,9 +16,9 @@ The Hub refuses to start in production when any of these is unsafe, and names th
 | `SESSION_SIGNING_KEY` | 32+ random characters: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD` | The first super admin. Not the example password. |
 | `COOKIE_SECURE` | `true` |
-| `MFA_REQUIRED` | `true` is recommended. `false` lets admins sign in with the password alone. |
+| `MFA_REQUIRED` | `true` requires authenticator MFA for legacy accounts; invited team accounts use a password after activation. Root always uses an authenticator in production. |
 | `ADMIN_CONSOLE_URL` | Public HTTPS URL of the admin UI for invitation links; defaults to `MCP_ISSUER_URL`. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated TLS SMTP for activation and sign-in codes. Use `starttls` on port 587 or `ssl` on 465. Keep credentials in the server env file. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated TLS SMTP for activation codes. Use `starttls` on port 587 or `ssl` on 465. Keep credentials in the server env file. |
 | `ALLOWED_HOSTS` | `hub.example.com` (the public name; add others only if used) |
 | `ALLOWED_ORIGINS` | `https://hub.example.com` |
 | `MCP_PUBLIC_URL`, `MCP_ISSUER_URL` | `https://hub.example.com/mcp`, `https://hub.example.com` |
@@ -69,9 +69,9 @@ Check with `nginx -t`, then `curl -I https://hub.example.com/` should show
 Sign in as the first root admin and scan the authenticator QR code within `MFA_ENROLL_HOURS` (72).
 Root uses authenticator MFA in production even if `MFA_REQUIRED=false`. If the window passed,
 run on the server: `python -m app.bootstrap --reset-mfa admin@example.com`. Set SMTP first,
-then add other admins under **Access → Team** with a temporary email. Copy the 24-hour
+then add other admins under **Access → Team** without entering an email. Copy the 24-hour
 activation link and share it privately. The member enters their real email, verifies an
-emailed code, and sets a password. Later sign-ins use a one-time email code. Root can
+emailed code, and sets a password. Later sign-ins use email and password. Root can
 issue a new link when the previous one expires.
 
 ## 5. Connect apps
@@ -111,5 +111,5 @@ budget is therefore not a production-wide allowance.
 - [ ] PostgreSQL with scheduled, tested off-server dumps
 - [ ] Secrets in a secret manager or a root-only env file, never in git
 - [ ] One backend process, restarted automatically, behind the proxy
-- [ ] Root has authenticator MFA; invited admins can receive email codes over authenticated TLS SMTP
+- [ ] Root has authenticator MFA; invited admins can receive their one-time activation code over authenticated TLS SMTP
 - [ ] Each app's allowed models and token budget set
