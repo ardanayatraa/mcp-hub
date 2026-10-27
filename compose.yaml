@@ -1,0 +1,142 @@
+# One-command local stack:   docker compose up -d --build
+# Then open https://localhost:8443 (accept the dev certificate) and sign in as admin@localhost.
+#
+# The first run generates every secret into the `hub-secrets` volume, so no .env file is needed.
+#   Admin password:  docker compose logs init
+#   Show it later:   docker compose exec backend sh -c '. /secrets/env; echo $$ADMIN_INITIAL_PASSWORD'
+#   Stop:            docker compose down        (data stays)
+#   Start over:      docker compose down -v     (deletes the database AND the secrets together)
+#
+# Local development only. Ports are bound to 127.0.0.1. Production uses docs/DEPLOY.md.
+# infra/compose.yml is the CI stack and is left untouched.
+
+name: mcp-hub-local
+
+x-backend-build: &backend-build
+  context: .
+  dockerfile: infra/Dockerfile.backend
+
+services:
+  init:
+    build: *backend-build
+    image: mcp-hub-local-backend
+    user: root
+    restart: "no"
+    volumes:
+      - hub-secrets:/secrets
+    command:
+      - python
+      - -c
+      - |
+        import os, secrets
+        from cryptography.fernet import Fernet
+        path = "/secrets/env"
+        if os.path.exists(path):
+            print("Secrets already exist; not changed.")
+        else:
+            admin = "Hub-" + secrets.token_hex(4) + "-Aa1"
+            values = {
+                "POSTGRES_PASSWORD": secrets.token_hex(16),
+                "SECRET_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                "SESSION_SIGNING_KEY": secrets.token_urlsafe(48),
+                "ADMIN_INITIAL_PASSWORD": admin,
+            }
+            with open(path, "w") as handle:
+                for key, value in values.items():
+                    handle.write("export %s='%s'\n" % (key, value))
+            os.chmod(path, 0o644)
+            print("Created secrets. Sign in as admin@localhost with password " + admin)
+
+  postgres:
+    image: postgres:16-alpine
+    entrypoint: ["sh", "-c", ". /secrets/env && exec docker-entrypoint.sh postgres"]
+    environment:
+      POSTGRES_USER: hub
+      POSTGRES_DB: hub
+    volumes:
+      - hub-secrets:/secrets:ro
+      - hub-pg:/var/lib/postgresql/data
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: *backend-build
+    image: mcp-hub-local-backend
+    # Reads the generated secrets, builds the database URL, then runs the image's usual start-up.
+    command:
+      - sh
+      - -c
+      - >-
+        . /secrets/env &&
+        export DATABASE_URL="postgresql+psycopg://hub:$$POSTGRES_PASSWORD@postgres:5432/hub" &&
+        alembic upgrade head &&
+        python -m app.bootstrap &&
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+        --forwarded-allow-ips "$$FORWARDED_ALLOW_IPS"
+    environment:
+      ENVIRONMENT: dev
+      ADMIN_INITIAL_EMAIL: admin@localhost
+      COOKIE_SECURE: "true"
+      MFA_REQUIRED: "false"
+      ALLOW_INSECURE_HTTP: "true"
+      EGRESS_ALLOW_PRIVATE: "true"
+      # Extra apps on this laptop are reached as host.docker.internal (add their ports here).
+      EGRESS_ALLOWED_PORTS: "${EGRESS_ALLOWED_PORTS:-80,443,8081}"
+      EGRESS_ALLOWED_HOSTS: "${EGRESS_ALLOWED_HOSTS:-your-app,host.docker.internal}"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,localhost:8443,127.0.0.1:8443"
+      ALLOWED_ORIGINS: "https://localhost:8443,https://127.0.0.1:8443"
+      MCP_PUBLIC_URL: "https://localhost:8443/mcp"
+      MCP_ISSUER_URL: "https://localhost:8443"
+      # Only the edge proxy reaches the backend on this private network.
+      FORWARDED_ALLOW_IPS: "*"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - hub-secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  your-app:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.your-app
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8081"
+      YOUR_APP_API_KEY: dev-your-app-key
+      YOUR_APP_DELEGATION_SECRET: dev-delegation-secret
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8081/api/ai/v1/health', headers={'Authorization': 'Bearer ' + os.environ['YOUR_APP_API_KEY']}), timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  edge:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.frontend
+    ports:
+      - "127.0.0.1:8443:443"
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  hub-pg:
+  hub-secrets:
