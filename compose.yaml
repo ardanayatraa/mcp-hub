@@ -1,7 +1,14 @@
 # One-command local stack:   docker compose up --build --attach ready
 # It builds, starts everything in the background and ends by printing the link and admin password.
 # (`docker compose up -d --build` starts the same stack but cannot print that message.)
-# Then open https://localhost:8443 (accept the dev certificate) and sign in as admin@localhost.
+# Then open https://localhost:18443 (accept the dev certificate) and sign in as admin@localhost.
+#
+# Sharing a machine with someone else, or a port is taken? Set these (shell, or a git-ignored .env
+# next to this file) before running:
+#   HUB_PROJECT=yourname-mcp-hub   prefix for containers, volumes, network and images, so two people
+#                                  on one Docker never overwrite each other's stack
+#   HUB_HTTPS_PORT=19443           the only published port (default 18443); every URL follows it
+#   PowerShell:  $env:HUB_PROJECT='yourname-mcp-hub'; $env:HUB_HTTPS_PORT=19443
 #
 # The first run generates every secret into the `hub-secrets` volume, so no .env file is needed.
 # When everything is up, the `ready` service prints the link and the admin password.
@@ -14,7 +21,7 @@
 # Local development only. Ports are bound to 127.0.0.1. Production uses docs/DEPLOY.md.
 # infra/compose.yml is the CI stack and is left untouched.
 
-name: mcp-hub-local
+name: ${HUB_PROJECT:-mcp-hub-local}
 
 x-backend-build: &backend-build
   context: .
@@ -23,7 +30,7 @@ x-backend-build: &backend-build
 services:
   init:
     build: *backend-build
-    image: mcp-hub-local-backend
+    image: ${HUB_PROJECT:-mcp-hub-local}-backend
     user: root
     restart: "no"
     volumes:
@@ -71,7 +78,7 @@ services:
 
   backend:
     build: *backend-build
-    image: mcp-hub-local-backend
+    image: ${HUB_PROJECT:-mcp-hub-local}-backend
     # Reads the generated secrets, builds the database URL, then runs the image's usual start-up.
     command:
       - sh
@@ -93,10 +100,10 @@ services:
       # Extra apps on this laptop are reached as host.docker.internal (add their ports here).
       EGRESS_ALLOWED_PORTS: "${EGRESS_ALLOWED_PORTS:-80,443,8081}"
       EGRESS_ALLOWED_HOSTS: "${EGRESS_ALLOWED_HOSTS:-your-app,host.docker.internal}"
-      ALLOWED_HOSTS: "localhost,127.0.0.1,localhost:8443,127.0.0.1:8443"
-      ALLOWED_ORIGINS: "https://localhost:8443,https://127.0.0.1:8443"
-      MCP_PUBLIC_URL: "https://localhost:8443/mcp"
-      MCP_ISSUER_URL: "https://localhost:8443"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,localhost:${HUB_HTTPS_PORT:-18443},127.0.0.1:${HUB_HTTPS_PORT:-18443}"
+      ALLOWED_ORIGINS: "https://localhost:${HUB_HTTPS_PORT:-18443},https://127.0.0.1:${HUB_HTTPS_PORT:-18443}"
+      MCP_PUBLIC_URL: "https://localhost:${HUB_HTTPS_PORT:-18443}/mcp"
+      MCP_ISSUER_URL: "https://localhost:${HUB_HTTPS_PORT:-18443}"
       # Only the edge proxy reaches the backend on this private network.
       FORWARDED_ALLOW_IPS: "*"
     extra_hosts:
@@ -135,8 +142,8 @@ services:
       context: .
       dockerfile: infra/Dockerfile.frontend
     ports:
-      - "127.0.0.1:8443:443"
-      - "127.0.0.1:8080:80"
+      # HTTPS only: the HTTP port would just redirect, and one port is one less chance to clash.
+      - "127.0.0.1:${HUB_HTTPS_PORT:-18443}:443"
     depends_on:
       backend:
         condition: service_healthy
@@ -149,8 +156,10 @@ services:
   # Runs last and prints where to sign in. `--attach ready` shows only this service's output and
   # returns when it exits; the other containers keep running. Read it again with:  docker compose logs ready
   ready:
-    image: mcp-hub-local-backend
+    image: ${HUB_PROJECT:-mcp-hub-local}-backend
     restart: "no"
+    environment:
+      HUB_HTTPS_PORT: "${HUB_HTTPS_PORT:-18443}"
     volumes:
       - hub-secrets:/secrets:ro
     depends_on:
@@ -164,13 +173,13 @@ services:
         printf '\n=============================================================\n
         MCP Hub is ready\n
         =============================================================\n
-        Open      : https://localhost:8443  (accept the dev certificate warning)\n
-        MCP URL   : https://localhost:8443/mcp\n
+        Open      : https://localhost:%s  (accept the dev certificate warning)\n
+        MCP URL   : https://localhost:%s/mcp\n
         Email     : admin@localhost\n
         Password  : %s\n
         Stop      : docker compose down       (data stays)\n
         Reset     : docker compose down -v    (deletes database and secrets)\n
-        =============================================================\n\n' "$$ADMIN_INITIAL_PASSWORD"
+        =============================================================\n\n' "$$HUB_HTTPS_PORT" "$$HUB_HTTPS_PORT" "$$ADMIN_INITIAL_PASSWORD"
 
 volumes:
   hub-pg:
