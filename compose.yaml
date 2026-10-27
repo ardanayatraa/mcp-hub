@@ -1,7 +1,11 @@
-# One-command local stack:   docker compose up -d --build
+# One-command local stack:   docker compose up --build --attach ready
+# It builds, starts everything in the background and ends by printing the link and admin password.
+# (`docker compose up -d --build` starts the same stack but cannot print that message.)
 # Then open https://localhost:8443 (accept the dev certificate) and sign in as admin@localhost.
 #
 # The first run generates every secret into the `hub-secrets` volume, so no .env file is needed.
+# When everything is up, the `ready` service prints the link and the admin password.
+#   Show that message again:  docker compose logs ready
 #   Admin password:  docker compose logs init
 #   Show it later:   docker compose exec backend sh -c '. /secrets/env; echo $$ADMIN_INITIAL_PASSWORD'
 #   Stop:            docker compose down        (data stays)
@@ -136,6 +140,37 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 443"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Runs last and prints where to sign in. `--attach ready` shows only this service's output and
+  # returns when it exits; the other containers keep running. Read it again with:  docker compose logs ready
+  ready:
+    image: mcp-hub-local-backend
+    restart: "no"
+    volumes:
+      - hub-secrets:/secrets:ro
+    depends_on:
+      edge:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - >-
+        . /secrets/env &&
+        printf '\n=============================================================\n
+        MCP Hub is ready\n
+        =============================================================\n
+        Open      : https://localhost:8443  (accept the dev certificate warning)\n
+        MCP URL   : https://localhost:8443/mcp\n
+        Email     : admin@localhost\n
+        Password  : %s\n
+        Stop      : docker compose down       (data stays)\n
+        Reset     : docker compose down -v    (deletes database and secrets)\n
+        =============================================================\n\n' "$$ADMIN_INITIAL_PASSWORD"
 
 volumes:
   hub-pg:
