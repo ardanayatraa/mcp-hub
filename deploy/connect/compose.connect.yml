@@ -1,0 +1,61 @@
+# Connects the Hub's front and back, and checks the .env before anything starts.
+# An overlay for the production compose.yml in /opt/mcp-hub (never edit that file for this):
+#
+#   docker compose -f compose.yml -f src/deploy/connect/compose.connect.yml up -d
+#
+# What it adds
+#   envcheck  runs first and stops the stack with a plain message when .env is wrong
+#             (empty keys, https/cookie rules, a domain missing from ALLOWED_HOSTS/ORIGINS, ...).
+#   edge      one HTTP door on 127.0.0.1:8200 for UI and API: serves ./frontend and proxies the API
+#             to the backend by name (re-resolved, so a recreated backend never leaves it stale).
+#             Point the host's Caddy at it instead of at 8100 + the frontend folder; see README.md.
+#
+# Repair .env (backup first, secrets are never touched), then start again:
+#   ENVCHECK_FIX=1 docker compose -f compose.yml -f src/deploy/connect/compose.connect.yml run --rm envcheck
+#   ENVCHECK_DOMAIN=hub.example.com ENVCHECK_FIX=1 docker compose ... run --rm envcheck   (new domain)
+#   docker compose -f compose.yml -f src/deploy/connect/compose.connect.yml up -d
+
+services:
+  envcheck:
+    image: ${HUB_BACKEND_IMAGE:-mcp-hub-backend:latest}
+    user: root
+    restart: "no"
+    entrypoint: []
+    command: ["python", "/connect/envcheck.py"]
+    environment:
+      ENVCHECK_FIX: ${ENVCHECK_FIX:-0}
+      ENVCHECK_DOMAIN: ${ENVCHECK_DOMAIN:-}
+    volumes:
+      - ${CONNECT_DIR:-./src/deploy/connect}:/connect:ro
+      - ./.env:/work/.env
+    networks: [hub]
+
+  backend:
+    # The backend only starts once the .env passes, and trusts the forwarded address from the edge.
+    depends_on:
+      envcheck:
+        condition: service_completed_successfully
+    environment:
+      FORWARDED_ALLOW_IPS: ${HUB_EDGE_IP:-172.31.250.10}
+
+  edge:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HUB_EDGE_PORT:-8200}:80"
+    volumes:
+      - ${CONNECT_DIR:-./src/deploy/connect}/edge.nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 64m
+    networks:
+      hub:
+        ipv4_address: ${HUB_EDGE_IP:-172.31.250.10}

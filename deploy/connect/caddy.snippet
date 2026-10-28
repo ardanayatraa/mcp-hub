@@ -1,0 +1,20 @@
+# Optional: send the whole Hub site to the edge container (compose.connect.yml) instead of
+# splitting UI files and API in Caddy. Replace the existing hub site block with this one.
+# `aman` is the shared security-headers snippet already defined in the Caddyfile.
+#
+#   sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M)
+#   edit, then: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+hub.aksabali.app {
+	import aman
+	request_body {
+		max_size 2MB
+	}
+	reverse_proxy 127.0.0.1:8200 {
+		flush_interval -1
+	}
+}
+
+# More than one domain for the same Hub: list them on the first line, and add each to .env
+# (ENVCHECK_DOMAIN=... ENVCHECK_FIX=1 does that safely).
+#   hub.aksabali.app, mcp.example.com {
