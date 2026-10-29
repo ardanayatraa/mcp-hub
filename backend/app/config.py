@@ -1,7 +1,8 @@
 """Environment configuration. Secrets come from the environment, never from code."""
 
 from functools import lru_cache
-from urllib.parse import urlsplit
+from typing import Literal
+from urllib.parse import unquote, urlsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -58,6 +59,10 @@ class Settings(BaseSettings):
     # Hours between automatic purges of expired audit rows, sessions and memories; 0 turns it off.
     purge_interval_hours: int = Field(default=6, ge=0, le=168)
     log_level: str = "INFO"
+    rate_limit_backend: Literal["memory", "redis"] = "memory"
+    rate_limit_redis_url: str = Field(default="", repr=False)
+    rate_limit_redis_password: str = Field(default="", repr=False)
+    rate_limit_namespace: str = Field(default="mcp-hub", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
     circuit_failure_threshold: int = 5
     circuit_open_seconds: int = 30
     tool_rate_limit: int = Field(default=60, ge=1, le=10000)
@@ -143,6 +148,11 @@ class Settings(BaseSettings):
             problems.append("approved egress hosts or CIDRs are required")
         if self.database_url.startswith("sqlite"):
             problems.append("PostgreSQL metadata storage is required")
+        redis = urlsplit(self.rate_limit_redis_url)
+        if self.rate_limit_backend != "redis" or redis.scheme not in {"redis", "rediss"} or not redis.hostname:
+            problems.append("a shared Redis rate limiter is required")
+        elif len(unquote(redis.password) if redis.password else self.rate_limit_redis_password) < 32:
+            problems.append("Redis authentication requires a random password of 32+ characters")
         if problems:
             raise HubError("UNSAFE_CONFIGURATION", "; ".join(problems), 500)
 

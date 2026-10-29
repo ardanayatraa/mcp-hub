@@ -1,0 +1,6 @@
+simulation: laravel-connector
+routing: path
+mocks:
+  - name: local-hub-contract
+    routeKey: hub
+    path: integrations/laravel/package/postman/mocks/hub

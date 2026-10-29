@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import ClientKeysPanel from "@/components/ClientKeysPanel.vue";
+import AccessProfilesPanel from "@/components/AccessProfilesPanel.vue";
 import LoadingSkeleton from "@/components/LoadingSkeleton.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
 import PageHeader from "@/components/PageHeader.vue";
@@ -17,6 +18,7 @@ const session = useSession();
 const toast = useToast();
 const tab = ref(route.query.tab === "team" && session.isHubAdmin ? "team" : "keys");
 const apps = ref<AppSummary[]>([]);
+const profilesRevision = ref(0);
 const appsLoaded = ref(false);
 const appsError = ref("");
 const users = ref<AdminUserRow[]>([]);
@@ -134,7 +136,10 @@ const expiryLabel = (iso: string | null) => iso ? `Expires ${new Date(iso).toLoc
   <PageHeader title="Access" subtitle="Client keys let AI clients call tools for one app. Team members manage the Hub." />
   <TabBar v-if="session.isHubAdmin" v-model="tab" :tabs="[{ key: 'keys', label: 'Client keys' }, { key: 'team', label: 'Team' }]" />
 
-  <ClientKeysPanel v-if="tab === 'keys'" :apps="apps" :apps-loaded="appsLoaded" :apps-error="appsError" />
+  <div v-if="tab === 'keys'" class="space-y-8">
+    <ClientKeysPanel :key="profilesRevision" :apps="apps" :apps-loaded="appsLoaded" :apps-error="appsError" />
+    <AccessProfilesPanel v-if="appsLoaded && !appsError" :apps="apps" @changed="profilesRevision++" />
+  </div>
 
   <section v-else>
     <div v-if="oneTimeLink" class="card card-pad mb-4 space-y-2">

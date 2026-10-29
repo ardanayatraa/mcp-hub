@@ -120,6 +120,27 @@ class ConnectorSecret(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ConnectorEnrollment(Base):
+    __tablename__ = "connector_enrollments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    connector_id: Mapped[str] = mapped_column(ForeignKey("connectors.id", ondelete="CASCADE"), nullable=False, index=True)
+    identity_id: Mapped[str] = mapped_column(ForeignKey("service_identities.id", ondelete="CASCADE"), nullable=False)
+    secret_id: Mapped[str] = mapped_column(ForeignKey("connector_secrets.id", ondelete="CASCADE"), nullable=False)
+    created_by: Mapped[str] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    proof_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempt_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    replacement_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    bundle_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    management_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
 class ConnectorHealthCheck(Base):
     __tablename__ = "connector_health_checks"
 
@@ -260,6 +281,19 @@ class ToolTestRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
+class McpAccessProfile(Base):
+    __tablename__ = "mcp_access_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    modules: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    tools: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
 class ServiceIdentity(Base):
     """A client key: one application, read access, optional write scope and tool allowlist."""
 
@@ -272,6 +306,7 @@ class ServiceIdentity(Base):
     scopes: Mapped[list] = mapped_column(JSON, nullable=False)
     # Null means every tool the key's permissions allow.
     allowed_tools: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    profile_id: Mapped[str | None] = mapped_column(ForeignKey("mcp_access_profiles.id", ondelete="CASCADE"), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

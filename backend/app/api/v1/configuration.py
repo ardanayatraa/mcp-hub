@@ -76,6 +76,7 @@ class IdentityCreate(BaseModel):
     ttl_days: int | None = Field(default=30, ge=1, le=365)
     write: bool = False
     allowed_tools: list[str] | None = Field(default=None, max_length=200)
+    profile_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class IdentityChanges(BaseModel):
@@ -83,6 +84,7 @@ class IdentityChanges(BaseModel):
     name: str = Field(default="gateway", min_length=1, max_length=120)
     write: bool = False
     allowed_tools: list[str] | None = Field(default=None, max_length=200)
+    profile_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 class UserCreate(BaseModel):

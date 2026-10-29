@@ -1,0 +1,28 @@
+[Unit]
+Description=MCP Hub application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mcp-hub
+Group=mcp-hub
+WorkingDirectory=/www/wwwroot/mcp-hub/current/backend
+EnvironmentFile=/www/wwwroot/mcp-hub/shared/hub.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/www/wwwroot/mcp-hub/current/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18321 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/www/wwwroot/mcp-hub/shared
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

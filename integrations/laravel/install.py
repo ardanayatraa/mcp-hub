@@ -5,12 +5,14 @@ import json
 from pathlib import Path
 
 from configure import source_path
+from integration_state import require_legacy_mode
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--apply', action='store_true')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 source = source_path()
+require_legacy_mode(source)
 integration = Path(__file__).parent
 overlay = integration / 'overlay'
 verification = root / '.verification'

@@ -9,13 +9,20 @@ from cryptography.fernet import InvalidToken
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.persistence.models import AdminUser, ConnectorSecret, ModelProvider, UserMemory
+from app.persistence.models import (
+    AdminUser,
+    ConnectorEnrollment,
+    ConnectorSecret,
+    ModelProvider,
+    UserMemory,
+)
 from app.persistence.session import init_engine, open_session
 from app.security.audit import record_audit
 from app.security.crypto import keyring
 
 ENCRYPTED = [
     (ConnectorSecret, ("secret_ciphertext", "delegation_ciphertext")),
+    (ConnectorEnrollment, ("bundle_ciphertext",)),
     (ModelProvider, ("api_key_ciphertext",)),
     (AdminUser, ("totp_secret_encrypted",)),
     (UserMemory, ("content_ciphertext",)),

@@ -1,0 +1,3 @@
+# Install as /etc/sudoers.d/mcp-hub-deploy and validate with visudo -cf.
+# The SSH account may restart this service only; no shell, daemon-reload or other service.
+hub-deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart mcp-hub.service

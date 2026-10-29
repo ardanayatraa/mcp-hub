@@ -107,9 +107,23 @@ def normalize_write_endpoints(raw, *, operations: list[str], readable_fields: li
         if not fields or any(is_sensitive_path(field) for field in fields):
             raise HubError("SCHEMA_MISMATCH", "Write receipts must declare non-sensitive fields", 422)
         output = validate_output_schema(output, fields, 50)
-        result.append({"operation": operation, "method": method, "path_template": path,
-                       "input_schema": schema, "output_schema": output, "requires_user_context": True,
-                       "tenant_field": tenant, "safe_query": False, "public_aggregate": False})
+        workflow = route.get("workflow", "direct")
+        if workflow not in {"direct", "proposal"}:
+            raise HubError("SCHEMA_MISMATCH", "Unknown source write workflow", 422)
+        entry = {"operation": operation, "method": method, "path_template": path,
+                 "input_schema": schema, "output_schema": output, "requires_user_context": True,
+                 "tenant_field": tenant, "safe_query": False, "public_aggregate": False}
+        if workflow == "proposal":
+            receipt = output["items"]["properties"]
+            required = {"proposal_ref", "status", "operation", "requires_confirmation", "expires_at"}
+            if method != "POST" or not required <= set(output["items"].get("required", [])):
+                raise HubError("SCHEMA_MISMATCH", "Proposal routes must declare a complete receipt", 422)
+            if any(receipt.get(key, {}).get("type") != "string" for key in required - {"requires_confirmation"}):
+                raise HubError("SCHEMA_MISMATCH", "Proposal receipt fields must be strings", 422)
+            if receipt.get("requires_confirmation", {}).get("type") != "boolean":
+                raise HubError("SCHEMA_MISMATCH", "Proposal receipts must declare confirmation state", 422)
+            entry["workflow"] = "proposal"
+        result.append(entry)
     return result
 
 

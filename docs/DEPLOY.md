@@ -1,7 +1,11 @@
 # Deploying to production
 
+For aaPanel with deployment after a passing `main` build, use
+[the automated aaPanel deployment guide](DEPLOY_AAPANEL_OTOMATIS.md). It keeps
+server credentials outside releases and does not overwrite panel configuration.
+
 One Hub serves every app. It needs a Linux server (2 vCPU and 4 GB RAM is plenty for a
-few apps), PostgreSQL 16, a domain name with a TLS certificate, and a reverse proxy in front
+few apps), PostgreSQL 16, a dedicated Redis, a domain name with a TLS certificate, and a reverse proxy in front
 of it. `infra/compose.yml` is a development stack; use it as a reference, not as is.
 
 ## 1. Environment
@@ -12,6 +16,9 @@ The Hub refuses to start in production when any of these is unsafe, and names th
 |---|---|
 | `ENVIRONMENT` | `production` |
 | `DATABASE_URL` | `postgresql+psycopg://hub:<password>@<db-host>:5432/hub` |
+| `RATE_LIMIT_BACKEND` | `redis`; production rejects in-process counters |
+| `RATE_LIMIT_REDIS_URL`, `RATE_LIMIT_REDIS_PASSWORD` | Private Redis URL and a random password of at least 32 characters. Use `rediss://` when TLS is needed. All workers use the same URL, database and namespace. |
+| `RATE_LIMIT_NAMESPACE` | Deployment-specific prefix, such as `mcp-hub`; do not change it during an ordinary restart |
 | `SECRET_ENCRYPTION_KEY` | A Fernet key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep it in your secret manager; without it stored keys cannot be read. |
 | `SESSION_SIGNING_KEY` | 32+ random characters: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD` | The first super admin. Not the example password. |
@@ -44,9 +51,19 @@ uv run python -m app.bootstrap       # creates the first super admin once
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
-Run **one** process (no `--workers`): rate limits are counted in memory. Restart it on
-failure (systemd `Restart=always`, or the container's restart policy). `GET /ready` returns
-200 once the database answers; use it for health checks.
+All workers share rate budgets through Redis. Concurrency bulkheads remain per
+process; account for the number of workers when sizing source and model capacity.
+Restart the process on failure (systemd `Restart=always`, or the container's restart
+policy). `GET /ready` returns 200 once both metadata storage and the configured
+limiter answer; Redis failures reject limited requests with 503, without a memory fallback.
+
+Keep Redis on a private network with authentication and `maxmemory-policy noeviction`.
+Use a dedicated database/instance and size it for active users and budgets; monitor
+memory and rejected writes. Eviction would discard security counters. Keep persistence
+enabled in production (AOF with `appendfsync always` when every admitted request must
+survive a crash), and protect the data volume. Loss/restoration of this metadata resets
+rate windows; drain public traffic for the longest configured window before reopening
+after counter loss. The development Compose Redis deliberately has no persistence.
 
 ## 3. Reverse proxy
 
@@ -112,6 +129,7 @@ budget is therefore not a production-wide allowance.
 - [ ] HTTPS only, with a valid certificate and the HSTS header
 - [ ] PostgreSQL with scheduled, tested off-server dumps
 - [ ] Secrets in a secret manager or a root-only env file, never in git
-- [ ] One backend process, restarted automatically, behind the proxy
+- [ ] Shared authenticated Redis with no eviction and tested failure/recovery
+- [ ] Backend processes restarted automatically, behind the proxy
 - [ ] Root has authenticator MFA; invited admins can receive their one-time activation code over authenticated TLS SMTP
 - [ ] Each app's allowed models and token budget set

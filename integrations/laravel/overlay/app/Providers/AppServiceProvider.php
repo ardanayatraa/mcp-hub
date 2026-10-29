@@ -57,7 +57,23 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        //
+        $this->app->bind(\McpHub\Laravel\Registry::class, \App\Services\Mcp\HubPackageRegistry::class);
+        $this->app->bind(\McpHub\Laravel\Connection::class, function ($app) {
+            $options = array_replace($app['config']->get('mcp-hub', []), [
+                'app_key' => 'hireach',
+                'enabled' => $app['config']->get('ai.mcp.hub.enabled'),
+                'url' => $app['config']->get('ai.mcp.hub.url'),
+                'client_key' => $app['config']->get('ai.mcp.hub.token'),
+                'source_url' => $app['config']->get('ai.mcp.hub.source_url'),
+                'app_token' => $app['config']->get('ai.mcp.hub.source_key'),
+                'delegation_secret' => $app['config']->get('ai.mcp.hub.delegation_secret'),
+                'timeout' => $app['config']->get('ai.mcp.hub.timeout', 12),
+            ]);
+            return new \McpHub\Laravel\Connection(
+                new \Illuminate\Config\Repository(['mcp-hub' => $options]),
+                $app->make(\Illuminate\Contracts\Encryption\Encrypter::class)
+            );
+        });
     }
 
     /**

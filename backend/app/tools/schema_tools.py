@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import math
 import re
 
 from jsonschema import Draft202012Validator
@@ -79,20 +80,32 @@ def validate_input_schema(schema: dict) -> dict:
         kind = next(item for item in types if item != "null")
         if "enum" in spec:
             enum = spec["enum"]
-            if not isinstance(enum, list) or not 1 <= len(enum) <= 20:
+            if not isinstance(enum, list) or not 1 <= len(enum) <= 30:
                 raise HubError("VALIDATION_FAILED", "Enum is invalid", 422)
-            if not all(isinstance(item, str) and 1 <= len(item) <= 64 and item.isprintable() for item in enum):
-                raise HubError("VALIDATION_FAILED", "Enum values must be short strings", 422)
+            if not all((isinstance(item, str) and len(item) <= 64 and item.isprintable())
+                       or item is None or type(item) in {bool, int}
+                       or (type(item) is float and math.isfinite(item)) for item in enum):
+                raise HubError("VALIDATION_FAILED", "Enum values must be bounded scalars", 422)
+            if not all(Draft202012Validator({"type": types}).is_valid(item) for item in enum):
+                raise HubError("VALIDATION_FAILED", "Enum values must match the declared type", 422)
         if kind == "string" and "enum" not in spec:
             spec.setdefault("maxLength", 200)
         if kind in {"number", "integer"}:
             spec.setdefault("minimum", -1_000_000_000)
             spec.setdefault("maximum", 1_000_000_000)
         for bound in ("minimum", "maximum", "minLength", "maxLength"):
-            if bound in spec and type(spec[bound]) is not int:
-                raise HubError("VALIDATION_FAILED", "Schema bounds must be integers", 422)
-        if spec.get("maxLength", 0) and spec["maxLength"] > 200:
-            raise HubError("VALIDATION_FAILED", "String inputs are limited to 200 characters", 422)
+            if bound in spec:
+                value = spec[bound]
+                numeric = bound in {"minimum", "maximum"}
+                try:
+                    finite = math.isfinite(value)
+                except (OverflowError, TypeError, ValueError):
+                    finite = False
+                if type(value) not in ({int, float} if numeric else {int}) or not finite:
+                    raise HubError("VALIDATION_FAILED", "Schema bounds must be finite numbers with integer lengths", 422)
+        cap = 1024 if name in {"ref", "record_ref", "proposal_ref"} else 512
+        if spec.get("maxLength", 0) > cap:
+            raise HubError("VALIDATION_FAILED", "String inputs exceed the supported length limit", 422)
     try:
         Draft202012Validator.check_schema(schema)
     except SchemaError as exc:

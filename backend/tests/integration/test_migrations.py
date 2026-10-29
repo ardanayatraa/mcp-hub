@@ -13,7 +13,8 @@ from app.persistence.models import AdminSession, AdminUser
 from app.persistence.session import open_session
 from app.security.passwords import hash_password
 from app.services.backup import export_metadata
-from sqlalchemy import MetaData, create_engine, inspect, select, text
+from sqlalchemy import DateTime, MetaData, create_engine, event, inspect, select, text
+from sqlalchemy.engine import Engine
 from tests.security.test_prd_regressions import published  # noqa: F401
 
 LEGACY = "902b2fc08310"
@@ -21,6 +22,60 @@ LEGACY = "902b2fc08310"
 
 def test_code_expects_the_alembic_head():
     assert ScriptDirectory.from_config(Config("alembic.ini")).get_current_head() == SCHEMA_REVISION
+
+
+def test_profile_migration_preserves_keys_and_enrollment_credentials_with_foreign_keys_on(admin, tmp_path, monkeypatch):
+    from tests import helpers
+    from tests.helpers import api
+
+    helpers.dns(monkeypatch)
+    api(admin, "POST", "/connector-enrollments", {"name": "Your App", "app_key": "your_app", "environment": "dev",
+        "base_url": "https://app.example.com"}, expect=201)
+    with open_session() as db:
+        exported = export_metadata(db)
+        admins = [{c.name: getattr(row, c.name) for c in AdminUser.__table__.columns} for row in db.scalars(select(AdminUser))]
+    url = "sqlite+pysqlite:///" + (tmp_path / "profiles.db").as_posix()
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    config = Config("alembic.ini")
+    command.upgrade(config, "c8d4f2a9e103")
+    engine = create_engine(url)
+    metadata = MetaData()
+    metadata.reflect(engine)
+    originals = {"admin_users": admins, **exported["tables"]}
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+        for name, rows in originals.items():
+            if name not in metadata.tables:
+                continue
+            table = metadata.tables[name]
+            for row in rows:
+                values = {key: value for key, value in row.items() if key in table.columns}
+                for column in table.columns:
+                    if isinstance(column.type, DateTime) and isinstance(values.get(column.name), str):
+                        values[column.name] = datetime.fromisoformat(values[column.name])
+                connection.execute(table.insert().values(**values))
+        expected = {name: connection.execute(text(f"SELECT * FROM {name}")).all()
+                    for name in ("service_identities", "connector_enrollments", "connector_secrets")}
+
+    def foreign_keys_on(dbapi_connection, _record):
+        import sqlite3
+        if isinstance(dbapi_connection, sqlite3.Connection):
+            dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    # The Alembic connection must also have FK enforcement enabled to reproduce
+    # parent-table recreation deleting enrollment children.
+    event.listen(Engine, "connect", foreign_keys_on)
+    try:
+        for operation, revision in [(command.upgrade, "head"), (command.downgrade, "c8d4f2a9e103"), (command.upgrade, "head")]:
+            operation(config, revision)
+            with engine.connect() as connection:
+                for name, rows in expected.items():
+                    columns = ", ".join(column.name for column in metadata.tables[name].columns)
+                    assert connection.execute(text(f"SELECT {columns} FROM {name}")).all() == rows
+                assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+    finally:
+        event.remove(Engine, "connect", foreign_keys_on)
+        engine.dispose()
 
 
 def test_activated_email_code_admins_move_to_password_sign_in(tmp_path, monkeypatch):

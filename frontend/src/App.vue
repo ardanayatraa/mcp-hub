@@ -37,7 +37,7 @@ const initials = computed(() => (session.user?.email ?? "?").split("@")[0].split
   .map((part) => part[0]?.toUpperCase()).join("") || "?");
 const section = computed(() => groups.value.flatMap((group) => group.links).find((link) => active(link.to)));
 const nested = computed(() => section.value && route.path !== section.value.to);
-const leaf = computed(() => route.path.endsWith("/new") ? "New" : route.path === "/tools/report" ? "Report playground" : "Details");
+const leaf = computed(() => route.path.endsWith("/new") ? "New" : route.path === "/tools/report" ? "Report playground" : route.path === "/tools/import" ? "Import OpenAPI" : "Details");
 
 function active(to: string) {
   return to === "/" ? route.path === "/" : route.path.startsWith(to);

@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader.vue";
 import SecretInput from "@/components/SecretInput.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import ToolChecklist from "@/components/ToolChecklist.vue";
+import LaravelPairing from "@/components/LaravelPairing.vue";
 import { hub, type AppSummary, type DataSource, type Health, type ToolSwitchRow } from "@/services/hub";
 import { useToast } from "@/stores/toast";
 import { errorMessage, slugify } from "@/utils/format";
@@ -13,6 +14,7 @@ import { useSlowFlag } from "@/utils/loading";
 
 const toast = useToast();
 const step = ref(1);
+const onboarding = ref("manual");
 const busy = ref(false);
 const error = ref("");
 const advanced = ref(false);
@@ -232,6 +234,14 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
   <PageHeader title="Connect an app" back="/apps"
               subtitle="The app must implement the connector contract: an authenticated health check, a capability manifest and the reviewed routes it lists." />
 
+  <div v-if="step === 1 && !app" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="Connection method">
+    <button type="button" :class="onboarding === 'manual' ? 'btn-primary' : 'btn-secondary'"
+      :aria-pressed="onboarding === 'manual'" @click="onboarding = 'manual'">Connector API</button>
+    <button type="button" :class="onboarding === 'laravel' ? 'btn-primary' : 'btn-secondary'"
+      :aria-pressed="onboarding === 'laravel'" @click="onboarding = 'laravel'">Laravel package</button>
+  </div>
+  <LaravelPairing v-show="onboarding === 'laravel'" />
+  <template v-if="onboarding !== 'laravel'">
   <ol v-if="!done" class="mb-6 flex flex-wrap gap-2">
     <li v-for="(label, index) in steps" :key="label" class="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
         :class="step === index + 1 ? 'bg-brand-soft text-brand' : step > index + 1 ? 'bg-ok-soft text-ok' : 'bg-muted text-subtle'">
@@ -398,4 +408,5 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
       <RouterLink :to="`/apps/${app?.id}?tab=keys`" class="btn-primary">Manage API keys</RouterLink>
     </div>
   </section>
+  </template>
 </template>

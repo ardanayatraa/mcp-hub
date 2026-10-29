@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-29",
+  "status": "unreleased development worktree; no stable tag or deployment",
+  "scope": "MCP access profiles, credential restriction preservation and package metadata hardening",
+  "backend": {
+    "sqlite_full": {"tests": 324, "failures": 0, "errors": 0},
+    "postgresql_full_before_final_replacement_change": {"tests": 322, "failures": 0, "errors": 0},
+    "postgresql_focused_after_final_replacement_change": {"tests": 25, "failures": 0, "errors": 0},
+    "migration": "Real PostgreSQL and SQLite with FK enforcement preserved fixture identities, enrollment rows and encrypted credentials through upgrade/downgrade/upgrade",
+    "ruff": "passed",
+    "dependency_audit": "no known vulnerabilities in the updated installed backend environment"
+  },
+  "package": {
+    "php_8_3_laravel_12": {"tests": 92, "failures": 0, "errors": 0, "optional_http_skipped": 1},
+    "php_7_4_laravel_5_8": {"tests": 92, "failures": 0, "errors": 0, "optional_http_skipped": 1},
+    "php_7_2_34_laravel_5_8": {"tests": 92, "failures": 0, "errors": 0, "optional_http_skipped": 1},
+    "minimum_runtime": "Official PHP 7.2 container without network; Composer actual platform requirements passed",
+    "modern_dependency_audit": "no known advisories after symfony/mime 7.4.22 patch",
+    "legacy_fixture_audit": {
+      "known_upstream_advisories": 17,
+      "affected_packages": 5,
+      "historical_baseline_check": "passed",
+      "limitation": "Not fixed by this connector; exceptions apply only to isolated test fixtures"
+    }
+  },
+  "ui_and_http": {
+    "frontend_production_build": "passed",
+    "browser_console_errors": 0,
+    "fixture": "Isolated Laravel 13.39/PHP 8.3; synthetic users and records only",
+    "selected_read_tools": 3,
+    "disabled_profile": "Next real Laravel HTTP call was refused; UI marked the bound key blocked",
+    "restored_profile": "Re-enabled and verified; default fixture now uses the updated isolated Hub"
+  },
+  "deployment": {
+    "guide": "docs/DEPLOY_AAPANEL_OTOMATIS.md",
+    "local_deployment_tests": 19,
+    "panel_accessed": false,
+    "server_changed": false,
+    "github_pushed": false
+  },
+  "remaining_release_gates": [
+    "Actor-bound exports/reporting integration",
+    "Reviewed OpenAPI draft import",
+    "Legacy adapter migration and parity",
+    "Persistent enrollment recovery and renewal UI",
+    "Complete 13-row compatibility CI for this development branch",
+    "Remaining concurrency, performance and recovery verification"
+  ]
+}

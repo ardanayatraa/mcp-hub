@@ -129,16 +129,17 @@
     }
   },
   "source_health": "ok",
-  "published_tool_count": 9,
+  "published_tool_count": 11,
   "live_catalog": {
-    "checked_at": "2026-10-21T00:01:53.350767+00:00",
+    "checked_at": "2026-10-28T14:20:29.144948+00:00",
     "source_health": "ok",
     "source_models": [
+      "audiences",
       "templates",
       "billing_users",
       "blast_messages"
     ],
-    "published_tool_count": 9,
+    "published_tool_count": 11,
     "source_and_mcp_match": true,
     "source_missing_key_rejected": true,
     "business_rows_read": false,

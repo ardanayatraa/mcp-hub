@@ -1,0 +1,9 @@
+{
+  "base": "/www/wwwroot/mcp-hub",
+  "service": "mcp-hub.service",
+  "python": "/usr/bin/python3.12",
+  "uv": "/usr/local/bin/uv",
+  "pg_dump": "/usr/bin/pg_dump",
+  "health_url": "http://127.0.0.1:18321/ready",
+  "health_host": "hub.example.com"
+}

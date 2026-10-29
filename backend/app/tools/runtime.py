@@ -10,7 +10,9 @@ Each pipeline takes a ``fetch`` function, so the admin test console runs the sam
 on sample data that production runs on live data.
 """
 
+import hashlib
 import json
+import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
@@ -71,6 +73,7 @@ class Route:
     max_payload_bytes: int = 1_048_576
     pagination: dict = field(default_factory=dict)
     error_mapping: dict = field(default_factory=dict)
+    workflow: str = "direct"
 
     @classmethod
     def of(cls, route: dict, mapping: RestToolMapping | None = None, *, timeout_ms: int = 5000) -> "Route":
@@ -83,6 +86,7 @@ class Route:
             max_payload_bytes=mapping.max_payload_bytes if mapping else 1_048_576,
             pagination=(mapping.pagination if mapping else pagination_for(route)) or {},
             error_mapping=(mapping.error_mapping if mapping else {}) or {},
+            workflow=route.get("workflow", "direct"),
         )
 
 
@@ -142,9 +146,14 @@ async def call_source(source: Source, route: Route, arguments: dict, delegation:
         raise HubError("SSRF_BLOCKED", "Resolved URL escaped the connector origin", 422)
     base_headers = {"Accept": "application/json", **auth_headers(source.connector.auth_type, source.api_secret),
                     "X-Request-ID": new_request_id()}
-    if write:
-        # Lets the application de-duplicate; the Hub itself never retries a write.
-        base_headers["Idempotency-Key"] = trace_id
+    if write or route.method == "POST":
+        # Also de-duplicate read-only POST jobs, such as private report exports.
+        # The Hub itself never retries a POST.
+        # One chat turn may call several tools under the same trace.
+        base_headers["Idempotency-Key"] = "tr_" + hashlib.sha256(
+            json.dumps([trace_id, route.method, route.path_template, arguments],
+                       sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        ).hexdigest()
 
     def headers() -> dict[str, str]:
         if delegation is None:
@@ -340,6 +349,19 @@ async def write_pipeline(*, route: Route, operation: str, allow_fields: list[str
     receipt = guard_receipt(kept, allow_fields)
     validate_output(output_schema, receipt)
     out_meta = {"operation": operation, "as_of": utcnow().isoformat(), "contains_personal_data": False}
+    if route.workflow == "proposal":
+        if len(receipt) != 1:
+            raise HubError("SCHEMA_MISMATCH", "A proposal must return exactly one receipt", 502)
+        item = receipt[0]
+        state = item.get("status")
+        if (state not in {"pending", "committed", "cancelled", "expired"}
+                or item.get("operation") != operation
+                or item.get("requires_confirmation") is not (state == "pending")
+                or not isinstance(item.get("proposal_ref"), str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", item["proposal_ref"])):
+            raise HubError("SCHEMA_MISMATCH", "The application returned an inconsistent proposal receipt", 502)
+        out_meta.update(workflow="proposal", status=state, requires_confirmation=state == "pending")
+        return {"success": True, "data": receipt, "meta": out_meta, "trace_id": trace_id}
     if type(meta.get("requires_confirmation")) is bool:
         out_meta["requires_confirmation"] = meta["requires_confirmation"]
     return {"success": True, "data": receipt, "meta": out_meta, "trace_id": trace_id}

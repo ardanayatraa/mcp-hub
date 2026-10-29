@@ -3,6 +3,7 @@ import json
 import os
 import secrets
 from pathlib import Path
+from integration_state import require_legacy_mode
 
 ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / '.verification' / 'laravel-connection.json'
@@ -21,6 +22,7 @@ def source_path():
 
 def configure():
     target = source_path() / '.env'
+    require_legacy_mode(target.parent)
     STATE.parent.mkdir(exist_ok=True)
     state = json.loads(STATE.read_text()) if STATE.exists() else {
         'source_url': os.environ.get('LARAVEL_SOURCE_URL', 'http://127.0.0.1:8081'),

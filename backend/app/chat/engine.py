@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.chat import providers, registry
 from app.chat import settings as chat_settings
+from app.chat.exports import export_receipts
 from app.config import Settings, get_settings
 from app.connectors.discovery import connector_secret, sync_source_permissions
 from app.errors import HubError
@@ -327,6 +328,7 @@ class Turn:
         answer: list[str] = []
         used: list[dict] = []
         proposals: list[dict] = []
+        exports: list[dict] = []
         notices: list[dict] = []
         steps = 0
 
@@ -384,6 +386,12 @@ class Turn:
                                     "data": payload.get("data"), "trace_id": self.trace}
                         proposals.append(proposal)
                         await emit("proposal", proposal)
+                    if failure is None:
+                        receipts = export_receipts(payload)
+                        if receipts:
+                            report = {"tool": name, "title": titles.get(name, name), "data": receipts, "trace_id": self.trace}
+                            exports.append(report)
+                            await emit("export", report)
                     if failure:
                         content = f"{failure.code}: {failure.message}"
                     else:
@@ -394,6 +402,6 @@ class Turn:
                 conversation.add_results(results)
         finally:
             await conversation.close()
-        return {"text": "".join(answer), "tools": used, "proposals": proposals, "notices": notices, "steps": steps,
+        return {"text": "".join(answer), "tools": used, "proposals": proposals, "exports": exports, "notices": notices, "steps": steps,
                 "trace_id": self.trace}
 

@@ -20,6 +20,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "uvicorn[standard]>=0.32",
     "anthropic>=1.13.0",
+    "redis>=5.2,<8",
+    "pyyaml>=6.0.3,<7",
 ]
 
 [dependency-groups]

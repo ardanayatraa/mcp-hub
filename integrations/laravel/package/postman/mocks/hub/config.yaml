@@ -1,0 +1,10 @@
+version: 1
+name: local-hub-contract
+protocol: http
+description: Local MCP Hub protocol subset for testing the Laravel transport.
+port: 18131
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

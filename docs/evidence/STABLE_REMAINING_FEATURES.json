@@ -1,0 +1,260 @@
+{
+  "date": "2026-10-29",
+  "timezone": "Asia/Singapore",
+  "target": "synthetic local fixtures and a code-only private application copy",
+  "hub_sqlite": {
+    "tests": 365,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "assertions": 0,
+    "time": 110.81
+  },
+  "hub_postgres": {
+    "tests": 363,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "assertions": 0,
+    "time": 259.611
+  },
+  "postgres_note": "Full 363-case run passed; two later malformed-export-event cases passed in a focused nine-case run.",
+  "package_modern": {
+    "tests": 116,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "assertions": 520,
+    "time": 4.265503
+  },
+  "native_transactions": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "assertions": 71,
+    "time": 7.561599
+  },
+  "private_pilot_connector": {
+    "tests": 85,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "assertions": 1052,
+    "time": 15.629085
+  },
+  "private_pilot_client": {
+    "tests": 11,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "assertions": 33,
+    "time": 0.714469
+  },
+  "pilot_preservation": {
+    "status": "applied",
+    "environment_unchanged": true,
+    "configuration_unchanged": true
+  },
+  "original_application_modified": false,
+  "export_http": [
+    {
+      "actor": 1,
+      "format": "csv",
+      "status": 200
+    },
+    {
+      "actor": 1,
+      "format": "pdf",
+      "status": 200
+    },
+    {
+      "actor": 2,
+      "format": "csv",
+      "status": 404
+    },
+    {
+      "actor": 2,
+      "format": "pdf",
+      "status": 404
+    }
+  ],
+  "exports_files": [
+    "CSV formula escaping verified",
+    "XLSX ZIP/XML/inline-string types, wrapping and headers verified",
+    "PDF text extraction and rendered page visually verified"
+  ],
+  "load_smoke": {
+    "runner": "Postman local, fixed four VUs, 12-second delay per request",
+    "workload": "Source health and capabilities metadata only",
+    "duration_seconds": 61,
+    "requests": 16,
+    "metrics": {
+      "responseTime": {
+        "avg": 266,
+        "min": 198,
+        "max": 330,
+        "percentile90": 324,
+        "percentile95": 330,
+        "percentile99": 330
+      },
+      "errors": {
+        "percentage": 0,
+        "segmentation": {
+          "errorTypes": {}
+        },
+        "totalExecutions": 16,
+        "transportErrorExecutions": 0,
+        "scriptErrorExecutions": 0
+      },
+      "requestThroughput": {
+        "sum": 16,
+        "rate": 0.26
+      },
+      "virtualUsers": {
+        "avg": 4
+      },
+      "testFailures": {
+        "percentage": 0,
+        "totalRequests": 16,
+        "requestsWithFailedAssertions": 0
+      }
+    },
+    "exit_code": 0,
+    "recorded_to_postman": false,
+    "production_capacity_claim": false,
+    "prior_attempt": "Fixture was offline; connection failures did not measure capacity. Fixture readiness was checked before the successful run."
+  },
+  "frontend_build": "Type checking and production build passed; 179 modules",
+  "workflow_lint": "actionlint 1.7.7 passed for Hub CI, aaPanel deployment and package tests",
+  "migration_planner_tests": "Six preservation/path/dependency/concurrent-edit/recovery tests passed",
+  "package_hosted_ci": {
+    "commit": "9b8e7628d2211221c57e068c1c7c3a2f96e31464",
+    "url": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40856404324",
+    "conclusion": "success",
+    "latest_documentation_commit_ci": {
+      "commit": "5ff6b2362ac67985f6a5a8526be11e5c3e3cf284",
+      "run_id": 40857417214,
+      "url": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40857417214",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 123391752440,
+          "name": "native-postgres",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752764,
+          "name": "assets",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752846,
+          "name": "Laravel 8 / PHP 7.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752883,
+          "name": "Laravel 6 / PHP 7.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752893,
+          "name": "Laravel 7 / PHP 7.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752922,
+          "name": "Laravel 5.8 / PHP 7.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752959,
+          "name": "Laravel 12 / PHP 8.4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752962,
+          "name": "Laravel 5.8 / PHP 7.4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752966,
+          "name": "Laravel 11 / PHP 8.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752978,
+          "name": "Laravel 13 / PHP 8.4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753009,
+          "name": "Laravel 9 / PHP 8.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753021,
+          "name": "Laravel 9 / PHP 8.0",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753068,
+          "name": "Laravel 10 / PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753153,
+          "name": "Laravel 13 / PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753211,
+          "name": "Laravel 12 / PHP 8.2",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "change_since_downloaded_matrix": "Documentation only; implementation unchanged."
+    },
+    "compatibility_jobs_passed": 13,
+    "tests_per_compatibility_job": 116,
+    "optional_skips_per_job": 2,
+    "native_postgres_assertions": 71,
+    "chat_assets_passed": true,
+    "pull_request": "https://github.com/ardanayatraa/laravel-mcp-hub/pull/2"
+  },
+  "distribution_archive": {
+    "status": "passed",
+    "sha256": "d93c1e745db59eed0a62f48a67df3a4e526bb9e7b723da9fde02cb338ceb2c31",
+    "files": 78,
+    "bytes": 93036,
+    "source_commit": "5ff6b23",
+    "matches_reviewed_source_normalized_line_endings": true,
+    "runtime_assets_and_migrations_present": true,
+    "credentials_and_development_artifacts_excluded": true,
+    "published": false
+  },
+  "aapanel_accessed": false,
+  "production_deployed": false,
+  "stable_published": false,
+  "remaining": [
+    "Review and merge the package publication branch, then create the stable release",
+    "Review host legacy dependency advisories/vendor customizations before real app cutover",
+    "Review the Hub feature branch and activate real deployment only when requested"
+  ]
+}
