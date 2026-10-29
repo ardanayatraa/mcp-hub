@@ -1,0 +1,71 @@
+{
+  "checked_on": "2026-10-28",
+  "status": "local_alpha",
+  "package": "mcp-hub/laravel-connector",
+  "default_business_models": [],
+  "runtime": {
+    "php": "8.3.16",
+    "sandbox_laravel": "12.70.2",
+    "existing_application_laravel": "9.52.21"
+  },
+  "sandbox": {
+    "url": "http://127.0.0.1:18120",
+    "tests_passed": 17,
+    "assertions": 58,
+    "connector_tests": 14,
+    "postman_real_http_transport_tests": 1,
+    "scaffold_tests": 2,
+    "account_isolation": true,
+    "sensitive_field_rejection": true,
+    "assertion_replay_rejected": true,
+    "web_demo_two_users_verified": true,
+    "actual_hub_manifest_validator_passed": true,
+    "config_and_route_cache_passed": true,
+    "composer_validate_passed": true
+  },
+  "local_application": {
+    "url": "http://127.0.0.1:18881",
+    "mcp_tests_passed": 83,
+    "mcp_assertions": 1048,
+    "ai_integration_tests_passed": 69,
+    "ai_integration_assertions": 453,
+    "regression_database": "isolated SQLite in memory",
+    "package_hub_transport": true,
+    "existing_source_routes_and_domain_rules_retained": true,
+    "live_doctor_online_passed": true,
+    "source_managed_connector_active": true,
+    "live_catalog_models": 4,
+    "live_catalog_read_tools": 11,
+    "live_verification_read_business_records": false,
+    "business_database_mutations": false,
+    "credentials_rotated": false,
+    "dedicated_php_runtime": true,
+    "global_laragon_php_changed": false
+  },
+  "environment_repairs": [
+    "Started the existing local Hub only after confirming its port was free.",
+    "Aligned the private launcher with the existing working dev.env encryption key.",
+    "Added the dedicated local application origin to the private Hub allowlist.",
+    "Aligned callback URL and stale private verification state with current application credentials.",
+    "Retained rollback backups under the ignored .verification directory."
+  ],
+  "vendor_reconciliation": {
+    "framework_or_locked_dependency_upgrades": 0,
+    "new_locked_packages": 1,
+    "previously_unlocked_vendor_packages_removed_by_composer": [
+      "dompdf/dompdf 3.1.6",
+      "dompdf/php-font-lib 1.0.2",
+      "dompdf/php-svg-lib 1.0.2",
+      "masterminds/html5 2.11.0",
+      "sabberworm/php-css-parser 9.5.0"
+    ]
+  },
+  "limits": [
+    "Fresh Laravel 9 installation was blocked by Composer security advisories; checks were not disabled.",
+    "The existing application still has dependency advisories outside this package task.",
+    "Generic source behavior was exercised on Laravel 12; Laravel 9 was exercised through the existing application adapter.",
+    "Other Laravel majors, one-time pairing, and a generic settings UI are not implemented or verified by this alpha.",
+    "A live paid model completion was not invoked.",
+    "Production was not deployed."
+  ]
+}

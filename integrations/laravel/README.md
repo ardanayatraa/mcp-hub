@@ -1,5 +1,57 @@
 # Laravel adapter
 
+The reusable Composer package proposal is documented in
+[Laravel MCP Hub Connector PRD](package/PRD.md). It covers compatibility with legacy
+and modern Laravel applications, automated onboarding, and migration from this overlay.
+
+## Composer package pilot
+
+The development [public-package migration guide](PUBLIC_PACKAGE_MIGRATION.md)
+records the isolated migration, preservation checks and recovery process. It does
+not change the installed application until an explicit target migration is run.
+
+Public release: [ardanayatraa/laravel-mcp-hub on Packagist](https://packagist.org/packages/ardanayatraa/laravel-mcp-hub),
+[source repository](https://github.com/ardanayatraa/laravel-mcp-hub), MIT,
+version v0.2.0-alpha.1. The standalone checkout lives in repositories/laravel-mcp-hub
+under the Hub workspace and has a separate Git history.
+
+The generic [package alpha](package/README.md) has an empty default model list.
+The working [Laravel 12 sandbox](sandbox-modern/SANDBOX.md) is available locally at
+http://127.0.0.1:18120 with dummy users and orders.
+
+The local HiReach installation uses the package's Hub transport and its existing
+application-owned registry, source routes, actor checks and permissions. Run
+**.\integrations\laravel\dev-hireach.ps1** from the repository root to start the
+configured local Hub and HiReach runtime when their ports are free. HiReach runs
+at http://127.0.0.1:18881 because the separate Laragon web runtime currently uses
+PHP 7.4, while the application's installed dependencies need PHP 8.1 or later.
+The dedicated runtime uses the available PHP 8.3 CLI.
+
+The pilot verified 83 MCP tests and 69 AI integration tests in isolated SQLite
+databases, plus live source health and a matching Hub catalog of 4 models and
+11 read tools. Live catalog verification does not read business records.
+The generic package sandbox passed 14 connector tests and one real HTTP transport
+test against the local Postman simulation.
+
+The public 0.2 alpha retains Laravel 5.8 through 13 support in one package, with
+PHP 7.2.5 as the package minimum and effective PHP requirements following the
+framework. All 13 PHP/framework CI combinations passed. The local pilot above
+still uses its earlier path dependency; this compatibility release does not
+change application dependencies.
+
+The unreleased `feature/stable-1.0` branch now implements one-use pairing/recovery,
+durable replay protection, authenticated CRUD proposals, protected settings/chat,
+and private queued CSV/XLSX/PDF exports. Its final public-package CI passed all
+13 compatibility combinations (116 tests each, two opt-in skips), plus separate
+native PostgreSQL and chat asset jobs. See [PR #2](https://github.com/ardanayatraa/laravel-mcp-hub/pull/2)
+and [the release evidence](../../docs/STABLE_RELEASE.md).
+
+An additional code-only copy of HiReach adopted the public development package
+and passed 85 native connector tests and 11 client tests. Its environment and
+connector configuration hashes were preserved. The original application was not
+changed by that cutover test. Review the host's dependency advisories and its
+vendor customization before applying the migration to the real installation.
+
 The connected application owns model registrations, fields and permissions. MCP Hub
 discovers its approved tools through the source API. Registering a model requires no
 per-model Hub code or custom Artisan command.

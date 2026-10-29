@@ -115,7 +115,9 @@ WRITE_META = {
     "additionalProperties": False,
     "required": ["operation", "as_of", "contains_personal_data"],
     "properties": {"operation": {"enum": ["create", "update", "delete"]}, "as_of": {"type": "string"},
-                   "contains_personal_data": {"const": False}, "requires_confirmation": {"type": "boolean"}},
+                   "contains_personal_data": {"const": False}, "requires_confirmation": {"type": "boolean"},
+                   "workflow": {"enum": ["direct", "proposal"]},
+                   "status": {"enum": ["pending", "committed", "cancelled", "expired"]}},
 }
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
@@ -243,7 +245,7 @@ def callable_tools(db: Session, caller: Caller) -> list[ToolDefinition]:
             continue
         if tool.template in WRITE_TEMPLATES and not caller.can_write:
             continue
-        if not caller.allows(tool.mcp_name) or tool.content_hash != content_fingerprint(tool, mapping, module):
+        if not caller.allows_module(tool.module_key) or not caller.allows(tool.mcp_name) or tool.content_hash != content_fingerprint(tool, mapping, module):
             continue
         allowed.append(tool)
     return allowed
@@ -262,7 +264,7 @@ def visible_tools(db: Session, caller: Caller, *, ignore_switches: bool = False)
     return [tool for tool in listed if tool.name not in off]
 
 
-def data_sources(db: Session, application_id: str) -> list[dict]:
+def data_sources(db: Session, application_id: str, caller: Caller | None = None) -> list[dict]:
     """Enabled data sources and the fields the AI may use. Used by list_data_sources."""
 
     rows = db.execute(
@@ -273,6 +275,8 @@ def data_sources(db: Session, application_id: str) -> list[dict]:
     )
     listed = []
     for module, setting in rows:
+        if caller is not None and not caller.allows_module(module.module_key):
+            continue
         policies = policy_map(db, module.id)
         route = dataset_endpoint(module, setting.report_endpoint)
         if route is not None:

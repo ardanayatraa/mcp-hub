@@ -25,6 +25,7 @@ from app.persistence.models import (
     AdminUser,
     Application,
     Connector,
+    McpAccessProfile,
     MfaChallenge,
     ServiceIdentity,
     ToolDefinition,
@@ -44,19 +45,24 @@ from app.security.clients import READ_SCOPE, WRITE_SCOPE
 from app.security.crypto import sha256_hex
 from app.security.mailer import activation_url, require_mailer
 from app.security.passwords import hash_password, password_is_acceptable
+from app.services import profiles
 from app.tools.catalog import HUB_TOOL_NAMES
 
 router = APIRouter(tags=["access"])
 
 
-def _identity_view(row: ServiceIdentity, application: Application | None) -> dict:
+def _identity_view(db: Session, row: ServiceIdentity, application: Application | None) -> dict:
     expires = as_utc(row.expires_at) if row.expires_at else None
     status = "revoked" if row.revoked_at else ("expired" if expires and expires <= utcnow() else "active")
+    profile = db.get(McpAccessProfile, row.profile_id) if row.profile_id else None
+    if status == "active" and row.profile_id and (profile is None or not profile.enabled or profile.app_id != row.app_id):
+        status = "blocked"
     return {
         "id": row.id, "name": row.name, "app_id": row.app_id,
         "app_key": application.key if application else None, "app_name": application.name if application else None,
         "environment": application.environment if application else None,
         "scopes": row.scopes, "write": WRITE_SCOPE in (row.scopes or []), "allowed_tools": row.allowed_tools,
+        "profile_id": row.profile_id, "profile_name": profile.name if profile and profile.app_id == row.app_id else None,
         "expires_at": expires.isoformat() if expires else None, "revoked": row.revoked_at is not None,
         "status": status, "last_used_at": as_utc(row.last_used_at).isoformat() if row.last_used_at else None,
         "created_at": as_utc(row.created_at).isoformat(),
@@ -84,7 +90,7 @@ def identities(app_id: str | None = None, db: Session = Depends(get_db), user: A
         query = query.where(ServiceIdentity.app_id.in_(allowed))
     if app_id:
         query = query.where(ServiceIdentity.app_id == app_id)
-    return ok([_identity_view(row, db.get(Application, row.app_id)) for row in db.scalars(query)])
+    return ok([_identity_view(db, row, db.get(Application, row.app_id)) for row in db.scalars(query)])
 
 
 @router.post("/service-identities")
@@ -96,11 +102,13 @@ def create_identity(payload: dict, db: Session = Depends(get_db), user: AdminUse
     if application is None:
         raise HubError("NOT_FOUND", "Application was not found", 404)
     require_app_access(db, user, application.id)
+    profiles.binding(db, application.id, data["profile_id"])
     raw = "hub_" + secrets.token_urlsafe(32)
     identity = ServiceIdentity(
         id=new_id(), name=data["name"], token_hash=sha256_hex(raw), app_id=application.id,
         scopes=[READ_SCOPE] + ([WRITE_SCOPE] if data["write"] else []),
         allowed_tools=_allowed_tools(db, application, data["allowed_tools"]),
+        profile_id=data["profile_id"],
         expires_at=utcnow() + timedelta(days=data["ttl_days"]) if data["ttl_days"] is not None else None,
     )
     db.add(identity)
@@ -108,13 +116,13 @@ def create_identity(payload: dict, db: Session = Depends(get_db), user: AdminUse
                  app_key=application.key, environment=application.environment)
     db.commit()
     # The token is shown once; only its hash is stored.
-    return ok({**_identity_view(identity, application), "token": raw}, 201)
+    return ok({**_identity_view(db, identity, application), "token": raw}, 201)
 
 
 @router.patch("/service-identities/{identity_id}")
 def update_identity(identity_id: str, payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     require_role(user.role, WRITE_ROLES)
-    identity = db.get(ServiceIdentity, identity_id)
+    identity = db.scalar(select(ServiceIdentity).where(ServiceIdentity.id == identity_id).with_for_update())
     if identity is None:
         raise HubError("NOT_FOUND", "Client key was not found", 404)
     require_app_access(db, user, identity.app_id)
@@ -128,10 +136,13 @@ def update_identity(identity_id: str, payload: dict, db: Session = Depends(get_d
         identity.scopes = [READ_SCOPE] + ([WRITE_SCOPE] if changes["write"] else [])
     if "allowed_tools" in changes:
         identity.allowed_tools = _allowed_tools(db, application, changes["allowed_tools"])
+    if "profile_id" in changes:
+        profiles.binding(db, application.id, changes["profile_id"])
+        identity.profile_id = changes["profile_id"]
     record_audit(db, action="key.update", actor_ref=f"admin:{user.id}", result="success",
                  app_key=application.key, environment=application.environment)
     db.commit()
-    return ok(_identity_view(identity, application))
+    return ok(_identity_view(db, identity, application))
 
 
 @router.post("/service-identities/{identity_id}/revoke")

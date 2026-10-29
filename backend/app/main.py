@@ -13,13 +13,17 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
 from app.api import chat, gateway
+from app.api import enrollments as pairing
 from app.api.v1 import (
     access,
     activity,
     assistant,
     auth,
     connectors,
+    enrollments,
     modules,
+    openapi,
+    profiles,
     providers,
     skills,
     system,
@@ -224,17 +228,20 @@ def create_app() -> FastAPI:
             return JSONResponse({"status": "not_ready"}, status_code=503)
         try:
             db.execute(text("SELECT 1"))
+            from app.security.rate_limit import check_backend
+            check_backend()
         except Exception:
             return JSONResponse({"status": "not_ready"}, status_code=503)
         finally:
             db.close()
         return {"status": "ready"}
 
-    for module in (auth, connectors, modules, tools, skills, providers, access, activity, system, assistant):
+    for module in (auth, connectors, enrollments, modules, openapi, profiles, tools, skills, providers, access, activity, system, assistant):
         app.include_router(module.router, prefix="/api/admin/v1")
     # Called by apps' servers with a client key, like /mcp.
     app.include_router(chat.router)
     app.include_router(gateway.router)
+    app.include_router(pairing.router)
     # Mount last so /api and /health stay reachable. The SDK app serves /mcp.
     app.mount("/", mcp_app)
     return app

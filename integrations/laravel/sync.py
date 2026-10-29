@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from configure import source_path
+from integration_state import require_legacy_mode
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--check', action='store_true', help='Verify source hashes without changing files.')
@@ -14,6 +15,7 @@ root = Path(__file__).resolve().parents[2]
 state = root / '.verification' / 'laravel-installed-hashes.json'
 hashes = json.loads(state.read_text())
 source = source_path()
+require_legacy_mode(source)
 overlay = Path(__file__).parent / 'overlay'
 originals = json.loads((root / '.verification/laravel-originals.json').read_text())
 reviewed = json.loads((Path(__file__).parent / 'source-baselines.json').read_text())

@@ -124,7 +124,8 @@ def is_sensitive_path(field_path: str) -> bool:
     """
 
     for part in str(field_path).split("."):
-        words = [word for word in re.split(r"[_\-]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", part).lower()) if word]
+        separated = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", part)
+        words = [word for word in re.split(r"[_\-]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", separated).lower()) if word]
         candidates = {part.lower(), *words}
         for size in (2, 3):
             candidates.update("_".join(words[index:index + size]) for index in range(len(words) - size + 1))

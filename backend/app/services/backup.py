@@ -16,11 +16,13 @@ from app.persistence.models import (
     AuditEvent,
     ChatSetting,
     Connector,
+    ConnectorEnrollment,
     ConnectorHealthCheck,
     ConnectorSecret,
     ContractSnapshot,
     FieldPolicy,
     GatewayUsage,
+    McpAccessProfile,
     MemorySetting,
     MfaChallenge,
     ModelProvider,
@@ -53,7 +55,9 @@ EXPORT_ORDER = [
     RestToolMapping,
     ToolDefinition,
     ToolTestRun,
+    McpAccessProfile,
     ServiceIdentity,
+    ConnectorEnrollment,
 ]
 # Placeholder tables from earlier releases; their rows are ignored on restore.
 LEGACY_TABLES = {"mcp_server_profiles", "mcp_profile_tools", "skill_definitions"}
@@ -116,6 +120,8 @@ def import_metadata(db: Session, document: dict) -> dict:
                 if value is None and not column.nullable and column.default is None:
                     raise HubError("VALIDATION_FAILED", "Backup required field is missing", 422)
                 values[column.name] = value
+            if model is ConnectorEnrollment and db.get(AdminUser, values["created_by"]) is None:
+                continue
             if model is AdminApplicationScope and db.get(AdminUser, values["user_id"]) is None:
                 continue  # A restore never creates administrators or grants an unknown identity.
             if model is ToolDefinition and not _restorable_tool(values):

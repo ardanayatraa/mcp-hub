@@ -7,6 +7,8 @@ import AppSkillsPanel from "@/components/AppSkillsPanel.vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import DataSourcesPanel from "@/components/DataSourcesPanel.vue";
 import ClientKeysPanel from "@/components/ClientKeysPanel.vue";
+import AccessProfilesPanel from "@/components/AccessProfilesPanel.vue";
+import PairingRecovery from "@/components/PairingRecovery.vue";
 import DeleteAppDialog from "@/components/DeleteAppDialog.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import LoadingSkeleton from "@/components/LoadingSkeleton.vue";
@@ -35,6 +37,8 @@ const TABS = ["sources", "tools", "skills", "chat", "try", "keys", "memory", "co
 const skillsOn = ref<number | undefined>(undefined);
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : "sources");
 const app = ref<AppDetail | null>(null);
+const profilesRevision = ref(0);
+const pairingState = ref<"loading" | "paired" | "manual" | "error">("loading");
 const loadError = ref("");
 const sources = ref<DataSource[]>([]);
 const tools = ref<Tool[]>([]);
@@ -379,8 +383,10 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
     <TryItPanel v-else-if="tab === 'try'" :app="app" @settings="tab = 'chat'" />
 
     <section v-else-if="tab === 'keys'" class="space-y-8">
-      <AppCredentials :app="app" @changed="load()" />
-      <ClientKeysPanel :apps="[app]" scoped />
+      <PairingRecovery :app="app" @state="pairingState = $event" @changed="profilesRevision++; load()" />
+      <AppCredentials v-if="pairingState === 'manual'" :app="app" @changed="load()" />
+      <ClientKeysPanel :key="profilesRevision" :apps="[app]" scoped />
+      <AccessProfilesPanel :apps="[app]" scoped @changed="profilesRevision++" />
     </section>
 
     <MemoryPanel v-else-if="tab === 'memory'" :app="app" />

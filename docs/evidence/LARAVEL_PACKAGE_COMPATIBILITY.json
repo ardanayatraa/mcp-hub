@@ -1,0 +1,218 @@
+{
+  "checked_on": "2026-10-28",
+  "package": "ardanayatraa/laravel-mcp-hub",
+  "version": "v0.2.0-alpha.1",
+  "repository": "https://github.com/ardanayatraa/laravel-mcp-hub",
+  "packagist": "https://packagist.org/packages/ardanayatraa/laravel-mcp-hub",
+  "release": "https://github.com/ardanayatraa/laravel-mcp-hub/releases/tag/v0.2.0-alpha.1",
+  "pull_request": "https://github.com/ardanayatraa/laravel-mcp-hub/pull/1",
+  "release_commit": "3df10018ae8e2cc743e7547d2b2c2ed632f7b6a3",
+  "php_constraint": "^7.2.5 || ^8.0",
+  "supported_laravel_majors": [
+    "5.8",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13"
+  ],
+  "default_business_models": [],
+  "ci": {
+    "release_tag": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40720451662",
+    "release_tag_result": "success",
+    "current_main": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40720744091",
+    "current_main_result": "success",
+    "current_main_commit": "3eb351ef71e3c2c6a9cc5b672300f042a79df8d9",
+    "matrix_artifact_source": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40719563480",
+    "matrix": [
+      {
+        "matrix": "laravel-10-php-8.1",
+        "laravel": "v10.50.4",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 5
+      },
+      {
+        "matrix": "laravel-11-php-8.2",
+        "laravel": "v11.45.0",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 5
+      },
+      {
+        "matrix": "laravel-12-php-8.2",
+        "laravel": "v12.64.0",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 3
+      },
+      {
+        "matrix": "laravel-12-php-8.4",
+        "laravel": "v12.64.0",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 3
+      },
+      {
+        "matrix": "laravel-13-php-8.3",
+        "laravel": "v13.38.0",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 0
+      },
+      {
+        "matrix": "laravel-13-php-8.4",
+        "laravel": "v13.38.0",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 0
+      },
+      {
+        "matrix": "laravel-5.8-php-7.2",
+        "laravel": "v5.8.38",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 17
+      },
+      {
+        "matrix": "laravel-5.8-php-7.4",
+        "laravel": "v5.8.38",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 17
+      },
+      {
+        "matrix": "laravel-6-php-7.2",
+        "laravel": "v6.20.45",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 22
+      },
+      {
+        "matrix": "laravel-7-php-7.2",
+        "laravel": "v7.30.7",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 16
+      },
+      {
+        "matrix": "laravel-8-php-7.3",
+        "laravel": "v8.83.29",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 16
+      },
+      {
+        "matrix": "laravel-9-php-8.0",
+        "laravel": "v9.52.21",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 15
+      },
+      {
+        "matrix": "laravel-9-php-8.2",
+        "laravel": "v9.52.21",
+        "tests": 19,
+        "assertions": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 1,
+        "upstream_advisories": 6
+      }
+    ],
+    "active_tests_per_row": 18,
+    "optional_real_http_test_skipped_per_row": 1
+  },
+  "local_real_http_simulation": [
+    {
+      "laravel": "5.8.38",
+      "php": "7.4.33",
+      "tests": 19,
+      "assertions": 71,
+      "skipped": 0,
+      "target": "local Postman Hub contract simulation"
+    },
+    {
+      "laravel": "12.70.2",
+      "php": "8.3.16",
+      "tests": 19,
+      "assertions": 71,
+      "skipped": 0,
+      "target": "local Postman Hub contract simulation"
+    },
+    {
+      "laravel": "13.38.0",
+      "php": "8.3.16",
+      "tests": 19,
+      "assertions": 71,
+      "skipped": 0,
+      "target": "local Postman Hub contract simulation",
+      "runtime_source": "fresh public Packagist distribution"
+    }
+  ],
+  "publication_checks": {
+    "packagist_release_reference_matches": true,
+    "public_composer_upgrade_from_0_1": true,
+    "fresh_laravel_13_install": true,
+    "custom_repository_needed": false,
+    "fresh_install_advisory_exceptions": false,
+    "fresh_install_audit_advisories": 0,
+    "fresh_install_audit_abandoned": 0,
+    "reflection_confirms_published_runtime_loaded": true,
+    "platform_checks_passed": true,
+    "archive_files": 20,
+    "archive_bytes": 21156,
+    "archive_sha256": "5d31a03f88ff319a31a225f578fe258ae896d365be9e82c5c829266d56ba4995",
+    "private_application_references_in_archive": 0,
+    "runtime_manifest_disables_security_blocking": false,
+    "prototype_or_pilot_dependencies_changed": false
+  },
+  "notes": [
+    "Legacy framework support is retained in the same package and the CI matrix is the release compatibility gate.",
+    "Historical upstream advisories are reviewed by ID only in isolated development fixtures. Full audit reports remain visible; unknown advisories fail.",
+    "Old framework security maintenance is not restored by installing the connector.",
+    "PHP 7.1 is unsupported; application framework and dependency requirements can raise the effective PHP minimum.",
+    "A post-merge CI run exposed a test with an expiry only one second beyond the allowed window. Main now tests a clearly invalid one-hour expiry, avoiding second-boundary timing. Runtime files are identical to the published tag.",
+    "No live Hub provider completion or business-record access was performed for this compatibility release.",
+    "Future Laravel majors require explicit compatibility testing; one-time pairing remains future work."
+  ]
+}

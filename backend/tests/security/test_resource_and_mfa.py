@@ -407,7 +407,8 @@ def test_production_refuses_published_example_secrets():
             "egress_allowed_hosts": "app.example.com", "mcp_public_url": "https://hub.example.com/mcp",
             "mcp_issuer_url": "https://hub.example.com", "allowed_origins": "https://hub.example.com",
             "allow_insecure_http": False, "allow_insecure_tls": False, "egress_allow_loopback": False,
-            "egress_allow_private": False, "allowed_hosts": "hub.example.com"}
+            "egress_allow_private": False, "allowed_hosts": "hub.example.com",
+            "rate_limit_backend": "redis", "rate_limit_redis_url": "redis://:test-only-" + "a" * 32 + "@cache:6379/0"}
     Settings(**good).assert_production_safe()
     Settings(**{**good, "mfa_required": False}).assert_production_safe()  # password-only admins are allowed
     for change, words in (({"session_signing_key": "replace-with-long-random-string"}, "SESSION_SIGNING_KEY"),
@@ -415,7 +416,11 @@ def test_production_refuses_published_example_secrets():
                           ({"admin_initial_password": "ChangeMe-Now-12"}, "ADMIN_INITIAL_PASSWORD"),
                           ({"mcp_public_url": "http://hub.example.com/mcp"}, "MCP_PUBLIC_URL"),
                           ({"allowed_origins": "http://hub.example.com"}, "ALLOWED_ORIGINS"),
-                          ({"allowed_hosts": "localhost"}, "ALLOWED_HOSTS")):
+                          ({"allowed_hosts": "localhost"}, "ALLOWED_HOSTS"),
+                          ({"rate_limit_backend": "memory"}, "shared Redis"),
+                          ({"rate_limit_redis_url": "redis://cache/0"}, "Redis authentication"),
+                          ({"rate_limit_redis_url": "redis://:short@cache/0"}, "Redis authentication"),
+                          ({"rate_limit_redis_url": "redis://:" + "%61" * 12 + "@cache/0"}, "Redis authentication")):
         with pytest.raises(HubError, match=words):
             Settings(**{**good, **change}).assert_production_safe()
 

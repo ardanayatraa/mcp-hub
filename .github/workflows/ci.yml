@@ -10,6 +10,12 @@ jobs:
       matrix:
         database: [sqlite, postgres]
     services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
       postgres:
         image: postgres:16-alpine
         env:
@@ -27,6 +33,7 @@ jobs:
       ENVIRONMENT: test
       SECRET_ENCRYPTION_KEY: WyzcJBTgZUDuBhqKXe8GWpoJSvp2nR5J9ag3X5fMf5g=
       SESSION_SIGNING_KEY: ci-only-session-signing-key
+      HUB_TEST_REDIS_URL: redis://localhost:6379/0
       DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://hub:ci-only-password@localhost:5432/hub_test' || 'sqlite+pysqlite:///hub-ci.db' }}
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +54,12 @@ jobs:
       - name: Dependency vulnerability audit
         if: matrix.database == 'sqlite'
         run: uv run --frozen pip-audit --format json --output dependency-audit.json
+      - name: Deployment preservation, rollback and archive security
+        if: matrix.database == 'sqlite'
+        run: uv run --frozen python -m unittest discover -s ../deploy/aapanel/tests -v
+      - name: Public package migration preservation and guarded legacy maintenance
+        if: matrix.database == 'sqlite'
+        run: uv run --frozen python -m unittest discover -s ../integrations/laravel/tests -v
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -79,6 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: ci-only-database-password
+      REDIS_PASSWORD: ci-only-redis-password
       SECRET_ENCRYPTION_KEY: WyzcJBTgZUDuBhqKXe8GWpoJSvp2nR5J9ag3X5fMf5g=
       SESSION_SIGNING_KEY: ci-only-session-signing-key
       ADMIN_INITIAL_PASSWORD: ChangeMe-Now-12
@@ -95,6 +109,7 @@ jobs:
           docker compose -f infra/compose.yml restart backend
           for attempt in $(seq 1 30); do
             if curl --fail --silent --insecure https://localhost:8443/ready; then exit 0; fi
+            if [ "$attempt" -eq 30 ]; then exit 1; fi
             sleep 2
           done
           exit 1
@@ -103,3 +118,9 @@ jobs:
         run: |
           docker compose -f infra/compose.yml logs
           docker compose -f infra/compose.yml down --volumes
+
+  deploy-aapanel:
+    needs: [docker-smoke]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AAPANEL_DEPLOY_ENABLED == 'true'
+    uses: ./.github/workflows/deploy-aapanel.yml
+    secrets: inherit

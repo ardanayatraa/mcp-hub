@@ -6,7 +6,7 @@ from app.security.authorization import is_sensitive_path
 
 @pytest.mark.parametrize("name", ["otp", "otp_code", "smsOtp", "pin", "pin_code", "cvv", "card_cvc", "verification_code",
                                   "authCode", "msisdn", "customer_msisdn", "card_number", "iban", "bank_account_number",
-                                  "passport_no", "npwp", "ktp_number", "owner_email", "contactPhone"])
+                                  "passport_no", "npwp", "ktp_number", "owner_email", "contactPhone", "APIKey", "userSSN"])
 def test_credentials_and_identifiers_are_always_hidden(name):
     assert is_sensitive_path(name)
 

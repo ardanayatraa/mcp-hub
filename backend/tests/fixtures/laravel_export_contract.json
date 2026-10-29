@@ -1,0 +1,428 @@
+{
+    "contract_version": "1.0",
+    "application": "your_app",
+    "managed_by": "application",
+    "manifest_version": "42b0726dae575a17482b8acfb7c7b5f2",
+    "modules": [
+        {
+            "key": "orders",
+            "name": "orders",
+            "schema_version": "1.0",
+            "supported_operations": [
+                "read"
+            ],
+            "readable_fields": [
+                "ref",
+                "title",
+                "status",
+                "total",
+                "count",
+                "export_ref",
+                "format",
+                "expires_at",
+                "coverage",
+                "row_count",
+                "download_url"
+            ],
+            "writable_fields": [],
+            "field_policies": {},
+            "max_page_size": 50,
+            "read_endpoints": [
+                {
+                    "tool_key": "your_app.orders.list",
+                    "description": "Read permitted orders records.",
+                    "method": "GET",
+                    "path_template": "\/api\/ai\/v1\/orders\/list",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 50
+                            },
+                            "cursor": {
+                                "type": "string",
+                                "maxLength": 20
+                            },
+                            "status": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "enum": [
+                                    "paid",
+                                    "pending"
+                                ]
+                            }
+                        }
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ref": {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                "title": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 512
+                                },
+                                "status": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 512
+                                },
+                                "total": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "ref",
+                                "title",
+                                "status",
+                                "total"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "tool_key": "your_app.orders.count",
+                    "description": "Read permitted orders records.",
+                    "method": "GET",
+                    "path_template": "\/api\/ai\/v1\/orders\/count",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "enum": [
+                                    "paid",
+                                    "pending"
+                                ]
+                            }
+                        }
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "count": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "count"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "tool_key": "your_app.orders.get",
+                    "description": "Read permitted orders records.",
+                    "method": "GET",
+                    "path_template": "\/api\/ai\/v1\/orders\/get",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "enum": [
+                                    "paid",
+                                    "pending"
+                                ]
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                            }
+                        },
+                        "required": [
+                            "title"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ref": {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                },
+                                "title": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 512
+                                },
+                                "status": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 512
+                                },
+                                "total": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "ref",
+                                "title",
+                                "status",
+                                "total"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "tool_key": "your_app.orders.export",
+                    "description": "Prepare a private, expiring report download in the source application. Check export_status until ready. Partial coverage is limited, not a full total.",
+                    "method": "POST",
+                    "safe_query": true,
+                    "path_template": "\/api\/ai\/v1\/orders\/exports",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "format": {
+                                "type": "string",
+                                "maxLength": 4,
+                                "enum": [
+                                    "csv",
+                                    "xlsx",
+                                    "pdf"
+                                ]
+                            },
+                            "columns": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 512
+                            },
+                            "metric": {
+                                "type": "string",
+                                "maxLength": 8,
+                                "enum": [
+                                    "records",
+                                    "count",
+                                    "sum",
+                                    "avg",
+                                    "min",
+                                    "max"
+                                ]
+                            },
+                            "field": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 63
+                            },
+                            "group_by": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 127
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 500
+                            },
+                            "status": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "enum": [
+                                    "paid",
+                                    "pending"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "format"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "export_ref": {
+                                    "type": "string",
+                                    "maxLength": 52
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "pending",
+                                        "building",
+                                        "ready",
+                                        "failed",
+                                        "expired"
+                                    ]
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "enum": [
+                                        "csv",
+                                        "xlsx",
+                                        "pdf"
+                                    ]
+                                },
+                                "expires_at": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                },
+                                "coverage": {
+                                    "type": "string",
+                                    "enum": [
+                                        "unknown",
+                                        "partial",
+                                        "complete"
+                                    ]
+                                },
+                                "row_count": {
+                                    "type": "integer"
+                                },
+                                "download_url": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 512
+                                }
+                            },
+                            "required": [
+                                "export_ref",
+                                "status",
+                                "format",
+                                "expires_at",
+                                "coverage",
+                                "row_count",
+                                "download_url"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "tool_key": "your_app.orders.export_status",
+                    "description": "Check a report export. Download requires signing in to the source application before expiry.",
+                    "method": "GET",
+                    "path_template": "\/api\/ai\/v1\/orders\/exports\/{export_ref}",
+                    "requires_user_context": true,
+                    "tenant_field": "tenant_id",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "export_ref": {
+                                "type": "string",
+                                "minLength": 52,
+                                "maxLength": 52
+                            }
+                        },
+                        "required": [
+                            "export_ref"
+                        ]
+                    },
+                    "output_schema": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "export_ref": {
+                                    "type": "string",
+                                    "maxLength": 52
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "pending",
+                                        "building",
+                                        "ready",
+                                        "failed",
+                                        "expired"
+                                    ]
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "enum": [
+                                        "csv",
+                                        "xlsx",
+                                        "pdf"
+                                    ]
+                                },
+                                "expires_at": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                },
+                                "coverage": {
+                                    "type": "string",
+                                    "enum": [
+                                        "unknown",
+                                        "partial",
+                                        "complete"
+                                    ]
+                                },
+                                "row_count": {
+                                    "type": "integer"
+                                },
+                                "download_url": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 512
+                                }
+                            },
+                            "required": [
+                                "export_ref",
+                                "status",
+                                "format",
+                                "expires_at",
+                                "coverage",
+                                "row_count",
+                                "download_url"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

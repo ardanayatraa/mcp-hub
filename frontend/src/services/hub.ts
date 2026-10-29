@@ -380,11 +380,25 @@ export interface ClientKey {
   environment: string | null;
   write: boolean;
   allowed_tools: string[] | null;
+  profile_id: string | null;
+  profile_name: string | null;
   expires_at: string | null;
-  status: "active" | "expired" | "revoked";
+  status: "active" | "expired" | "revoked" | "blocked";
   last_used_at: string | null;
   created_at: string;
   token?: string;
+}
+
+export interface McpAccessProfile {
+  id: string;
+  app_id: string;
+  name: string;
+  enabled: boolean;
+  modules: string[];
+  tools: string[];
+  revision: number;
+  bound_keys: number;
+  created_at: string;
 }
 
 export interface AdminUserRow {
@@ -507,6 +521,37 @@ export interface SystemInfo {
   security: Record<string, boolean>;
 }
 
+export interface ConnectorEnrollment {
+  id: string;
+  connector_id: string;
+  status: "pending" | "claimed" | "verifying" | "failed" | "active" | "expired" | "revoked";
+  source_url: string;
+  expires_at: string;
+  management_expires_at: string;
+  created_at: string;
+  replacement_id: string | null;
+  code?: string;
+}
+
+export interface OpenApiCandidate {
+  id: string;
+  method: string;
+  path: string;
+  eligible: boolean;
+  reason: string | null;
+  module_key: string | null;
+  template: string | null;
+  payload: Record<string, unknown> | null;
+  input_fields?: string[];
+  output_fields?: string[];
+  excluded_output_fields?: number;
+  auth_requirements?: string[];
+  requires_user_context?: boolean;
+}
+export interface OpenApiPreview { fingerprint: string; candidates: OpenApiCandidate[] }
+export interface OpenApiSource { connector_id: string; document?: string; source_url?: string; format: "json" | "yaml" }
+export interface OpenApiImport { fingerprint: string; created: {id: string; tool_key: string; status: string}[] }
+
 const json = (body: unknown) => ({ body: JSON.stringify(body) });
 const post = <T>(path: string, body?: unknown) => api<T>(path, { method: "POST", ...(body === undefined ? {} : json(body)) });
 const patch = <T>(path: string, body: unknown) => api<T>(path, { method: "PATCH", ...json(body) });
@@ -519,6 +564,13 @@ export const hub = {
   apps: () => api<AppSummary[]>("/connectors"),
   app: (id: string) => api<AppDetail>(`/connectors/${id}`),
   createApp: (body: Record<string, unknown>) => post<AppSummary>("/connectors", body),
+  createEnrollment: (body: {name: string; app_key: string; environment: string; base_url: string}) =>
+    post<ConnectorEnrollment>("/connector-enrollments", body),
+  enrollment: (id: string) => api<ConnectorEnrollment>("/connector-enrollments/" + encodeURIComponent(id)),
+  enrollments: (connectorId: string) => api<ConnectorEnrollment[]>(`/connector-enrollments?connector_id=${encodeURIComponent(connectorId)}`),
+  renewEnrollment: (id: string) => post<ConnectorEnrollment>(`/connector-enrollments/${encodeURIComponent(id)}/renew`),
+  replaceEnrollment: (id: string) => post<ConnectorEnrollment>(`/connector-enrollments/${encodeURIComponent(id)}/replace`),
+  revokeEnrollment: (id: string) => post<ConnectorEnrollment>("/connector-enrollments/" + encodeURIComponent(id) + "/revoke"),
   updateApp: (id: string, body: Record<string, unknown>) => patch<AppSummary>(`/connectors/${id}`, body),
   deleteApp: (id: string) => remove(`/connectors/${id}`),
   testApp: (id: string) => post<Health>(`/connectors/${id}/test`),
@@ -535,6 +587,8 @@ export const hub = {
   builtins: () => api<BuiltinTool[]>("/tools/builtins"),
   capabilities: () => api<Capabilities>("/tools/capabilities"),
   createTool: (body: Record<string, unknown>) => post<Tool>("/tools", body),
+  previewOpenApi: (body: OpenApiSource) => post<OpenApiPreview>("/tools/openapi/preview", body),
+  importOpenApi: (body: OpenApiSource & {fingerprint: string; selected: string[]}) => post<OpenApiImport>("/tools/openapi/import", body),
   updateTool: (id: string, body: Record<string, unknown>) => patch<Tool>(`/tools/${id}`, body),
   deleteTool: (id: string) => remove(`/tools/${id}`),
   testTool: (id: string, body: Record<string, unknown>) => post<TestResult>(`/tools/${id}/test`, body),
@@ -580,6 +634,9 @@ export const hub = {
   gatewayModels: (connectorId: string) => api<{ models: GatewayModel[] }>(`/connectors/${connectorId}/chat/gateway-models`),
 
   keys: (appId?: string) => api<ClientKey[]>(`/service-identities${appId ? `?app_id=${encodeURIComponent(appId)}` : ""}`),
+  profiles: (appId: string) => api<McpAccessProfile[]>(`/mcp-profiles?app_id=${encodeURIComponent(appId)}`),
+  createProfile: (body: Record<string, unknown>) => post<McpAccessProfile>("/mcp-profiles", body),
+  updateProfile: (id: string, body: Record<string, unknown>) => patch<McpAccessProfile>(`/mcp-profiles/${id}`, body),
   createKey: (body: Record<string, unknown>) => post<ClientKey>("/service-identities", body),
   updateKey: (id: string, body: Record<string, unknown>) => patch<ClientKey>(`/service-identities/${id}`, body),
   revokeKey: (id: string) => post(`/service-identities/${id}/revoke`),

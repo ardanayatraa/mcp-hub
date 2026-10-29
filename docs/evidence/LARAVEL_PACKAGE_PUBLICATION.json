@@ -1,0 +1,41 @@
+{
+  "published_on": "2026-10-28",
+  "repository": "https://github.com/ardanayatraa/laravel-mcp-hub",
+  "visibility": "public",
+  "license": "MIT",
+  "package": "ardanayatraa/laravel-mcp-hub",
+  "packagist": "https://packagist.org/packages/ardanayatraa/laravel-mcp-hub",
+  "version": "v0.1.0-alpha.1",
+  "release": "https://github.com/ardanayatraa/laravel-mcp-hub/releases/tag/v0.1.0-alpha.1",
+  "commit": "0a11256f744c57457626af6811ac8eb7e6ebc96d",
+  "local_checkout": "repositories/laravel-mcp-hub",
+  "local_tests": {
+    "passed": 18,
+    "assertions": 60,
+    "skipped": 0,
+    "real_http_contract_simulation": true
+  },
+  "ci": {
+    "url": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40710425302",
+    "php_8_2": "success",
+    "php_8_3": "success",
+    "php_8_4": "success"
+  },
+  "publication_checks": {
+    "composer_validate_strict": true,
+    "archive_entries": 19,
+    "known_runtime_credential_scan": "passed",
+    "private_project_reference_scan": "passed",
+    "packagist_version_visible": true,
+    "packagist_auto_updates_visible": true,
+    "fresh_packagist_install_without_custom_repository": true,
+    "fresh_install_autoload": true
+  },
+  "screenshot": "LARAVEL_PACKAGE_PACKAGIST.png",
+  "limits": [
+    "Alpha release; generic connector tested on Laravel 12.",
+    "Laravel 9 integration evidence covers an existing application adapter.",
+    "Other Laravel majors and one-time pairing remain future work.",
+    "The existing local pilot dependency was retained during publication."
+  ]
+}

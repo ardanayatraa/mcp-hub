@@ -5,7 +5,7 @@ import CodeBlock from "@/components/CodeBlock.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import LoadingSkeleton from "@/components/LoadingSkeleton.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
-import { hub, type AppSummary, type ClientKey, type SystemInfo, type Tool } from "@/services/hub";
+import { hub, type AppSummary, type ClientKey, type McpAccessProfile, type SystemInfo, type Tool } from "@/services/hub";
 import { useSession } from "@/stores/session";
 import { useToast } from "@/stores/toast";
 import { errorMessage, timeAgo, untilLabel } from "@/utils/format";
@@ -21,8 +21,11 @@ const system = ref<SystemInfo | null>(null);
 const loaded = ref(false);
 const busy = ref(false);
 const showRevoked = ref(false);
+const profiles = ref<McpAccessProfile[]>([]);
+const profilesLoaded = ref(false);
+let profileRequest = 0;
 
-const keyForm = ref({ open: false, editing: "" as string, name: "AI assistant", app_id: "", ttl_days: 30 as number | null, write: false, limit: false, allowed: [] as string[] });
+const keyForm = ref({ open: false, editing: "" as string, name: "AI assistant", app_id: "", profile_id: "", ttl_days: 30 as number | null, write: false, limit: false, allowed: [] as string[] });
 const created = ref<ClientKey | null>(null);
 const revoking = ref<ClientKey | null>(null);
 
@@ -39,8 +42,21 @@ async function load() {
 }
 onMounted(load);
 
-const visibleKeys = computed(() => keys.value.filter((key) => showRevoked.value || key.status === "active"));
+const visibleKeys = computed(() => keys.value.filter((key) => showRevoked.value || ["active", "blocked"].includes(key.status)));
 const activeApps = computed(() => props.apps.filter((app) => app.status !== "archived"));
+watch(() => [keyForm.value.open, keyForm.value.app_id] as const, async ([open, appId], old) => {
+  const request = ++profileRequest;
+  profiles.value = [];
+  profilesLoaded.value = false;
+  if (!open) return;
+  if (old?.[0] && appId !== old[1]) keyForm.value.profile_id = "";
+  const app = props.apps.find((item) => item.id === appId);
+  if (!app) return;
+  try {
+    const rows = await hub.profiles(app.app_id);
+    if (request === profileRequest) { profiles.value = rows; profilesLoaded.value = true; }
+  } catch (exc) { if (request === profileRequest) toast.error(errorMessage(exc)); }
+});
 const appTools = computed(() => {
   const app = props.apps.find((item) => item.id === keyForm.value.app_id);
   const own = tools.value.filter((tool) => tool.app_id === app?.app_id && tool.status !== "archived")
@@ -60,27 +76,29 @@ const snippet = computed(() => JSON.stringify({
 }, null, 2));
 
 function newKey() {
-  keyForm.value = { open: true, editing: "", name: "AI assistant", app_id: activeApps.value[0]?.id ?? "", ttl_days: 30, write: false, limit: false, allowed: [] };
+  keyForm.value = { open: true, editing: "", name: "AI assistant", app_id: activeApps.value[0]?.id ?? "", profile_id: "", ttl_days: 30, write: false, limit: false, allowed: [] };
 }
 
 function editKey(key: ClientKey) {
   const app = props.apps.find((item) => item.app_id === key.app_id);
-  keyForm.value = { open: true, editing: key.id, name: key.name, app_id: app?.id ?? "", ttl_days: 30, write: key.write,
+  keyForm.value = { open: true, editing: key.id, name: key.name, app_id: app?.id ?? "", profile_id: key.profile_id ?? "", ttl_days: 30, write: key.write,
                     limit: key.allowed_tools !== null, allowed: [...(key.allowed_tools ?? [])] };
 }
 
 async function saveKey() {
+  if (!profilesLoaded.value) return;
   busy.value = true;
   const form = keyForm.value;
   try {
     const allowed_tools = form.limit ? form.allowed.filter((name) => form.write || !writeNames.value.has(name)) : null;
+    const profile_id = form.profile_id || null;
     if (form.editing) {
-      await hub.updateKey(form.editing, { name: form.name, write: form.write, allowed_tools });
+      await hub.updateKey(form.editing, { name: form.name, write: form.write, allowed_tools, profile_id });
       toast.ok("Client key updated");
     } else {
       const app = props.apps.find((item) => item.id === form.app_id);
       created.value = await hub.createKey({ name: form.name, app_key: app?.app_key, environment: app?.environment,
-                                            ttl_days: form.ttl_days, write: form.write, allowed_tools });
+                                            ttl_days: form.ttl_days, write: form.write, allowed_tools, profile_id });
     }
     keyForm.value.open = false;
     await load();
@@ -142,14 +160,16 @@ async function revoke() {
             <td class="font-medium">{{ key.name }}</td>
             <td v-if="!scoped" class="text-xs">{{ key.app_name }}<p class="text-subtle">{{ key.environment }}</p></td>
             <td><span :class="key.write ? 'badge-warn' : 'badge-neutral'">{{ key.write ? "Read & write" : "Read" }}</span></td>
-            <td class="text-xs">{{ key.allowed_tools === null ? "All allowed tools" : `${key.allowed_tools.length} selected` }}</td>
+            <td class="text-xs">{{ key.allowed_tools === null ? "All allowed tools" : `${key.allowed_tools.length} selected` }}
+              <p v-if="key.profile_id" class="text-subtle">Profile: {{ key.profile_name ?? 'Unavailable' }}</p></td>
             <td class="text-xs text-subtle">{{ timeAgo(key.last_used_at) }}</td>
             <td class="text-xs">
               <span :class="key.status === 'active' ? 'badge-ok' : 'badge-neutral'">{{ key.status }}</span>
+              <p v-if="key.status === 'blocked'" class="mt-1 text-subtle">Access profile is unavailable or disabled.</p>
               <p v-if="key.status === 'active'" class="mt-1 text-subtle">{{ untilLabel(key.expires_at) }}</p>
             </td>
             <td class="whitespace-nowrap text-right">
-              <template v-if="session.canWrite && key.status === 'active'">
+              <template v-if="session.canWrite && ['active', 'blocked'].includes(key.status)">
                 <button class="btn-ghost btn-sm" type="button" @click="editKey(key)">Edit</button>
                 <button class="btn-ghost btn-sm text-bad" type="button" @click="revoking = key">Revoke</button>
               </template>
@@ -169,6 +189,12 @@ async function revoke() {
         <label v-if="!keyForm.editing" class="block"><span class="label">Expires after</span>
           <select v-model="keyForm.ttl_days" class="input"><option :value="1">1 day</option><option :value="7">1 week</option><option :value="30">1 month</option><option :value="null">Never</option></select></label>
         <p v-if="!keyForm.editing && keyForm.ttl_days === null" class="text-xs text-subtle">A key without expiry stays active until you revoke it or remove its app.</p>
+        <label class="block"><span class="label">Access profile</span>
+          <select v-model="keyForm.profile_id" class="input" :disabled="!profilesLoaded">
+            <option value="">App permissions</option>
+            <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}{{ profile.enabled ? '' : ' (disabled)' }}</option>
+          </select>
+          <span class="hint">A profile further restricts this key's modules and tools. Disabled profiles block their keys.</span></label>
         <label class="flex items-start gap-3 rounded-lg border border-line p-3">
           <input v-model="keyForm.write" type="checkbox" class="mt-0.5" />
           <span><span class="font-medium">Allow write tools</span>
@@ -191,7 +217,7 @@ async function revoke() {
       </form>
       <template #footer>
         <button class="btn-secondary" type="button" @click="keyForm.open = false">Cancel</button>
-        <button class="btn-primary" type="submit" form="key-form" :disabled="busy || !keyForm.app_id">
+        <button class="btn-primary" type="submit" form="key-form" :disabled="busy || !keyForm.app_id || !profilesLoaded">
           <span v-if="busy" class="spinner" /> {{ keyForm.editing ? "Save" : "Create key" }}</button>
       </template>
     </ModalDialog>

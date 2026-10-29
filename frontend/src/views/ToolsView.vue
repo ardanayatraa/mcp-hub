@@ -87,6 +87,7 @@ const canGenerate = computed(() => allApps.value.some((app) => app.status !== "a
 <template>
   <PageHeader title="Tools" subtitle="What AI clients can call and what this MCP can do. Hub tools work on every allowed data source; app tools give common questions a clear name and fixed settings.">
     <template #actions>
+      <RouterLink v-if="session.canWrite" to="/tools/import" class="btn-secondary">Import OpenAPI</RouterLink>
       <button v-if="session.canWrite" type="button" class="btn-secondary" :disabled="!canGenerate" @click="generating = true">
         <AppIcon name="sparkles" :size="16" /> Generate tools</button>
       <RouterLink v-if="session.canWrite" to="/tools/report" class="btn-secondary"><AppIcon name="chart" :size="16" /> Report playground</RouterLink>

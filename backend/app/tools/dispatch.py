@@ -83,12 +83,14 @@ async def run_tool(db: Session, caller: Caller, name, arguments, *, delegation: 
             raise HubError("CONNECTOR_INACTIVE", "Connector is not active", 409)
         settings = get_settings()
         hit(f"tool:{caller.actor_ref}:{name}", settings.tool_rate_limit, settings.tool_rate_window_seconds)
-        return {"success": True, "data": catalog.data_sources(db, caller.application.id),
+        return {"success": True, "data": catalog.data_sources(db, caller.application.id, caller),
                 "meta": {"scope": "enabled_sources", "coverage": "complete", "contains_personal_data": False},
                 "trace_id": trace}
     if name == catalog.RUN_REPORT:
         validate_arguments(catalog.REPORT_INPUT, arguments)
         state["module_key"] = resolve_source_key(caller.application, arguments.get("source"))
+        if not caller.allows_module(state["module_key"]):
+            raise HubError("PERMISSION_DENIED", "The access profile does not allow this source", 403)
         if caller.connector is None:
             raise HubError("CONNECTOR_INACTIVE", "Connector is not active", 409)
         return await run_report_for_caller(db, application=caller.application, connector=caller.connector,
@@ -100,6 +102,8 @@ async def run_tool(db: Session, caller: Caller, name, arguments, *, delegation: 
                           settings=get_settings(), trace_id=trace)
     tool = _published_tool(db, name, caller)
     state["tool_key"], state["module_key"] = tool.tool_key, tool.module_key
+    if not caller.allows_module(tool.module_key):
+        raise HubError("PERMISSION_DENIED", "The access profile does not allow this source", 403)
     if tool.template in WRITE_TEMPLATES and not caller.can_write:
         raise HubError("PERMISSION_DENIED", "This client key does not have write permission", 403)
     return await execute_tool(db, tool=tool, arguments=_input_for(tool.input_schema, arguments),

@@ -1,0 +1,690 @@
+{
+  "date": "2026-10-29",
+  "timezone": "Asia/Singapore",
+  "status": "local_and_hosted_matrix_passed",
+  "rows": [
+    {
+      "laravel": "v5.8.38",
+      "php_series": "7.4",
+      "runner": "native Windows runtime",
+      "image": null,
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 11.631208
+      }
+    },
+    {
+      "laravel": "v9.52.21",
+      "php_series": "8.2",
+      "runner": "native Windows runtime",
+      "image": null,
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 5.514575
+      }
+    },
+    {
+      "laravel": "v10.50.4",
+      "php_series": "8.1",
+      "runner": "native Windows runtime",
+      "image": null,
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 4.25864
+      }
+    },
+    {
+      "laravel": "v11.45.0",
+      "php_series": "8.2",
+      "runner": "native Windows runtime",
+      "image": null,
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 516,
+        "time": 10.937488
+      }
+    },
+    {
+      "laravel": "v12.64.0",
+      "php_series": "8.2",
+      "runner": "native Windows runtime",
+      "image": null,
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 516,
+        "time": 4.210517
+      }
+    },
+    {
+      "laravel": "v13.38.0",
+      "php_series": "8.3",
+      "runner": "native Windows runtime",
+      "image": null,
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 516,
+        "time": 4.588127
+      }
+    },
+    {
+      "laravel": "v5.8.38",
+      "php_series": "7.2",
+      "runner": "official PHP container, offline",
+      "image": "php:7.2-cli@sha256:42ffbc0798e4449bbd1e14fc4dcb87774aa1ad1900a09ef6a965bc0880aa2161",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 1.17428
+      }
+    },
+    {
+      "laravel": "v6.20.45",
+      "php_series": "7.2",
+      "runner": "official PHP container, offline",
+      "image": "php:7.2-cli@sha256:42ffbc0798e4449bbd1e14fc4dcb87774aa1ad1900a09ef6a965bc0880aa2161",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 1.195796
+      }
+    },
+    {
+      "laravel": "v7.30.7",
+      "php_series": "7.2",
+      "runner": "official PHP container, offline",
+      "image": "php:7.2-cli@sha256:42ffbc0798e4449bbd1e14fc4dcb87774aa1ad1900a09ef6a965bc0880aa2161",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 1.275538
+      }
+    },
+    {
+      "laravel": "v8.83.29",
+      "php_series": "7.3",
+      "runner": "official PHP container, offline",
+      "image": "php:7.3-cli@sha256:bd6f2dc7a4e4537e927355c94a74c3022911aa504278f5f0fd94016c90dfaecc",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 1.35808
+      }
+    },
+    {
+      "laravel": "v9.52.21",
+      "php_series": "8.0",
+      "runner": "official PHP container, offline",
+      "image": "php:8.0-cli@sha256:0569e384b9064c04dec55dc6e41be41b494a878dfbb6577a7d76bd50cfd5bc00",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 515,
+        "time": 1.222275
+      }
+    },
+    {
+      "laravel": "v12.64.0",
+      "php_series": "8.4",
+      "runner": "official PHP container, offline",
+      "image": "php:8.4-cli@sha256:9cf851bc2c1b37c3e59dfd677a3c3e56d485af5a47c93f629424bb039eafcb69",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 516,
+        "time": 1.514526
+      }
+    },
+    {
+      "laravel": "v13.38.0",
+      "php_series": "8.4",
+      "runner": "official PHP container, offline",
+      "image": "php:8.4-cli@sha256:9cf851bc2c1b37c3e59dfd677a3c3e56d485af5a47c93f629424bb039eafcb69",
+      "exit_code": 0,
+      "result": {
+        "tests": 113,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2,
+        "assertions": 516,
+        "time": 1.472505
+      }
+    }
+  ],
+  "full_matrix_collected_tests": 113,
+  "late_schema_checks": {
+    "current_modern_suite": {
+      "tests": 116,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "assertions": 520,
+      "time": 4.265503
+    },
+    "current_legacy_suite": {
+      "tests": 116,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "assertions": 519,
+      "time": 3.455313
+    },
+    "note": "Three final manifest-boundary/privacy cases were added after the local 13-row run. All thirteen hosted CI rows passed the final 116-test suite."
+  },
+  "native_postgres": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "assertions": 71,
+    "time": 7.561599
+  },
+  "implementation_sha256": "dbd054f67c5497c1591bd89079468e04c577439ccf2b1a74eb8bcc4989395d92",
+  "hosted_ci_for_final_tree": {
+    "commit": "9b8e7628d2211221c57e068c1c7c3a2f96e31464",
+    "run_id": 40856404324,
+    "url": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40856404324",
+    "pull_request": "https://github.com/ardanayatraa/laravel-mcp-hub/pull/2",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 123388359993,
+        "name": "assets",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360479,
+        "name": "native-postgres",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360586,
+        "name": "Laravel 9 / PHP 8.2",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360600,
+        "name": "Laravel 10 / PHP 8.1",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360607,
+        "name": "Laravel 7 / PHP 7.2",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360619,
+        "name": "Laravel 9 / PHP 8.0",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360623,
+        "name": "Laravel 6 / PHP 7.2",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360652,
+        "name": "Laravel 5.8 / PHP 7.2",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360716,
+        "name": "Laravel 13 / PHP 8.4",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360718,
+        "name": "Laravel 5.8 / PHP 7.4",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360728,
+        "name": "Laravel 12 / PHP 8.2",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360750,
+        "name": "Laravel 12 / PHP 8.4",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360776,
+        "name": "Laravel 11 / PHP 8.2",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360814,
+        "name": "Laravel 13 / PHP 8.3",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 123388360858,
+        "name": "Laravel 8 / PHP 7.3",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "matrix_rows": [
+      {
+        "job": "laravel-10-php-8.1",
+        "laravel": "v10.50.4",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 1.318074
+        },
+        "known_upstream_advisories": 5,
+        "advisory_packages": [
+          "laravel/framework"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-11-php-8.2",
+        "laravel": "v11.45.0",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 520,
+          "time": 1.415076
+        },
+        "known_upstream_advisories": 5,
+        "advisory_packages": [
+          "laravel/framework"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-12-php-8.2",
+        "laravel": "v12.64.0",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 520,
+          "time": 1.4067
+        },
+        "known_upstream_advisories": 3,
+        "advisory_packages": [
+          "laravel/framework"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-12-php-8.4",
+        "laravel": "v12.64.0",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 520,
+          "time": 1.544821
+        },
+        "known_upstream_advisories": 3,
+        "advisory_packages": [
+          "laravel/framework"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-13-php-8.3",
+        "laravel": "v13.38.0",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 520,
+          "time": 0.99786
+        },
+        "known_upstream_advisories": 0,
+        "advisory_packages": [],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-13-php-8.4",
+        "laravel": "v13.38.0",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 520,
+          "time": 1.196664
+        },
+        "known_upstream_advisories": 0,
+        "advisory_packages": [],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-5.8-php-7.2",
+        "laravel": "v5.8.38",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 1.202765
+        },
+        "known_upstream_advisories": 17,
+        "advisory_packages": [
+          "laravel/framework",
+          "league/flysystem",
+          "symfony/http-foundation",
+          "symfony/process",
+          "symfony/routing"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-5.8-php-7.4",
+        "laravel": "v5.8.38",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 1.000002
+        },
+        "known_upstream_advisories": 17,
+        "advisory_packages": [
+          "laravel/framework",
+          "league/flysystem",
+          "symfony/http-foundation",
+          "symfony/process",
+          "symfony/routing"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-6-php-7.2",
+        "laravel": "v6.20.45",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 0.944947
+        },
+        "known_upstream_advisories": 22,
+        "advisory_packages": [
+          "laravel/framework",
+          "league/commonmark",
+          "league/flysystem",
+          "symfony/http-foundation",
+          "symfony/process",
+          "symfony/routing"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-7-php-7.2",
+        "laravel": "v7.30.7",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 0.780068
+        },
+        "known_upstream_advisories": 16,
+        "advisory_packages": [
+          "laravel/framework",
+          "league/commonmark",
+          "league/flysystem"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-8-php-7.3",
+        "laravel": "v8.83.29",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 2.209843
+        },
+        "known_upstream_advisories": 16,
+        "advisory_packages": [
+          "laravel/framework",
+          "league/commonmark",
+          "league/flysystem"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-9-php-8.0",
+        "laravel": "v9.52.21",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 0.796408
+        },
+        "known_upstream_advisories": 15,
+        "advisory_packages": [
+          "laravel/framework",
+          "symfony/http-foundation",
+          "symfony/mailer",
+          "symfony/mime",
+          "symfony/process",
+          "symfony/routing"
+        ],
+        "ci_advisory_review": "passed"
+      },
+      {
+        "job": "laravel-9-php-8.2",
+        "laravel": "v9.52.21",
+        "result": {
+          "tests": 116,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 2,
+          "assertions": 519,
+          "time": 1.232535
+        },
+        "known_upstream_advisories": 6,
+        "advisory_packages": [
+          "laravel/framework"
+        ],
+        "ci_advisory_review": "passed"
+      }
+    ],
+    "native_postgres": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "assertions": 71,
+      "time": 2.561469
+    },
+    "latest_documentation_commit_ci": {
+      "commit": "5ff6b2362ac67985f6a5a8526be11e5c3e3cf284",
+      "run_id": 40857417214,
+      "url": "https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/40857417214",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 123391752440,
+          "name": "native-postgres",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752764,
+          "name": "assets",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752846,
+          "name": "Laravel 8 / PHP 7.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752883,
+          "name": "Laravel 6 / PHP 7.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752893,
+          "name": "Laravel 7 / PHP 7.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752922,
+          "name": "Laravel 5.8 / PHP 7.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752959,
+          "name": "Laravel 12 / PHP 8.4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752962,
+          "name": "Laravel 5.8 / PHP 7.4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752966,
+          "name": "Laravel 11 / PHP 8.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391752978,
+          "name": "Laravel 13 / PHP 8.4",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753009,
+          "name": "Laravel 9 / PHP 8.2",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753021,
+          "name": "Laravel 9 / PHP 8.0",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753068,
+          "name": "Laravel 10 / PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753153,
+          "name": "Laravel 13 / PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 123391753211,
+          "name": "Laravel 12 / PHP 8.2",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "change_since_downloaded_matrix": "Documentation only; implementation unchanged."
+    }
+  },
+  "distribution_archive": {
+    "status": "passed",
+    "sha256": "d93c1e745db59eed0a62f48a67df3a4e526bb9e7b723da9fde02cb338ceb2c31",
+    "files": 78,
+    "bytes": 93036,
+    "source_commit": "5ff6b23",
+    "matches_reviewed_source_normalized_line_endings": true,
+    "runtime_assets_and_migrations_present": true,
+    "credentials_and_development_artifacts_excluded": true,
+    "published": false
+  },
+  "stable_published": false
+}

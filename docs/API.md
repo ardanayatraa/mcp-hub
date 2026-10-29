@@ -136,11 +136,18 @@ Claude and the OpenAI-compatible model providers the chat can use. Listing is op
 
 ### Access
 
+Laravel pairing recovery uses the [enrollment lifecycle API](CONNECTOR_ENROLLMENT.md),
+including scoped history, renewal and replacement. Reviewed API descriptions use
+the [OpenAPI draft import API](OPENAPI_IMPORT.md); imported tools are never
+published or enabled automatically.
+
 | Method | Path | Notes |
 |---|---|---|
-| GET, POST | `/service-identities` | Client keys. Create: `{name, app_key, environment, ttl_days, write, allowed_tools}`. Use `ttl_days` 1, 7, or 30 for the UI choices, or `null` for no expiry. The token is returned once and stored hashed. |
-| PATCH | `/service-identities/{id}` | `{name?, write?, allowed_tools?}` (null means all tools). |
+| GET, POST | `/service-identities` | Client keys. Create: `{name, app_key, environment, ttl_days, write, allowed_tools, profile_id?}`. Use `ttl_days` 1, 7, or 30 for the UI choices, or `null` for no expiry. The token is returned once and stored hashed. |
+| PATCH | `/service-identities/{id}` | `{name?, write?, allowed_tools?, profile_id?}`. A null allowlist removes that tool restriction; an explicit null profile removes the profile binding. Omitted values are preserved. |
 | POST | `/service-identities/{id}/revoke` | Immediate. |
+| GET, POST | `/mcp-profiles` | Application-bound module/tool restrictions. GET requires `app_id`; POST defaults disabled with empty module/tool lists. See [profile contract](CLIENT_PROFILES.md). |
+| PATCH | `/mcp-profiles/{id}` | Partial update requires current `revision`; stale edits return 409. Disabling blocks bound keys on their next request. |
 | GET, POST | `/users` | Root and hub admins. Hub admins cannot see root or create a member with a preset password. Create: `{role, app_ids}`. |
 | PATCH | `/users/{id}` | Root only. `{role?, is_active?, app_ids?}`. Root cannot be demoted or disabled. |
 
@@ -237,6 +244,11 @@ Results arrive as `structuredContent`, with the same JSON as text content:
 - read tools: `{success, data: [records], meta: {as_of, timezone, scope, coverage, contains_personal_data: false, total_count?, has_more?, next_cursor?}, trace_id}`
 - write tools: `{success, data: [receipt], meta: {operation, as_of, contains_personal_data: false, requires_confirmation?}, trace_id}`
 - reports: see [TOOLS.md](TOOLS.md#built-in-run_report-default-reporting-tool)
+- source-owned export tools return an expiring job receipt, not file bytes.
+  Authenticated download and queue contracts are documented in
+  [SOURCE_EXPORTS.md](SOURCE_EXPORTS.md). Chat adds `export`
+  events and a final `exports` list containing validated refs/status/formats;
+  clients construct their own source application download route.
 
 Errors are tool results with `isError: true` and text `CODE: message (trace tr_…)`. Codes
 include `UNAUTHENTICATED`, `PERMISSION_DENIED`, `MODULE_DISABLED`, `CONNECTOR_INACTIVE`,

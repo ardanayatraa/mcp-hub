@@ -101,31 +101,24 @@ class McpClient
         if (! in_array($connection, ['bridge', 'hub'], true)) {
             throw new RuntimeException('Unknown MCP connection.');
         }
-        $hub = $connection === 'hub';
-        $url = (string) config($hub ? 'ai.mcp.hub.url' : 'ai.mcp.bridge_url');
-        $token = (string) config($hub ? 'ai.mcp.hub.token' : 'ai.mcp.access_token', '');
+        if ($connection === 'hub') {
+            return app(\McpHub\Laravel\HubClient::class)->rpc($method, $params, $headers);
+        }
+        $url = (string) config('ai.mcp.bridge_url');
+        $token = (string) config('ai.mcp.access_token', '');
         $parts = parse_url($url);
         $scheme = strtolower((string) ($parts['scheme'] ?? ''));
         $host = strtolower((string) ($parts['host'] ?? ''));
         if (! is_array($parts) || $host === '' || ($scheme !== 'https'
             && ! ($scheme === 'http' && app()->environment(['local', 'testing'])
                 && in_array($host, ['localhost', '127.0.0.1', '::1'], true)))
-            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
-            || ($hub && (! McpHubClient::enabled() || $token === ''))) {
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
             throw new RuntimeException('MCP connection is not configured.');
         }
 
-        if ($hub) {
-            $params['_meta'] = ['io.modelcontextprotocol/protocolVersion' => '2026-07-28',
-                'io.modelcontextprotocol/clientCapabilities' => new \stdClass(),
-                'io.modelcontextprotocol/clientInfo' => ['name' => 'hireach-gateway', 'version' => '1.0.0']];
-            $headers = array_merge($headers, ['MCP-Protocol-Version' => '2026-07-28',
-                'Origin' => config('ai.mcp.hub.source_url'), 'MCP-Method' => $method]);
-            if (isset($params['name'])) { $headers['MCP-Name'] = $params['name']; }
-        }
         $request = Http::withHeaders(array_merge(['Accept' => 'application/json, text/event-stream'], $headers))
             ->withoutRedirecting()->connectTimeout(3)
-            ->timeout((int) config($hub ? 'ai.mcp.hub.timeout' : 'ai.mcp.timeout', $hub ? 12 : 210));
+            ->timeout((int) config('ai.mcp.timeout', 210));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

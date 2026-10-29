@@ -14,6 +14,7 @@ const router = createRouter({
     { path: "/apps/:id", component: () => import("@/views/AppDetailView.vue") },
     { path: "/tools", component: () => import("@/views/ToolsView.vue") },
     { path: "/tools/new", component: () => import("@/views/ToolCreateView.vue"), meta: { write: true } },
+    { path: "/tools/import", component: () => import("@/views/OpenApiImportView.vue"), meta: { write: true } },
     { path: "/tools/report", component: () => import("@/views/ReportPlaygroundView.vue"), meta: { write: true } },
     { path: "/tools/:id", component: () => import("@/views/ToolDetailView.vue") },
     { path: "/access", component: () => import("@/views/AccessView.vue") },

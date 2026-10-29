@@ -1043,6 +1043,7 @@ def agent_view(db: Session, admin: AdminUser, connector_id: str, *, key_id: str 
     """Exactly what an AI client receives from tools/list and prompts/list for one app."""
 
     from app.services import skills
+    from app.services.profiles import binding
 
     connector, application = get_connector_bundle(db, connector_id)
     require_app_access(db, admin, application.id)
@@ -1050,17 +1051,22 @@ def agent_view(db: Session, admin: AdminUser, connector_id: str, *, key_id: str 
         identity = db.get(ServiceIdentity, key_id)
         if identity is None or identity.app_id != application.id:
             raise HubError("NOT_FOUND", "Client key was not found for this app", 404)
-        if identity.revoked_at is not None:
-            raise HubError("CONFLICT", "This client key is revoked and sees nothing", 409)
+        if identity.revoked_at is not None or (identity.expires_at and as_utc(identity.expires_at) <= utcnow()):
+            raise HubError("CONFLICT", "This client key is revoked or expired and sees nothing", 409)
+        profile = binding(db, application.id, identity.profile_id)
+        if profile is not None and not profile.enabled:
+            raise HubError("CONFLICT", "This client key's access profile is disabled", 409)
         key = {"id": identity.id, "name": identity.name, "write": WRITE_SCOPE in (identity.scopes or []),
-               "allowed_tools": identity.allowed_tools}
+               "allowed_tools": identity.allowed_tools, "profile_id": identity.profile_id,
+               "profile_name": profile.name if profile else None}
     else:
         # A transient key, never added to the session: shows what a new key of this kind would see.
         identity = ServiceIdentity(id="preview", name="preview", token_hash="", app_id=application.id,
                                    scopes=[READ_SCOPE] + ([WRITE_SCOPE] if write else []), allowed_tools=None)
+        profile = None
         key = {"id": None, "name": "Read & write key" if write else "Read-only key", "write": write,
                "allowed_tools": None}
-    caller = Caller(identity, application, connector)
+    caller = Caller(identity, application, connector, profile)
     tools = [tool.model_dump(by_alias=True, exclude_none=True) for tool in catalog.visible_tools(db, caller)]
     prompts = [prompt.model_dump(by_alias=True, exclude_none=True) for prompt in skills.visible_prompts(db, caller)]
     return {"app": {"connector_id": connector.id, "app_key": application.key, "name": application.name,
