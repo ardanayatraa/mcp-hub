@@ -11,8 +11,9 @@ The PRD audit and dependency scans are historical records, retained for traceabi
 | `LARAVEL_CRUD_CONTRACT.json` | Laravel-generated dummy contract with a neutral application key, used by current Hub regression tests. |
 | `LARAVEL_INTEGRATION_EVIDENCE.json` | Current integration checks; `integrations/laravel/verify.py` refreshes the live read catalog. |
 
-Screenshots, the audit write-ups and temporary installer fixtures have been removed; the
-records above and `backend/tests` are the current proof.
+Screenshots, raw JUnit XML reports and temporary installer fixtures are kept out
+of Git. Metadata summaries above and the maintained `backend/tests` suite provide
+the verification record. Ignored local copies are not included in the repository.
 
 The Python scripts here drive the 0.1 admin API (separate approve step, `/revise`,
 `process_dataset`) and are not meant to run against 0.2. Current behaviour is covered by

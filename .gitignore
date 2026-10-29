@@ -47,6 +47,16 @@ id_ed25519
 /integrations/laravel/sandbox/
 /integrations/laravel/sandbox-modern/
 /docs/evidence/*.png
+/docs/evidence/*.jpg
+/docs/evidence/*.jpeg
+/docs/evidence/*.webp
+/docs/LARAVEL_CHAT_CURRENT_ACCESS.jpg
+/docs/evidence/*.xml
+/docs/PRD_*_TESTS.xml
+/backend/results.xml
+/backend/dependency-audit.json
+auth.json
+*.enc
 *.log
 *.pid
 *.sqlite

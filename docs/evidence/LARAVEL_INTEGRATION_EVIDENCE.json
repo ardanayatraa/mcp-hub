@@ -93,6 +93,7 @@
       "business_mutations": false,
       "model_bridge_restarted_with_existing_configuration": true,
       "screenshot": "docs/LARAVEL_CHAT_CURRENT_ACCESS.jpg",
+      "screenshot_local_only": true,
       "unregistered_template_access_denied_in_fresh_chat": true,
       "resource_substitution_regression": "fixed",
       "unavailable_model_guard_before_ai_and_data_calls": true,
