@@ -39,6 +39,8 @@ def main():
             for service in ("backend", "edge", "postgres"):
                 identifier = run([*compose, "ps", "--quiet", service], env=environment).decode().strip()
                 containers[service] = json.loads(run(["docker", "inspect", identifier]))[0]["Name"].lstrip("/")
+            # Model an existing aaPanel edge attached manually to Docker's bridge.
+            run(['docker', 'network', 'connect', 'bridge', containers['edge']])
             for folder in ("shared/backups", "releases", "incoming", "source"):
                 (base/folder).mkdir(parents=True)
             marker = base/"shared/hub.env"
@@ -91,6 +93,7 @@ def main():
             else:
                 raise AssertionError("Broken release unexpectedly activated")
             assert good_images == {key: runtime.inspect(containers[key])["Image"] for key in ("backend", "edge")}
+            assert 'bridge' in runtime.inspect(containers['edge'])['NetworkSettings']['Networks']
             assert json.loads((base/"shared/docker-state.json").read_text())["current"] == "a"*40
             assert protected.read_text() == "existing-key-and-settings-canary"
             print("Docker deploy, verified backup, container/volume preservation and failed-release rollback passed.")
