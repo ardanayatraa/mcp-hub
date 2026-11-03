@@ -179,7 +179,7 @@ class DockerRuntime:
         for key, tag in (("backend", backend_base), ("edge", edge_base)):
             self.run(["docker", "tag", containers[key]["Image"], tag])
         recipes = {
-            "backend": f"FROM {backend_base}\nUSER root\nWORKDIR /app\nCOPY backend/pyproject.toml backend/uv.lock ./\nRUN uv sync --frozen --no-dev --no-install-project && rm -rf /app/app\nCOPY --chown=10001:10001 backend/app ./app\nCOPY --chown=10001:10001 backend/alembic.ini ./\nUSER 10001:10001\n",
+            "backend": f"FROM {backend_base}\nUSER root\nWORKDIR /app\nCOPY --chown=10001:10001 backend/pyproject.toml backend/uv.lock ./\nRUN uv sync --frozen --no-dev --no-install-project && rm -rf /app/app\nCOPY --chown=10001:10001 backend/app ./app\nCOPY --chown=10001:10001 backend/alembic.ini ./\nUSER 10001:10001\n",
             "edge": f"FROM {edge_base}\nCOPY frontend/dist /usr/share/nginx/html\n",
         }
         # The archive already excludes server credentials; do not send its placeholder env link.

@@ -68,6 +68,11 @@ def main():
             commit = "a"*40
             checksum = build_release.build(source, commit, base/"incoming"/(commit+".tar.gz"))
             assert manager.deploy(commit, checksum)["status"] == "deployed"
+            # Alembic reads pyproject.toml as the application's non-root user.
+            # Release extraction uses private source-file permissions, so merely
+            # starting Uvicorn does not verify migration tooling remains usable.
+            runtime.run(['docker', 'exec', containers['backend'], 'sh', '-c',
+                         '. /secrets/env && export DATABASE_URL="postgresql+psycopg://hub:$POSTGRES_PASSWORD@postgres:5432/hub" && alembic current'])
             after = runtime.inventory()
             allowed = {containers["backend"], containers["edge"]}
             assert {k: v for k, v in before.items() if k not in allowed} == {k: v for k, v in after.items() if k not in allowed}
