@@ -1,0 +1,6 @@
+FROM nginx:1.27.5-alpine
+COPY frontend/dist /usr/share/nginx/html
+ARG DEPLOY_COMMIT
+ARG SCHEMA_REVISION
+LABEL org.opencontainers.image.revision=$DEPLOY_COMMIT biz.texcel.mcp-hub.schema=$SCHEMA_REVISION
+# Existing Nginx configuration, certificates and retained assets are mounted by the server.

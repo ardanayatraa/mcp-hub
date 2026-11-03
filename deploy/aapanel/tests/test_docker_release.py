@@ -5,11 +5,16 @@ import json
 import sys
 import tempfile
 import unittest
+import io
+import hashlib
+import tarfile
+import gzip
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import docker_deploy as docker
+from image_archive import inspect_archive
 
 
 COMMAND = ["sh", "-c", '. /secrets/env && export DATABASE_URL="existing" && alembic upgrade head && python -m app.bootstrap && exec uvicorn app.main:app --host 0.0.0.0 --port 8000']
@@ -22,7 +27,7 @@ BASE = {"name": "mcp-hub-local", "services": {
     "volumes": {"hub-pg": {"name": "mcp-hub-local_hub-pg"}, "hub-secrets": {"name": "mcp-hub-local_hub-secrets"}}}
 IMAGES = {"backend": "sha256:"+"a"*64, "edge": "sha256:"+"b"*64}
 NEW_IMAGES = {"backend": "sha256:"+"c"*64, "edge": "sha256:"+"d"*64}
-CONTAINER = {"Config": {"Env": ["CANARY=existing"]}, "HostConfig": {"PortBindings": None},
+CONTAINER = {"Config": {"Env": ["CANARY=existing"]}, "HostConfig": {"PortBindings": None, "RestartPolicy": {"Name":"unless-stopped","MaximumRetryCount":0}},
              "Mounts": [{"Type": "volume", "Name": "existing", "Source": "/existing", "Destination": "/secrets", "RW": False}],
              "NetworkSettings": {"Networks": {"existing": {"NetworkID": "same-network"}}}}
 
@@ -96,7 +101,13 @@ class FakeRuntime:
     def run(self, command):
         return b"d3e5a7c9f204\n"
 
-    def build(self, *args):
+    def preflight(self):
+        pass
+
+    def public_ready(self, commit=None):
+        return True
+
+    def load_images(self, *args):
         self.built = True
         return NEW_IMAGES
 
@@ -109,7 +120,7 @@ class FakeRuntime:
         self.containers["backend"] = "new-backend"
         self.containers["edge"] = "new-edge"
 
-    def ready(self):
+    def ready(self, commit=None):
         return self.probes.pop(0)
 
     def restore_networks(self, containers):
@@ -146,7 +157,7 @@ class ActivationTest(unittest.TestCase):
         self.temp.cleanup()
 
     def deploy(self):
-        return self.manager.deploy("a"*40, "b"*64)
+        return self.manager.deploy("a"*40, "b"*64, "c"*64)
 
     def test_schema_change_cannot_build_backup_or_touch_live_containers(self):
         self.runtime.schema_value = "a2d4f6c8e010"
@@ -180,7 +191,7 @@ class ActivationTest(unittest.TestCase):
         def mutate(*args):
             self.runtime.containers["unrelated"] = "unexpected-replacement"
             return IMAGES
-        self.runtime.build = mutate
+        self.runtime.load_images = mutate
         with self.assertRaisesRegex(docker.DeploymentError, "UNRELATED_CONTAINER"):
             self.deploy()
         self.assertEqual([], self.runtime.activations)
@@ -231,6 +242,140 @@ class ActivationTest(unittest.TestCase):
             with self.assertRaisesRegex(docker.DeploymentError, "UNEXPECTED_CONTAINER_NETWORK"):
                 runtime.restore_networks({"backend": CONTAINER, "edge": CONTAINER})
         run.assert_not_called()
+
+    def test_public_outage_aborts_before_import_or_backup(self):
+        self.runtime.public_ready = lambda commit=None: False
+        with self.assertRaisesRegex(docker.DeploymentError, 'PUBLIC_SITE_UNHEALTHY'):
+            self.deploy()
+        self.assertFalse(self.runtime.built)
+        self.assertEqual([],self.runtime.backups)
+        self.assertEqual([],self.runtime.activations)
+
+    def test_restart_policy_drift_after_activation_triggers_rollback(self):
+        def changed(container):
+            value=copy.deepcopy(CONTAINER)
+            value['HostConfig']['RestartPolicy']['Name']='no'
+            return value
+        self.runtime.inspect=changed
+        self.runtime.probes=[True,True]
+        with self.assertRaisesRegex(docker.DeploymentError,'PREVIOUS_IMAGES_RESTORED'):
+            self.deploy()
+        self.assertEqual(2,len(self.runtime.activations))
+
+    def test_public_probe_failure_cannot_be_hidden_by_healthy_containers(self):
+        runtime=docker.DockerRuntime({'base':str(self.root),'backend':'backend','edge':'edge'})
+        with patch.object(runtime,'inspect',return_value={'State':{'Status':'running','Health':{'Status':'healthy'}}}), patch.object(runtime,'public_ready',return_value=False), patch.object(docker.time,'monotonic',side_effect=[0,0,100]), patch.object(docker.time,'sleep'):
+            self.assertFalse(runtime.ready('a'*40))
+
+    def test_public_https_probe_identifies_itself_and_rejects_stale_commit(self):
+        runtime=docker.DockerRuntime({'base':str(self.root),'public_url':'https://hub.example'})
+        served_commit='a'*40
+        requests=[]
+        def respond(request,timeout):
+            requests.append(request)
+            response=MagicMock()
+            response.__enter__.return_value=response
+            response.status=200
+            response.geturl.return_value=request.full_url
+            body=(b'{"status":"ready"}' if request.full_url.endswith('/ready') else b'<title>MCP Hub</title>' if request.full_url.endswith('/login') else json.dumps({'commit':served_commit}).encode())
+            response.read.return_value=body
+            return response
+        opener=MagicMock()
+        opener.open.side_effect=respond
+        with patch.object(docker.urllib.request,'build_opener',return_value=opener):
+            self.assertTrue(runtime.public_ready('a'*40))
+            served_commit='b'*40
+            self.assertFalse(runtime.public_ready('a'*40))
+        self.assertTrue(all(q.get_header('User-agent')=='MCP-Hub-Deploy/1.0' for q in requests))
+
+    def test_low_resources_abort_before_preparation(self):
+        def fail():
+            raise docker.DeploymentError('AT_LEAST_1_GIB_AVAILABLE_MEMORY_REQUIRED')
+        self.runtime.preflight=fail
+        with self.assertRaisesRegex(docker.DeploymentError,'AVAILABLE_MEMORY_REQUIRED'):
+            self.deploy()
+        self.assertFalse(self.runtime.built)
+        self.assertEqual([],self.runtime.activations)
+
+    def test_interrupted_image_upload_leaves_no_final_archive_and_can_be_retried(self):
+        self.manager.incoming=self.root/'incoming'
+        raw=b'complete image stream'
+        checksum=hashlib.sha256(raw).hexdigest()
+        with self.assertRaisesRegex(docker.DeploymentError,'INCOMPLETE_OR_CHANGED'):
+            self.manager.upload_images('a'*40,checksum,io.BytesIO(raw[:4]))
+        self.assertEqual([],list(self.manager.incoming.iterdir()))
+        with patch.object(docker.os,'link',side_effect=lambda a,b: Path(b).write_bytes(Path(a).read_bytes())):
+            self.manager.upload_images('a'*40,checksum,io.BytesIO(raw))
+        self.assertEqual(raw,(self.manager.incoming/('a'*40+'.images.tar.gz')).read_bytes())
+
+
+class ImageArchiveTest(unittest.TestCase):
+    def archive(self, path, commit='a'*40, schema='d3e5a7c9f204', tag=None, link=False):
+        files, manifest, expected = {},[],{}
+        for service in ('backend','edge'):
+            raw=json.dumps({'os':'linux','architecture':'amd64','config':{'Labels':{'org.opencontainers.image.revision':commit,'biz.texcel.mcp-hub.schema':schema}},'rootfs':{'diff_ids':['sha256:'+'f'*64]},'service':service}).encode()
+            name=hashlib.sha256(raw).hexdigest()+'.json'
+            files[name]=raw
+            layer=service+'/layer.tar'
+            files[layer]=b'fixture layer'
+            manifest.append({'Config':name,'RepoTags':[tag or 'mcp-hub-ci-'+service+':'+commit],'Layers':[layer]})
+            expected[service]='sha256:'+hashlib.sha256(raw).hexdigest()
+        files['manifest.json']=json.dumps(manifest).encode()
+        with tarfile.open(path,'w:gz') as archive:
+            for name,raw in files.items():
+                member=tarfile.TarInfo(name)
+                member.size=len(raw)
+                archive.addfile(member,io.BytesIO(raw))
+            if link:
+                member=tarfile.TarInfo('unexpected-link')
+                member.type=tarfile.SYMTYPE
+                member.linkname='/etc/shadow'
+                archive.addfile(member)
+        return expected
+
+    def test_only_expected_commit_schema_platform_and_two_image_tags_are_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            file=Path(tmp)/'images.tar.gz'
+            expected=self.archive(file)
+            self.assertEqual(expected,inspect_archive(file,'a'*40,'d3e5a7c9f204')[0])
+            for options in ({'commit':'b'*40},{'schema':'000000000000'},{'tag':'unrelated:latest'},{'link':True}):
+                self.archive(file,**options)
+                with self.subTest(options=options),self.assertRaises(docker.DeploymentError):
+                    inspect_archive(file,'a'*40,'d3e5a7c9f204')
+
+    def test_import_verifies_content_in_classic_and_containerd_stores_without_building(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            (root/'incoming').mkdir()
+            file=root/'incoming'/('a'*40+'.images.tar.gz')
+            expected=self.archive(file)
+            runtime=docker.DockerRuntime({'base':tmp})
+            configs=inspect_archive(file,'a'*40,'d3e5a7c9f204')[2]
+            actual_ids=expected.copy()
+            wrong_layers=False
+            def run(command,**kwargs):
+                if command[:3]==['docker','image','inspect']:
+                    service=command[-1].split('mcp-hub-ci-')[1].split(':')[0]
+                    config=configs[service]
+                    return json.dumps([{'Id':actual_ids[service],'Config':config['config'],'RootFS':{'Layers':['sha256:'+'0'*64] if wrong_layers else config['rootfs']['diff_ids']},'Os':'linux','Architecture':'amd64'}]).encode()
+                return b''
+            with patch.object(runtime,'preflight'),patch.object(runtime,'run',side_effect=run) as calls,patch.object(docker.shutil,'disk_usage',return_value=type('Disk',(),{'free':20*1024**3})()):
+                self.assertEqual(expected,runtime.load_images('a'*40,docker.digest(file),'d3e5a7c9f204'))
+                actual_ids={'backend':'sha256:'+'e'*64,'edge':'sha256:'+'d'*64}
+                self.assertEqual(actual_ids,runtime.load_images('a'*40,docker.digest(file),'d3e5a7c9f204'))
+                wrong_layers=True
+                with self.assertRaisesRegex(docker.DeploymentError,'IMPORTED_IMAGE_CONTENT_MISMATCH'):
+                    runtime.load_images('a'*40,docker.digest(file),'d3e5a7c9f204')
+            self.assertEqual(['docker','load','--input',str(file)],calls.call_args_list[0].args[0])
+            self.assertFalse(any('build' in c.args[0] for c in calls.call_args_list))
+
+    def test_expanded_gzip_padding_is_bounded_before_tar_parsing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            file=Path(tmp)/'images.tar.gz'
+            with gzip.open(file,'wb') as output:
+                output.write(b'\0'*65536)
+            with patch('image_archive.MAX_EXPANDED',1024),self.assertRaisesRegex(docker.DeploymentError,'EXPANDED_TOO_LARGE'):
+                inspect_archive(file,'a'*40,'d3e5a7c9f204')
 
 
 if __name__ == "__main__":
