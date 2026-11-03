@@ -1,6 +1,6 @@
 # Source-owned exports
 
-The development Laravel package prepares private CSV, XLSX and PDF reports in the
+The stable Laravel 1.0 package prepares private CSV, XLSX and PDF reports in the
 source application. The Hub passes only bounded report arguments and receives job
 metadata. It never fetches the generated file or stores the report's business rows.
 This is separate from the existing `run_report` JSON analytics tool.

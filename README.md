@@ -124,8 +124,8 @@ Copy `.env.example` to `.env`, fill in the secrets, then run
 stack: it allows private HTTP egress so the Hub can reach the reference app.
 
 Production refuses to start without PostgreSQL, HTTPS-only cookies, an egress
-allowlist and disabled insecure HTTP/TLS. Run one worker process: rate limits are kept in
-memory. See [Deploying to production](docs/DEPLOY.md).
+allowlist and disabled insecure HTTP/TLS. Production rate limits require authenticated,
+shared Redis; all workers must use the same namespace. See [Deploying to production](docs/DEPLOY.md).
 
 ## Upgrading
 
@@ -144,6 +144,8 @@ pnpm build      # type-checks with vue-tsc
 ```
 
 ## Documentation
+
+Visit the [MCP Hub documentation portal](https://ardanayatraa.github.io/mcp-hub/) for Indonesian Hub guides, Laravel 1.0 integration, API references and troubleshooting. See [documentation contribution instructions](documentation/help/contributing.md) to preview or update the site.
 
 - [Tools and reporting](docs/TOOLS.md): templates, lifecycle, `run_report` reference
 - [Connector contract](docs/CONNECTOR_CONTRACT.md): what a connected app implements

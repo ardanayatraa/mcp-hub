@@ -80,3 +80,10 @@ htmlcov/
 /deploy/aapanel/incoming/
 /deploy/aapanel/backups/
 deploy.local.json
+
+# Built documentation and synchronized reference pages.
+/site/
+/documentation/reference/admin-api.md
+/documentation/reference/connector-contract.md
+/documentation/reference/tools.md
+/documentation/reference/profiles.md
