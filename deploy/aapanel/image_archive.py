@@ -4,12 +4,14 @@ Archives contain only the two CI images. Server certificates and configuration
 are never inputs to this archive or to the GitHub builds.
 """
 
+import gzip
 import hashlib
 import json
 import tarfile
-from pathlib import PurePosixPath
+import tempfile
+from pathlib import Path, PurePosixPath
 
-from deploy import DeploymentError
+from deploy import BoundedTarReader, DeploymentError
 
 MAX_COMPRESSED = 512 * 1024**2
 MAX_EXPANDED = 2 * 1024**3
@@ -17,9 +19,25 @@ MAX_METADATA = 16 * 1024**2
 
 
 def inspect_archive(file, commit, schema):
+    # Bound the complete gzip stream, including tar padding and PAX headers,
+    # on private disk rather than expanding image layers in Python memory.
+    with tempfile.TemporaryFile(dir=Path(file).parent) as expanded:
+        size = 0
+        with gzip.open(file, "rb") as source:
+            while chunk := source.read(65536):
+                size += len(chunk)
+                if size > MAX_EXPANDED:
+                    raise DeploymentError("IMAGE_ARCHIVE_EXPANDED_TOO_LARGE")
+                expanded.write(chunk)
+        expanded.seek(0)
+        images, configs = inspect_tar(expanded, commit, schema)
+        return images, size, configs
+
+
+def inspect_tar(file, commit, schema):
     small, names, total, kept = {}, set(), 0, 0
     try:
-        with tarfile.open(file, "r|gz") as archive:
+        with tarfile.open(fileobj=BoundedTarReader(file), mode="r:") as archive:
             for member in archive:
                 path = PurePosixPath(member.name)
                 if (
@@ -42,7 +60,7 @@ def inspect_archive(file, commit, schema):
         manifest = json.loads(small["manifest.json"])
         if not isinstance(manifest, list) or len(manifest) != 2:
             raise DeploymentError("TWO_RELEASE_IMAGES_REQUIRED")
-        images = {}
+        images, configs = {}, {}
         for item in manifest:
             (tag,) = item["RepoTags"]
             service = next(
@@ -71,6 +89,7 @@ def inspect_archive(file, commit, schema):
             ):
                 raise DeploymentError("IMAGE_COMMIT_SCHEMA_OR_PLATFORM_MISMATCH")
             images[service] = "sha256:" + hashlib.sha256(raw).hexdigest()
-        return images, total
+            configs[service] = config
+        return images, configs
     except (KeyError, ValueError, TypeError, OSError, tarfile.TarError) as error:
         raise DeploymentError("INVALID_DOCKER_IMAGE_ARCHIVE") from error

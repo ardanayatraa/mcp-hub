@@ -8,6 +8,7 @@ import unittest
 import io
 import hashlib
 import tarfile
+import gzip
 from pathlib import Path
 from unittest.mock import patch
 
@@ -291,7 +292,7 @@ class ImageArchiveTest(unittest.TestCase):
     def archive(self, path, commit='a'*40, schema='d3e5a7c9f204', tag=None, link=False):
         files, manifest, expected = {},[],{}
         for service in ('backend','edge'):
-            raw=json.dumps({'os':'linux','architecture':'amd64','config':{'Labels':{'org.opencontainers.image.revision':commit,'biz.texcel.mcp-hub.schema':schema}},'service':service}).encode()
+            raw=json.dumps({'os':'linux','architecture':'amd64','config':{'Labels':{'org.opencontainers.image.revision':commit,'biz.texcel.mcp-hub.schema':schema}},'rootfs':{'diff_ids':['sha256:'+'f'*64]},'service':service}).encode()
             name=hashlib.sha256(raw).hexdigest()+'.json'
             files[name]=raw
             layer=service+'/layer.tar'
@@ -321,22 +322,39 @@ class ImageArchiveTest(unittest.TestCase):
                 with self.subTest(options=options),self.assertRaises(docker.DeploymentError):
                     inspect_archive(file,'a'*40,'d3e5a7c9f204')
 
-    def test_import_uses_load_and_never_a_build_command(self):
+    def test_import_verifies_content_in_classic_and_containerd_stores_without_building(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             (root/'incoming').mkdir()
             file=root/'incoming'/('a'*40+'.images.tar.gz')
             expected=self.archive(file)
             runtime=docker.DockerRuntime({'base':tmp})
+            configs=inspect_archive(file,'a'*40,'d3e5a7c9f204')[2]
+            actual_ids=expected.copy()
+            wrong_layers=False
             def run(command,**kwargs):
                 if command[:3]==['docker','image','inspect']:
                     service=command[-1].split('mcp-hub-ci-')[1].split(':')[0]
-                    return json.dumps([{'Id':expected[service]}]).encode()
+                    config=configs[service]
+                    return json.dumps([{'Id':actual_ids[service],'Config':config['config'],'RootFS':{'Layers':['sha256:'+'0'*64] if wrong_layers else config['rootfs']['diff_ids']},'Os':'linux','Architecture':'amd64'}]).encode()
                 return b''
             with patch.object(runtime,'preflight'),patch.object(runtime,'run',side_effect=run) as calls,patch.object(docker.shutil,'disk_usage',return_value=type('Disk',(),{'free':20*1024**3})()):
                 self.assertEqual(expected,runtime.load_images('a'*40,docker.digest(file),'d3e5a7c9f204'))
+                actual_ids={'backend':'sha256:'+'e'*64,'edge':'sha256:'+'d'*64}
+                self.assertEqual(actual_ids,runtime.load_images('a'*40,docker.digest(file),'d3e5a7c9f204'))
+                wrong_layers=True
+                with self.assertRaisesRegex(docker.DeploymentError,'IMPORTED_IMAGE_CONTENT_MISMATCH'):
+                    runtime.load_images('a'*40,docker.digest(file),'d3e5a7c9f204')
             self.assertEqual(['docker','load','--input',str(file)],calls.call_args_list[0].args[0])
             self.assertFalse(any('build' in c.args[0] for c in calls.call_args_list))
+
+    def test_expanded_gzip_padding_is_bounded_before_tar_parsing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            file=Path(tmp)/'images.tar.gz'
+            with gzip.open(file,'wb') as output:
+                output.write(b'\0'*65536)
+            with patch('image_archive.MAX_EXPANDED',1024),self.assertRaisesRegex(docker.DeploymentError,'EXPANDED_TOO_LARGE'):
+                inspect_archive(file,'a'*40,'d3e5a7c9f204')
 
 
 if __name__ == "__main__":

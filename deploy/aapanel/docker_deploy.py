@@ -215,15 +215,26 @@ class DockerRuntime:
         file = self.base/'incoming'/(commit+'.images.tar.gz')
         if not SHA.fullmatch(commit) or not DIGEST.fullmatch(checksum) or file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_COMPRESSED or digest(file) != checksum:
             raise DeploymentError('INVALID_IMAGE_ARCHIVE_OR_CHECKSUM')
-        images, expanded = inspect_archive(file, commit, schema)
+        images, expanded, configs = inspect_archive(file, commit, schema)
         self.preflight()
         if shutil.disk_usage(self.base).free < 2*expanded+2*1024**3:
             raise DeploymentError('INSUFFICIENT_IMAGE_IMPORT_DISK_HEADROOM')
         self.run(['docker', 'load', '--input', str(file)], timeout=600)
         for key, expected in images.items():
             actual = json.loads(self.run(['docker', 'image', 'inspect', 'mcp-hub-ci-'+key+':'+commit]))[0]
-            if actual['Id'] != expected:
-                raise DeploymentError('IMPORTED_IMAGE_ID_MISMATCH')
+            # Classic storage identifies an image by config digest; containerd
+            # may identify the same image by its manifest/index digest instead.
+            # Verify runtime configuration and ordered content-addressed layers
+            # in either store, then use the daemon's immutable local image ID.
+            def normalized(config):
+                return {k:v for k,v in config.items() if v not in (None,False,'',[],{})}
+            config = configs[key]
+            if (not re.fullmatch(r'sha256:[a-f0-9]{64}', actual['Id'])
+                    or normalized(actual['Config']) != normalized(config['config'])
+                    or actual['RootFS']['Layers'] != config['rootfs']['diff_ids']
+                    or actual['Os'] != config['os'] or actual['Architecture'] != config['architecture']):
+                raise DeploymentError('IMPORTED_IMAGE_CONTENT_MISMATCH')
+            images[key] = actual['Id']
         return images
 
     def public_ready(self, commit=None):
