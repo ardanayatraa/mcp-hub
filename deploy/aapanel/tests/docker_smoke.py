@@ -109,7 +109,8 @@ def main():
             for key in ('backend','edge'):
                 recipe=base/('broken-'+key+'.Dockerfile')
                 copy=('COPY backend/app/main.py /app/app/main.py' if key=='backend' else 'COPY frontend/dist/release-version.json /usr/share/nginx/html/release-version.json')
-                recipe.write_text('FROM '+good_images[key]+'\nLABEL org.opencontainers.image.revision='+commit+'\n'+copy+'\n')
+                # BuildKit resolves FROM through image names, not raw image IDs.
+                recipe.write_text('FROM mcp-hub-ci-'+key+':'+good_commit+'\nLABEL org.opencontainers.image.revision='+commit+'\n'+copy+'\n')
                 run(['docker','build','--file',str(recipe),'--tag','mcp-hub-ci-'+key+':'+commit,str(source)])
             import gzip
             saved=base/'broken-images.tar'
