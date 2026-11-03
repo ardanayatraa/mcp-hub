@@ -1,8 +1,8 @@
-# Resource dan izin
+# Resources and permissions
 
-Resource mendefinisikan model, field yang diperbolehkan, filter, serta policy aplikasi. Database tidak diekspos otomatis.
+A resource defines a model, allowed fields, filters, and application policy. The database is never exposed automatically.
 
-## Temukan kandidat
+## Discover candidates
 
 ```bash
 php artisan mcp-hub:discover
@@ -10,20 +10,20 @@ php artisan mcp-hub:discover --schema
 php artisan make:mcp-resource orders --model='App\Models\Order'
 ```
 
-Discovery membaca metadata, bukan record bisnis. Generator menghasilkan definisi **nonaktif** di `config/mcp-hub-resources`, policy yang menolak akses, dan kelas aplikasi terkait. Tinjau semuanya sebelum mengaktifkan grants.
+Discovery reads metadata, not business records. The generator creates **disabled** definitions in `config/mcp-hub-resources`, denial policies, and related application classes. Review them before enabling grants.
 
-## Resolver actor
+## Resolve actors
 
-Implementasikan `McpHub\Laravel\Contracts\ActorResolver`:
+Implement `McpHub\Laravel\Contracts\ActorResolver`:
 
 ```php
 public function forUser(Authenticatable $user): Actor;
 public function resolve(string $userReference, string $tenant): Actor;
 ```
 
-`forUser` mengambil identitas dari user terautentikasi server. `resolve` memeriksa ulang akun aktif dan keanggotaan tenant untuk reference yang ditandatangani. Kembalikan actor yang konsisten atau tolak akses; identitas tidak diambil dari argumen model.
+`forUser` derives identity from the server's authenticated user. `resolve` rechecks account status and tenant membership for a signed reference. Return a consistent actor or deny access; model arguments must never establish identity.
 
-Contoh berikut mengasumsikan class aplikasi telah diimplementasikan:
+This configuration assumes that you have implemented the application classes:
 
 ```php
 'actor_resolver' => \App\Mcp\ActorResolver::class,
@@ -44,21 +44,21 @@ Contoh berikut mengasumsikan class aplikasi telah diimplementasikan:
 ],
 ```
 
-## Scope dan policy
+## Policies and record scope
 
-`ResourcePolicy` memisahkan izin aksi dari pembatas query:
+`ResourcePolicy` separates action permission from query restrictions:
 
 ```php
 public function allows(Actor $actor, string $resource, string $action): bool;
 public function scope(Builder $query, Actor $actor): Builder;
 ```
 
-`allows` memeriksa permission saat ini; `scope` membatasi seluruh query menurut tenant, ownership, dan visibilitas host. Nama kolom/role mengikuti aplikasi Anda. Filter UI atau tenant ID dari model bukan batas keamanan.
+`allows` checks current permissions; `scope` restricts the entire query by tenant, ownership, and host visibility rules. Column and role names depend on your application. UI filters or model-supplied tenant IDs are not a security boundary.
 
-Uji akun tidak aktif, tenant berbeda, record pengguna lain, dan pencabutan izin. Jangan menambahkan field sensitif ke allowlist. `limit`/`cursor` merupakan parameter pagination yang dicadangkan.
+Test inactive accounts, other tenants, other users' records, and revoked permissions. Do not add sensitive fields to the allowlist. `limit` and `cursor` are reserved pagination parameters.
 
-## Reference dan grants
+## References and grants
 
-Reference default opaque dan terenkripsi, terikat source/environment/resource/actor/tenant. Reference tidak menggantikan query scope. Grants admin hanya mengurangi batas developer. Key tools wajib muat dalam batas 80 karakter Hub.
+Default references are opaque and encrypted, bound to the source, environment, resource, actor, and tenant. A reference does not replace query scope. Administrator grants only narrow the developer's permissions. Generated tool keys must fit the Hub's 80-character limit.
 
-Setelah review, sync manifest dan verifikasi katalog dari client terbatas. Lihat [kontrak sumber](../reference/connector-contract.md) untuk schema dan envelope.
+After review, sync the manifest and verify the catalog using a restricted client. See the [source contract](../reference/connector-contract.md) for schemas and response envelopes.

@@ -1,14 +1,14 @@
-# Status dan versi
+# Release status and versions
 
-## Package Laravel
+## Laravel package
 
-**`ardanayatraa/laravel-mcp-hub` 1.0.0** adalah rilis stable pertama, diterbitkan 3 November 2026. Instalasi memakai `^1.0` tanpa flag `@alpha`.
+**`ardanayatraa/laravel-mcp-hub` 1.0.0** is the first stable release, published November 3, 2026. Install it with `^1.0`, without an `@alpha` flag.
 
-[Rilis dan ZIP terverifikasi](https://github.com/ardanayatraa/laravel-mcp-hub/releases/tag/v1.0.0) · [Packagist](https://packagist.org/packages/ardanayatraa/laravel-mcp-hub) · [CI tag 1.0.0](https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/41553234044)
+[Release and verified ZIP](https://github.com/ardanayatraa/laravel-mcp-hub/releases/tag/v1.0.0) · [Packagist](https://packagist.org/packages/ardanayatraa/laravel-mcp-hub) · [Version 1.0.0 CI](https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/41553234044)
 
-Rilis mencakup pairing, SQL nonce, proposal CRUD, settings/chat, Gateway SDK, dan ekspor privat. Seluruh 16 job rilis lulus: 13 kombinasi PHP/Laravel, PostgreSQL, aset chat, serta distribusi. Suite package mengumpulkan 116 tes dengan dua tes opt-in; pemeriksaan PostgreSQL dijalankan terpisah. Hasil CI bukan benchmark kapasitas produksi.
+The release includes pairing, SQL nonces, CRUD proposals, settings and chat, the Gateway SDK, and private exports. All 16 release jobs passed: 13 PHP/Laravel combinations, PostgreSQL, chat assets, and distribution checks. The package suite collects 116 tests with two opt-in tests; PostgreSQL checks run separately. CI results are not a production capacity benchmark.
 
-## Kompatibilitas yang diuji
+## Tested compatibility
 
 | Laravel | PHP |
 |---|---|
@@ -22,10 +22,10 @@ Rilis mencakup pairing, SQL nonce, proposal CRUD, settings/chat, Gateway SDK, da
 | 12 | 8.2, 8.4 |
 | 13 | 8.3, 8.4 |
 
-Kebutuhan efektif PHP mengikuti framework/dependensi host. Matriks menguji patch acuan di [README package](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/README.md), bukan semua kombinasi patch. Kompatibilitas package tidak mengembalikan pemeliharaan keamanan upstream yang sudah berakhir.
+Effective PHP requirements depend on the host framework and dependencies. The matrix tests the reference patches listed in the [package README](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/README.md), rather than every patch combination. Package compatibility does not restore expired upstream security maintenance.
 
-## Server Hub
+## Hub server
 
-Dokumentasi Hub mengikuti edisi Python pada `main`. Nomor stable package Laravel tidak otomatis menjadi nomor rilis server Hub. Tinjau commit server, schema database, dan kontrak sebelum upgrade terkoordinasi. Edisi JavaScript pada `mcp-js` tidak dicakup panduan operasi ini.
+Hub documentation follows the Python edition on `main`. The Laravel package's stable version does not automatically become the server's release number. Review the server commit, database schema, and API contracts before a coordinated upgrade. The JavaScript edition on `mcp-js` is outside this operations guide.
 
-Pertahankan lock file host dan ikuti [upgrade Laravel](../laravel/upgrade.md). Koreksi rilis diterbitkan sebagai patch baru; tag 1.0.0 tidak dipindahkan.
+Keep the host application's lock file and follow the [Laravel upgrade guide](../laravel/upgrade.md). Release corrections use a new patch version; the 1.0.0 tag is not moved.

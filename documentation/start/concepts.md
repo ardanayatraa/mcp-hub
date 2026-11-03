@@ -1,44 +1,44 @@
-# Konsep dan arsitektur
+# Concepts and architecture
 
-MCP Hub menghubungkan client AI dengan aplikasi bisnis melalui tools yang ditinjau. Panduan Hub ini mengikuti edisi Python pada branch `main`: backend FastAPI, admin UI Vue, PostgreSQL untuk produksi, dan Redis untuk pembatasan bersama.
+MCP Hub connects AI clients to business applications through reviewed tools. This guide covers the Python edition on `main`: a FastAPI backend, Vue admin UI, PostgreSQL in production, and Redis for shared rate limits.
 
-## Pembagian tanggung jawab
+## Responsibilities
 
-| Komponen | Tanggung jawab |
+| Component | Responsibilities |
 |---|---|
-| Hub | Konfigurasi connector, secrets terenkripsi, katalog tools, profil, model gateway, dan audit metadata |
-| Aplikasi sumber | Akun aktif, keanggotaan tenant, ownership record, validasi bisnis, persetujuan, dan file laporan |
-| Client AI | Menemukan tools yang diizinkan dan mengirim argumen sesuai schema |
-| Package Laravel | Endpoint sumber, SDK Hub, verifikasi assertion, proposal, dan UI yang dilindungi izin host |
+| Hub | Connector configuration, encrypted secrets, tool catalog, profiles, model gateway, and audit metadata |
+| Source application | Active accounts, tenant membership, record ownership, business validation, approval, and report files |
+| AI client | Discover permitted tools and submit arguments that match their schemas |
+| Laravel package | Source endpoints, Hub SDK, assertion verification, proposals, and UI protected by host permissions |
 
-Hub tidak memerlukan kredensial database bisnis. Record yang diizinkan dapat melintas saat permintaan berjalan; aplikasi tetap pemilik data. Konfigurasi dan audit Hub terpisah dari record bisnis. Memory opsional menyimpan catatan pengguna terenkripsi, sedangkan ekspor privat disimpan oleh aplikasi Laravel.
+The Hub does not need credentials for your business database. Authorized records may pass through it during a request; the application retains ownership. Hub configuration and audit metadata are separate from business records. Optional memory stores encrypted user notes, while private exports remain in the Laravel application.
 
-## Istilah utama
+## Key terms
 
-| Istilah | Makna |
+| Term | Meaning |
 |---|---|
-| App / connector | Aplikasi dengan URL sumber, environment, dan identitas tetap |
-| Data source / resource | Modul yang ditinjau, misalnya `orders` |
-| Tool | Operasi dengan endpoint, schema, dan izin yang jelas |
-| Client key | Kredensial satu client untuk scope aplikasi tertentu |
-| Access profile | Pembatas tambahan terhadap resource dan tools |
-| Skill | Instruksi reusable yang diterbitkan sebagai MCP prompt |
-| Delegation | Bukti pengguna dari server aplikasi ke Hub |
-| Assertion | Bukti singkat sekali pakai dari Hub ke aplikasi sumber |
+| App / connector | An application with a source URL, environment, and stable identity |
+| Data source / resource | A reviewed module, such as `orders` |
+| Tool | An operation with a fixed endpoint, schema, and permissions |
+| Client key | A credential restricted to a particular application scope |
+| Access profile | An additional restriction on resources and tools |
+| Skill | Reusable instructions published as an MCP prompt |
+| Delegation | Proof of the user context sent from the application server to the Hub |
+| Assertion | Short-lived, single-use proof sent from the Hub to the source application |
 
-## Alur satu permintaan
+## Request lifecycle
 
-1. Server aplikasi menetapkan actor dari pengguna yang terautentikasi.
-2. Client memanggil Hub memakai bearer key dan delegation untuk operasi per pengguna.
-3. Hub memeriksa key, profil, connector, grants, schema, dan izin operasi.
-4. Hub menghubungi endpoint tetap dengan service credential dan assertion actor.
-5. Aplikasi menolak replay dan memeriksa ulang akun, tenant, policy, serta scope record.
-6. Hub memvalidasi respons dan memproyeksikan field sebelum mengirim hasil ke client.
+1. The application server resolves the actor from its authenticated user.
+2. The client calls the Hub with a bearer key and delegation for user-scoped operations.
+3. The Hub checks the key, profile, connector, grants, schema, and operation permissions.
+4. The Hub calls a fixed endpoint with a service credential and actor assertion.
+5. The application rejects replay and rechecks the account, tenant, policy, and record scope.
+6. The Hub validates the response and projects permitted fields before returning the result.
 
-## Dua mode connector
+## Connector modes
 
-**`source_managed`** mengikuti manifest izin aplikasi. Refresh yang gagal menolak katalog/panggilan daripada memakai grants lama. Pengaturan manual tools/modul di Hub dikunci.
+**`source_managed`** follows the application's permission manifest. A failed refresh denies discovery and calls instead of using stale grants. Manual tool and module settings are locked in the Hub.
 
-**`http_contract`** memakai proses review, test, dan publish manual di Hub. Pilih mode ini bila kontrak tools dikelola operator Hub.
+**`http_contract`** uses a manual review, test, and publication workflow in the Hub. Choose it when Hub operators manage the tool contract.
 
-Lihat [connector contract](../reference/connector-contract.md) untuk manifest, respons, dan batas schema.
+See the [connector contract](../reference/connector-contract.md) for manifests, response envelopes, and schema limits.

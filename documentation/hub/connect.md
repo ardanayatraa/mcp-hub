@@ -1,32 +1,32 @@
-# Hubungkan aplikasi
+# Connect an application
 
-Tentukan app key, environment, URL sumber, dan pemilik kebijakan resource sebelum koneksi dibuat. Perubahan identitas/URL perlu ditinjau karena nilai itu terikat pada kredensial dan reference.
+Choose an app key, environment, source URL, and resource policy owner before creating the connection. Review identity or URL changes because these values are bound to credentials and references.
 
-## Pairing Laravel
+## Pair a Laravel application
 
-1. Daftarkan aplikasi/connector di Hub dengan URL sumber yang benar.
-2. Buat enrollment code melalui admin yang mempunyai scope aplikasi.
-3. Jalankan [pairing dari Laravel](../laravel/connection.md).
-4. Pastikan Hub memvalidasi health dan capability manifest sumber.
-5. Periksa status aktif, grants, dan client key yang terikat.
+1. Register the application or connector in the Hub with the correct source URL.
+2. Create an enrollment code as an administrator with access to that application.
+3. Run [pairing from Laravel](../laravel/connection.md).
+4. Confirm that the Hub validates the source health and capability manifest.
+5. Check the active status, grants, and associated client key.
 
-Pairing memberikan kredensial read-only. Replacement mempertahankan restrictions dan tidak menambahkan hak tulis.
+Pairing issues read-only credentials. Replacement preserves restrictions and does not add write access.
 
-## Mode pengelolaan
+## Permission management modes
 
-| Mode | Pemilik konfigurasi | Alur |
+| Mode | Configuration owner | Workflow |
 |---|---|---|
-| `source_managed` | Aplikasi sumber | Manifest mengikuti grants aplikasi; refresh gagal menolak akses |
-| `http_contract` | Operator Hub | Test connector, discover, review modul, test tools, publish |
+| `source_managed` | Source application | Manifest follows application grants; refresh failures deny access |
+| `http_contract` | Hub operator | Test connector, discover, review modules, test tools, publish |
 
-Manifest `source_managed` wajib menyatakan `managed_by: application`. Daftar `modules: []` yang eksplisit mencabut seluruh generated tools. Profil dan key tetap dapat mempersempit akses.
+A source-managed manifest must declare `managed_by: application`. An explicit `modules: []` revokes all generated source tools. Profiles and keys can still narrow access further.
 
-## Sumber non-Laravel
+## Non-Laravel sources
 
-Implementasikan health, manifest, dan endpoint sesuai [connector contract](../reference/connector-contract.md). Service credential membuktikan Hub boleh menghubungi aplikasi; assertion membuktikan konteks pengguna. Endpoint dan metode ditetapkan oleh manifest, bukan argumen model.
+Implement health, manifest, and operation endpoints using the [connector contract](../reference/connector-contract.md). The service credential proves the Hub can contact the application; the assertion proves the user context. Endpoints and methods come from the manifest, never model arguments.
 
-## Siklus hidup
+## Connection lifecycle
 
-**Test** memeriksa autentikasi/keterjangkauan. **Discover/sync** memvalidasi kontrak. **Activate** mengaktifkan connector. **Pause** memblokir panggilan sambil mempertahankan metadata. **Revoke/archive** mencabut akses sesuai scope aksi.
+**Test** checks authentication and reachability. **Discover/sync** validates the contract. **Activate** enables the connector. **Pause** blocks calls while retaining metadata. **Revoke/archive** removes access within the action's scope.
 
-Renewal mempertahankan identitas. Replacement mencabut credentials instalasi lama dan mengeluarkan code sekali pakai untuk penggantinya. Detail expiry dan recovery tersedia di [API enrollment](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/CONNECTOR_ENROLLMENT.md).
+Renewal preserves the installation identity. Replacement revokes the old installation's credentials and issues a single-use code for its successor. See the [enrollment API](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/CONNECTOR_ENROLLMENT.md) for expiry and recovery behavior.

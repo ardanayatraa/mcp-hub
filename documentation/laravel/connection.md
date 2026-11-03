@@ -1,8 +1,8 @@
-# Pairing dan konfigurasi
+# Pairing and configuration
 
-Pairing mengikat satu aplikasi, environment, dan URL sumber dengan Hub. Gunakan code sekali pakai dari admin yang memiliki scope aplikasi tersebut.
+Pairing binds an application, environment, and source URL to the Hub. Use a single-use code from an administrator with access to that application.
 
-## Identitas aplikasi
+## Application identity
 
 ```dotenv
 MCP_HUB_APP_KEY=your_app
@@ -10,9 +10,9 @@ MCP_HUB_ENVIRONMENT=production
 MCP_HUB_BASE_URL=https://app.example.com
 ```
 
-Samakan URL sumber dengan pendaftaran Hub. Environment/source URL menjadi bagian dari binding proposal, record reference, dan artifact. Konfigurasi environment yang sudah dipasang operator tetap lebih tinggi prioritasnya daripada bundle tersimpan.
+Match the source URL registered in the Hub. The environment and source URL are part of the proposal, record-reference, and artifact bindings. Operator-managed environment values take precedence over the saved connection bundle.
 
-## Pairing melalui prompt
+## Pair using the hidden prompt
 
 ```bash
 php artisan mcp-hub:connect --hub=https://hub.example.com
@@ -20,31 +20,31 @@ php artisan mcp-hub:status
 php artisan mcp-hub:doctor --online
 ```
 
-Masukkan code pada prompt tersembunyi. Opsi `--code` tersedia untuk otomasi terkendali, tetapi prompt menghindari code masuk shell history. Jangan menaruh code/proof di URL, log, atau screenshot.
+Enter the code at the hidden prompt. The `--code` option is available for controlled automation, but the prompt avoids placing the code in shell history. Do not put codes or proofs in URLs, logs, or screenshots.
 
-Proof instalasi disimpan terenkripsi sebelum claim selesai. Aktivasi mengikuti validasi health/kontrak. Direktori `storage/app/mcp-hub` harus privat, dapat ditulis proses aplikasi, dan dipertahankan lintas deployment.
+The installation proof is encrypted before the claim completes. Activation follows health and contract validation. Keep `storage/app/mcp-hub` private, writable by the application, and persistent across deployments.
 
 ## Recovery
 
-| Kondisi | Tindakan |
+| Situation | Action |
 |---|---|
-| Respons pairing hilang | `php artisan mcp-hub:connect --resume` |
-| Code expired/claim tidak dapat dipulihkan | Minta replacement pada admin berwenang |
-| Replacement tersedia | Connect menggunakan `--hub=... --replace` |
-| Resource/kontrak berubah | `php artisan mcp-hub:sync` |
-| Koneksi dicabut | `php artisan mcp-hub:disconnect` |
+| Pairing response was lost | `php artisan mcp-hub:connect --resume` |
+| Code expired or claim cannot be recovered | Ask an authorized administrator for a replacement |
+| Replacement is available | Connect using `--hub=... --replace` |
+| Resources or contract changed | `php artisan mcp-hub:sync` |
+| Connection must be revoked | `php artisan mcp-hub:disconnect` |
 
-Replacement mencabut credentials lama, mempertahankan restrictions profil/tools, dan tidak memberikan write scope. Disconnect menonaktifkan koneksi lokal dahulu; revocation remote tetap pending bila Hub belum mengakuinya.
+Replacement revokes old credentials, preserves profile and tool restrictions, and does not grant write scope. Disconnect disables the local connection first; remote revocation stays pending until the Hub acknowledges it.
 
-## Import koneksi existing
+## Import an existing connection
 
-Untuk credentials yang sudah diprovisikan, siapkan `MCP_HUB_URL`, `MCP_HUB_CLIENT_KEY`, `MCP_HUB_APP_TOKEN`, serta `MCP_HUB_DELEGATION_SECRET`, selain identitas di atas.
+For already provisioned credentials, configure `MCP_HUB_URL`, `MCP_HUB_CLIENT_KEY`, `MCP_HUB_APP_TOKEN`, and `MCP_HUB_DELEGATION_SECRET` in addition to the identity settings above.
 
 ```bash
 php artisan mcp-hub:connect --import-env --dry-run
 php artisan mcp-hub:connect --import-env
 ```
 
-App token/delegation secret minimal 32 karakter acak. Salinan koneksi disimpan terenkripsi pada `storage/app/mcp-hub/connection.enc` menggunakan `APP_KEY`.
+The app token and delegation secret require at least 32 random characters. The connection copy is stored encrypted at `storage/app/mcp-hub/connection.enc` using `APP_KEY`.
 
-`MCP_HUB_URL` menunjuk endpoint Hub `/mcp`; `MCP_HUB_BASE_URL` menunjuk sumber Laravel. HTTP hanya untuk loopback di environment local/testing. Produksi menggunakan HTTPS.
+`MCP_HUB_URL` points to the Hub's `/mcp` endpoint; `MCP_HUB_BASE_URL` points to the Laravel source. HTTP is permitted only for loopback in local/testing environments. Use HTTPS in production.

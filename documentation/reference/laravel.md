@@ -1,53 +1,53 @@
-# Artisan dan konfigurasi
+# Artisan and configuration
 
-## Perintah
+## Commands
 
-| Perintah | Kegunaan |
+| Command | Purpose |
 |---|---|
-| `mcp-hub:install --dry-run --migrate` | Preview config/migrasi package |
-| `mcp-hub:install --migrate` | Config yang belum ada dan metadata SQL |
-| `mcp-hub:connect --hub=...` | Pairing melalui prompt tersembunyi |
-| `mcp-hub:connect --resume` | Lanjutkan proof tersimpan |
-| `mcp-hub:connect --hub=... --replace` | Pasang replacement admin |
-| `mcp-hub:connect --import-env` | Import koneksi diprovisikan |
-| `mcp-hub:status` | Metadata status tanpa secrets |
-| `mcp-hub:doctor --online` | Diagnosis lokal dan koneksi Hub |
-| `mcp-hub:sync` | Sync kontrak |
-| `mcp-hub:disconnect` | Disable lokal dan revoke remote |
-| `mcp-hub:discover --schema` | Kandidat dari metadata |
-| `make:mcp-resource orders --model=...` | Definisi/policy nonaktif |
-| `mcp-hub:prune --days=30` | Cleanup metadata/artifact |
+| `mcp-hub:install --dry-run --migrate` | Preview package configuration and migrations |
+| `mcp-hub:install --migrate` | Create missing configuration and SQL metadata |
+| `mcp-hub:connect --hub=...` | Pair through the hidden prompt |
+| `mcp-hub:connect --resume` | Resume the saved proof |
+| `mcp-hub:connect --hub=... --replace` | Install an administrator-issued replacement |
+| `mcp-hub:connect --import-env` | Import a provisioned connection |
+| `mcp-hub:status` | Inspect status metadata without secrets |
+| `mcp-hub:doctor --online` | Diagnose local state and Hub connectivity |
+| `mcp-hub:sync` | Sync the contract |
+| `mcp-hub:disconnect` | Disable locally and request remote revocation |
+| `mcp-hub:discover --schema` | Discover candidates from metadata |
+| `make:mcp-resource orders --model=...` | Generate disabled definitions and policies |
+| `mcp-hub:prune --days=30` | Clean up metadata and artifacts |
 
-Gunakan `php artisan help <command>` untuk seluruh opsi versi yang terpasang.
+Use `php artisan help <command>` for the full options of the installed version.
 
-## Environment
+## Environment variables
 
-| Variabel | Arti |
+| Variable | Meaning |
 |---|---|
-| `MCP_HUB_APP_KEY` | Identitas aplikasi |
-| `MCP_HUB_ENVIRONMENT` | Environment koneksi |
-| `MCP_HUB_BASE_URL` | URL sumber aplikasi |
-| `MCP_HUB_URL` | Endpoint Hub `/mcp` |
-| `MCP_HUB_CLIENT_KEY` | Laravel → Hub |
-| `MCP_HUB_APP_TOKEN` | Hub → Laravel |
-| `MCP_HUB_DELEGATION_SECRET` | Signature konteks actor |
-| `MCP_HUB_ENABLED` | Override koneksi |
-| `MCP_HUB_TIMEOUT` | Request umum; default 12 detik |
-| `MCP_HUB_CHAT_TIMEOUT` | SDK chat; default 120 detik |
+| `MCP_HUB_APP_KEY` | Application identity |
+| `MCP_HUB_ENVIRONMENT` | Connection environment |
+| `MCP_HUB_BASE_URL` | Application source URL |
+| `MCP_HUB_URL` | Hub `/mcp` endpoint |
+| `MCP_HUB_CLIENT_KEY` | Laravel → Hub authentication |
+| `MCP_HUB_APP_TOKEN` | Hub → Laravel authentication |
+| `MCP_HUB_DELEGATION_SECRET` | Actor context signing secret |
+| `MCP_HUB_ENABLED` | Connection override |
+| `MCP_HUB_TIMEOUT` | General request timeout; default 12 seconds |
+| `MCP_HUB_CHAT_TIMEOUT` | Chat SDK timeout; default 120 seconds |
 
-Environment yang mempunyai nilai tetap mengungguli bundle tersimpan. Jangan mencetak environment untuk troubleshooting; diagnosis harus menyembunyikan secrets.
+Configured environment values take precedence over the saved bundle. Never print the environment for troubleshooting; diagnostics must hide secrets.
 
-## Config
+## Configuration keys
 
-| Key | Default/perilaku |
+| Key | Default or behavior |
 |---|---|
-| `models` | Kosong |
-| `actor_resolver` | Resolver penolak akses |
+| `models` | Empty |
+| `actor_resolver` | Resolver that denies access |
 | `routes.enabled`, `routes.prefix` | `true`, `api/ai/v1` |
-| `web.enabled`, `web.prefix` | `true`, `mcp-hub`; tetap dilindungi Gate |
-| `commands.enabled`, `commands.ttl` | `false`, 300 detik |
-| `exports.enabled`, `exports.ttl` | `false`, 600 detik |
+| `web.enabled`, `web.prefix` | `true`, `mcp-hub`; still protected by Gates |
+| `commands.enabled`, `commands.ttl` | `false`, 300 seconds |
+| `exports.enabled`, `exports.ttl` | `false`, 600 seconds |
 | `record_references` | `opaque` |
-| `maintenance.scheduled_prune` | `true`; host scheduler harus berjalan |
+| `maintenance.scheduled_prune` | `true`; the host scheduler must run |
 
-Gunakan scalar, array, dan class string agar kompatibel dengan `config:cache`. Lihat [config rilis 1.0.0](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/config/mcp-hub.php).
+Use scalars, arrays, and class strings for `config:cache` compatibility. See the [version 1.0.0 configuration](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/config/mcp-hub.php).

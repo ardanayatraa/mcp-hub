@@ -1,37 +1,37 @@
-# Proposal CRUD dengan persetujuan
+# CRUD proposals and approval
 
-Create/update/delete memakai proposal yang ditinjau pengguna dalam sesi aplikasi. Pembuatan proposal tidak mengubah record bisnis.
+Create, update, and delete operations use proposals reviewed by the user within the application session. Preparing a proposal does not change business records.
 
-## Syarat aktivasi
+## Activation requirements
 
-Koneksi aktif, `commands.enabled`, resource/operasi aktif, schema scalar tertutup, handler eksplisit, policy saat ini, dan write scope key semuanya harus mengizinkan aksi.
+The connection, `commands.enabled`, resource and operation grants, closed scalar schema, explicit handler, current policy, and client key write scope must all allow the action.
 
-Implementasikan `CommandHandler` milik aplikasi. `EloquentCommands` tersedia untuk transaksi Eloquent generik; `WritePolicy` memvalidasi nilai bisnis dan menyediakan atribut ownership/default dari server. Mulai dari definisi hasil generator yang nonaktif.
+Implement an application-owned `CommandHandler`. `EloquentCommands` supports generic Eloquent transactions; `WritePolicy` validates business input and supplies server-owned ownership and default attributes. Start with the generator's disabled definitions.
 
-## Alur transaksi
+## Transaction workflow
 
-1. Hub meminta proposal menggunakan assertion actor sekali pakai.
-2. Aplikasi memvalidasi input/scope dan menyimpan payload terenkripsi dengan expiry.
-3. Receipt mengembalikan `proposal_ref` berstatus `pending`.
-4. Pengguna meninjau nilai canonical pada `/mcp-hub/proposals/{proposal}`.
-5. Approval/cancel memerlukan sesi actor/tenant yang tepat dan CSRF.
-6. Commit mengunci proposal, memeriksa izin/schema/versi record kembali, lalu menjalankan perubahan dan mencatat receipt dalam transaksi yang sama.
+1. The Hub requests a proposal with a single-use actor assertion.
+2. The application validates input and scope, then stores an encrypted payload with an expiry.
+3. The receipt returns a `proposal_ref` with status `pending`.
+4. The user reviews canonical values at `/mcp-hub/proposals/{proposal}`.
+5. Approval or cancellation requires the exact actor and tenant's application session and CSRF protection.
+6. Commit locks the proposal, rechecks permissions, schema, and record version, then applies the change and records the receipt in one transaction.
 
-| Method | Route default | Hasil |
+| Method | Default route | Result |
 |---|---|---|
-| POST | `/api/ai/v1/{resource}/commands/{operation}` | Proposal expiring |
-| GET | `/api/ai/v1/{resource}/commands/{proposal}` | Receipt actor-bound |
-| POST | `/mcp-hub/proposals/{proposal}` | Keputusan pengguna melalui sesi web |
+| POST | `/api/ai/v1/{resource}/commands/{operation}` | Expiring proposal |
+| GET | `/api/ai/v1/{resource}/commands/{proposal}` | Actor-bound receipt |
+| POST | `/mcp-hub/proposals/{proposal}` | User decision through the web session |
 
-Operasi terbatas `create`, `update`, dan `delete`. Model tidak boleh mengirim `approved`, user ID, tenant ID, atau endpoint tujuan untuk menentukan otorisasi.
+Operations are limited to `create`, `update`, and `delete`. The model cannot establish authorization by submitting `approved`, user IDs, tenant IDs, or destination endpoints.
 
-## Idempotency dan conflict
+## Idempotency and conflicts
 
-Key yang sama dengan payload yang sama mengembalikan receipt existing; payload berbeda ditolak. Approval ulang terhadap proposal committed tidak mengulangi write.
+The same key and payload return the existing receipt; a different payload is rejected. Reapproving a committed proposal does not repeat the write.
 
-Pending bukan keberhasilan bisnis. Proposal expired, izin dicabut, konfigurasi berubah, atau versi record conflict dapat membutuhkan proposal baru. UI tidak boleh otomatis menampilkan committed dari receipt pending.
+Pending is not business success. Expiry, revoked permissions, changed configuration, or a record-version conflict may require a new proposal. The UI must not turn a pending receipt into a committed result automatically.
 
-!!! warning "Efek eksternal adalah tanggung jawab aplikasi"
-    Rollback database tidak membatalkan email, HTTP request, atau efek observer yang sudah dikirim. Gunakan transactional outbox host untuk efek eksternal. Handler generik membutuhkan koneksi transaksi default yang sama dengan metadata package.
+!!! warning "External side effects belong to the application"
+    A database rollback cannot undo an email, HTTP request, or observer side effect that has already been sent. Use the host's transactional outbox for external effects. The generic handler requires the same default transaction connection as the package metadata.
 
-[Interface handler dan WritePolicy](https://github.com/ardanayatraa/laravel-mcp-hub/tree/v1.0.0/src/Contracts)
+[Handler and WritePolicy interfaces](https://github.com/ardanayatraa/laravel-mcp-hub/tree/v1.0.0/src/Contracts)

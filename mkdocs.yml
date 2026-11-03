@@ -1,5 +1,5 @@
 site_name: MCP Hub Docs
-site_description: Panduan MCP Hub dan Laravel MCP Hub 1.0 — instalasi, integrasi, API, keamanan, dan operasi.
+site_description: MCP Hub and Laravel MCP Hub 1.0 documentation — installation, integration, APIs, security, and operations.
 site_url: https://ardanayatraa.github.io/mcp-hub/
 repo_url: https://github.com/ardanayatraa/mcp-hub
 repo_name: ardanayatraa/mcp-hub
@@ -9,7 +9,7 @@ site_dir: site
 strict: true
 theme:
   name: material
-  language: id
+  language: en
   font: false
   logo: assets/logo.svg
   favicon: assets/logo.svg
@@ -19,13 +19,13 @@ theme:
       accent: teal
       toggle:
         icon: material/weather-night
-        name: Gunakan mode gelap
+        name: Switch to dark mode
     - scheme: slate
       primary: custom
       accent: teal
       toggle:
         icon: material/weather-sunny
-        name: Gunakan mode terang
+        name: Switch to light mode
   features:
     - navigation.tabs
     - navigation.sections
@@ -57,35 +57,35 @@ extra_css:
   - assets/styles.css
 extra:
   generator: false
-copyright: MCP Hub · Dokumentasi proyek
+copyright: MCP Hub · Project documentation
 nav:
-  - Mulai:
-      - Ikhtisar: index.md
-      - Konsep dan arsitektur: start/concepts.md
-      - Jalur implementasi: start/quickstart.md
-      - Status dan versi: start/releases.md
+  - Get started:
+      - Overview: index.md
+      - Concepts and architecture: start/concepts.md
+      - Implementation paths: start/quickstart.md
+      - Release status and versions: start/releases.md
   - MCP Hub:
-      - Jalankan secara lokal: hub/local.md
-      - Hubungkan aplikasi: hub/connect.md
-      - Client, tools, dan profil: hub/clients.md
-      - Chat dan model gateway: hub/chat.md
-      - Produksi dan pemulihan: hub/operations.md
+      - Run locally: hub/local.md
+      - Connect an application: hub/connect.md
+      - Clients, tools, and profiles: hub/clients.md
+      - Chat and model gateway: hub/chat.md
+      - Production and recovery: hub/operations.md
   - Laravel 1.0:
-      - Instalasi: laravel/install.md
-      - Pairing dan konfigurasi: laravel/connection.md
-      - Resource dan izin: laravel/resources.md
-      - Proposal CRUD: laravel/commands.md
-      - Chat dan SDK: laravel/chat.md
-      - Ekspor privat: laravel/exports.md
-      - Upgrade dan pemeliharaan: laravel/upgrade.md
-  - Referensi:
-      - Peta endpoint: reference/endpoints.md
-      - Admin dan MCP API: reference/admin-api.md
+      - Installation: laravel/install.md
+      - Pairing and configuration: laravel/connection.md
+      - Resources and permissions: laravel/resources.md
+      - CRUD proposals: laravel/commands.md
+      - Chat and SDK: laravel/chat.md
+      - Private exports: laravel/exports.md
+      - Upgrades and maintenance: laravel/upgrade.md
+  - Reference:
+      - Endpoint map: reference/endpoints.md
+      - Admin and MCP API: reference/admin-api.md
       - Connector contract: reference/connector-contract.md
-      - Tools dan reporting: reference/tools.md
-      - Profil akses: reference/profiles.md
-      - Artisan dan konfigurasi: reference/laravel.md
-  - Operasi dan bantuan:
-      - Keamanan: help/security.md
-      - Pemecahan masalah: help/troubleshooting.md
-      - Kontribusi dokumentasi: help/contributing.md
+      - Tools and reporting: reference/tools.md
+      - Access profiles: reference/profiles.md
+      - Artisan and configuration: reference/laravel.md
+  - Operations and support:
+      - Security: help/security.md
+      - Troubleshooting: help/troubleshooting.md
+      - Contribute to the documentation: help/contributing.md

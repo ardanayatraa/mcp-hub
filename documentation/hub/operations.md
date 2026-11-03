@@ -1,39 +1,39 @@
-# Produksi dan pemulihan
+# Production and recovery
 
-Gunakan HTTPS, PostgreSQL, Redis khusus, reverse proxy, dan pengelolaan secrets untuk Hub produksi. Tentukan ukuran server melalui pengukuran workload, bukan hasil CI.
+Use HTTPS, PostgreSQL, dedicated Redis, a reverse proxy, and managed secrets for production. Size the deployment using workload measurements rather than CI results.
 
-## Konfigurasi pokok
+## Core settings
 
-| Pengaturan | Tujuan |
+| Setting | Purpose |
 |---|---|
-| `ENVIRONMENT=production` | Pemeriksaan konfigurasi produksi |
-| `DATABASE_URL` | PostgreSQL dengan akun layanan terbatas |
-| `SECRET_ENCRYPTION_KEY` | Membaca credentials terenkripsi; diperlukan saat restore |
-| `SESSION_SIGNING_KEY` | Signature sesi dengan key acak kuat |
-| `COOKIE_SECURE=true` | Cookie melalui HTTPS saja |
-| `RATE_LIMIT_BACKEND=redis` | Counter bersama antar proses |
-| Redis URL/password/namespace | Redis privat, autentikasi kuat, state pembatas konsisten |
-| `ALLOWED_HOSTS`, `ALLOWED_ORIGINS` | Domain/origin yang sah |
-| `MCP_PUBLIC_URL`, `MCP_ISSUER_URL` | Identitas endpoint publik |
-| `EGRESS_ALLOWED_HOSTS` / `EGRESS_ALLOWED_CIDRS` | Sumber yang boleh dihubungi |
-| `FORWARDED_ALLOW_IPS` | Proxy terpercaya saja |
+| `ENVIRONMENT=production` | Enable production configuration checks |
+| `DATABASE_URL` | PostgreSQL with a restricted service account |
+| `SECRET_ENCRYPTION_KEY` | Read encrypted credentials; required during recovery |
+| `SESSION_SIGNING_KEY` | Sign sessions with a strong random key |
+| `COOKIE_SECURE=true` | Send cookies over HTTPS only |
+| `RATE_LIMIT_BACKEND=redis` | Share counters between processes |
+| Redis URL/password/namespace | Private authenticated Redis and consistent rate-limit state |
+| `ALLOWED_HOSTS`, `ALLOWED_ORIGINS` | Valid public hosts and origins |
+| `MCP_PUBLIC_URL`, `MCP_ISSUER_URL` | Public endpoint identity |
+| `EGRESS_ALLOWED_HOSTS` / `EGRESS_ALLOWED_CIDRS` | Permitted source destinations |
+| `FORWARDED_ALLOW_IPS` | Trusted proxies only |
 
-Produksi menolak konfigurasi tidak aman. Jangan menyelesaikan readiness error dengan bypass HTTP/TLS atau in-memory limits.
+Production rejects unsafe configuration. Do not bypass readiness failures by disabling HTTP/TLS checks or switching to in-memory limits.
 
-## Build dan deployment
+## Build and deployment
 
-Gunakan lock file backend/frontend. Jalankan Alembic sesuai prosedur deployment; backend menolak schema tertinggal. Proxy melayani `/api/`, `/mcp`, `/chat/`, `/gateway/`, `/health`, dan `/ready`, bersama aset frontend.
+Use the backend and frontend lock files. Run Alembic through your deployment procedure; the backend rejects an outdated schema. The proxy serves `/api/`, `/mcp`, `/chat/`, `/gateway/`, `/health`, and `/ready`, alongside frontend assets.
 
-`infra/compose.yml` adalah development stack. Gunakan [deployment guide lengkap](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY.md) atau [panduan aaPanel](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY_AAPANEL_OTOMATIS.md) untuk deployment terjaga. Secrets dan konfigurasi panel tetap dikelola server.
+`infra/compose.yml` is a development stack. Use the [complete deployment guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY.md) or [aaPanel guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY_AAPANEL_OTOMATIS.md) for guarded deployment. The server retains ownership of secrets and panel configuration.
 
-## Admin dan operasi
+## Administration and operations
 
-Root memakai authenticator MFA di produksi. Siapkan SMTP TLS sebelum mengundang anggota, berikan scope sesuai peran, dan atur model allowlist/budget setiap aplikasi. Pantau readiness, error code, trace ID, dan metadata audit tanpa mencatat payload bisnis/secrets.
+The root account uses authenticator MFA in production. Configure TLS SMTP before inviting members, assign application scopes by role, and configure each application's model allowlist and budget. Monitor readiness, error codes, trace IDs, and audit metadata without logging business payloads or secrets.
 
-## Backup dan restore
+## Backup and restore
 
-Simpan database dump terlindungi di luar server dan uji restore ke database sementara. Pertahankan encryption key yang cocok; dump saja tidak cukup untuk membaca secrets.
+Keep protected database dumps off the server and test restoration into a disposable database. Preserve the matching encryption key; a dump alone cannot recover encrypted secrets.
 
-Sebelum upgrade, simpan versi kode, lock file, konfigurasi, dan backup yang konsisten. Sesudah upgrade, periksa login/readiness/catalog serta operasi scoped dengan data sintetis. Jika gagal, gunakan rollback yang diuji, bukan penghapusan tabel otomatis.
+Before upgrading, retain a consistent code version, lock files, configuration, and backup. Afterward, check login, readiness, catalogs, and scoped operations using synthetic data. Recover through a tested rollback procedure rather than automatically deleting tables.
 
-[Backup dan rollback Hub](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/BACKUP.md) · [Pemeliharaan Laravel](../laravel/upgrade.md)
+[Hub backup and rollback](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/BACKUP.md) · [Laravel maintenance](../laravel/upgrade.md)

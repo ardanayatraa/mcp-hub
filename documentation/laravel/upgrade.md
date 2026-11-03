@@ -1,15 +1,15 @@
-# Upgrade dan pemeliharaan
+# Upgrades and maintenance
 
-Composer update adalah bagian dari proses rilis aplikasi, bukan pengganti review konfigurasi/migrasi produksi.
+A Composer update is part of the application release process, not a substitute for reviewing production configuration and migrations.
 
-## Alpha ke 1.0
+## Upgrade from alpha to 1.0
 
-1. Simpan backup database, lock file, config, resource definitions, dan private storage yang konsisten.
-2. Pertahankan APP_KEY dan credentials melalui secret management host.
-3. Perbarui dependency ke `ardanayatraa/laravel-mcp-hub:^1.0` dalam build yang ditinjau.
-4. Periksa conflicts/audit tanpa ignore-platform atau security bypass.
-5. Tinjau dan jalankan metadata migrations.
-6. Restart queue/long-running workers, lalu periksa Doctor/status sebelum switching traffic.
+1. Keep consistent backups of the database, lock file, configuration, resource definitions, and private storage.
+2. Preserve APP_KEY and credentials through the host's secret management.
+3. Update the dependency to `ardanayatraa/laravel-mcp-hub:^1.0` in a reviewed build.
+4. Check conflicts and audits without platform or security bypasses.
+5. Review and run package metadata migrations.
+6. Restart queue and long-running workers, then check Doctor and status before switching traffic.
 
 ```bash
 php artisan mcp-hub:install --dry-run --migrate
@@ -18,28 +18,28 @@ php artisan mcp-hub:doctor --online
 php artisan mcp-hub:status
 ```
 
-`--force` diperlukan untuk produksi setelah backup/review. Installer mempertahankan config existing; tambahkan optional keys tanpa mengganti seluruh file host.
+Production requires `--force` after backup and review. The installer preserves existing configuration; add optional keys without replacing the whole host file.
 
-## Integrasi existing
+## Existing integrations
 
-Jika host sudah memiliki connector routes, pertahankan `routes.enabled=false` sampai pengganti setara terverifikasi. Simpan resolver, registrasi resource, policy, scope, handler, dan UI host. Package generik tidak merekonstruksi permission bisnis.
+If the host already owns connector routes, retain `routes.enabled=false` until an equivalent replacement is verified. Preserve the resolver, resource registry, policies, scope, handlers, and UI. A generic package does not reconstruct business permissions.
 
-Pending proposal dari snapshot development lama dapat perlu disiapkan ulang. Jangan memindahkan pending metadata lintas instalasi/environment. Reference 1.0 default opaque.
+Pending proposals from older development snapshots may need to be prepared again. Do not move pending metadata between installations or environments. Version 1.0 uses opaque references by default.
 
-## Scheduler
+## Scheduling
 
-Provider mendaftarkan prune setiap jam dengan overlap lock. Host tetap harus menjalankan scheduler Laravel.
+The provider registers hourly pruning with an overlap lock. The host must still run Laravel's scheduler.
 
 ```bash
 php artisan mcp-hub:prune --days=30
 ```
 
-Jika dijadwalkan host sendiri, atur `maintenance.scheduled_prune=false` agar tidak ganda. Retention terminal receipt menerima 1–365 hari; expired payload/artifact memiliki aturan cleanup sendiri. Perintah hanya menyentuh metadata/file package.
+If the host schedules pruning itself, set `maintenance.scheduled_prune=false` to avoid duplicate tasks. Terminal receipt retention accepts 1–365 days; expired payloads and artifacts have their own cleanup rules. The command touches package metadata and files only.
 
 ## Recovery
 
-Rollback kode dan lock melalui prosedur host. Jangan otomatis downgrade schema atau menghapus tabel. Metadata baru boleh tetap tidak digunakan sampai penyebab diperiksa.
+Roll back code and the lock file through the host's procedure. Do not automatically downgrade schemas or delete tables. New metadata can remain unused until the cause is reviewed.
 
-Rollback file tidak memulihkan credentials yang sudah dicabut. Gunakan pairing resume/replacement. APP_KEY rotation membutuhkan rencana pemulihan file dan queue tersendiri; package tidak merotasinya otomatis.
+File rollback does not restore revoked credentials. Use pairing resume or replacement. APP_KEY rotation requires a separate file and queue recovery plan; the package does not rotate it automatically.
 
-[Panduan upgrade/recovery lengkap](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/UPGRADE.md)
+[Complete upgrade and recovery guide](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/UPGRADE.md)
