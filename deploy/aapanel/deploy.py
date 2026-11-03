@@ -43,8 +43,11 @@ class BoundedTarReader:
 
 
 def digest(path):
+    result = hashlib.sha256()
     with Path(path).open("rb") as handle:
-        return hashlib.file_digest(handle, "sha256").hexdigest()
+        for block in iter(lambda: handle.read(65536), b""):
+            result.update(block)
+    return result.hexdigest()
 
 
 def atomic_json(path, value):
