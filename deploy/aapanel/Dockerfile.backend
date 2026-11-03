@@ -1,0 +1,16 @@
+FROM python:3.12.16-slim
+WORKDIR /app
+RUN pip install --no-cache-dir uv \
+    && groupadd --system --gid 10001 hub \
+    && useradd --system --uid 10001 --gid hub --no-create-home --shell /usr/sbin/nologin hub
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+COPY backend/app ./app
+COPY backend/alembic.ini ./
+ENV PATH="/app/.venv/bin:$PATH" FORWARDED_ALLOW_IPS="127.0.0.1"
+ARG DEPLOY_COMMIT
+ARG SCHEMA_REVISION
+LABEL org.opencontainers.image.revision=$DEPLOY_COMMIT biz.texcel.mcp-hub.schema=$SCHEMA_REVISION
+USER 10001:10001
+# The server-owned Compose command supplies the existing secret loading and Uvicorn command.
+CMD ["python", "-c", "raise SystemExit('Use the reviewed server-owned Compose command')"]

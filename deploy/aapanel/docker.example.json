@@ -7,6 +7,7 @@
   "postgres": "mcp-hub-local-postgres-1",
   "database": "hub",
   "database_user": "hub",
+  "public_url": "https://mcp1.texcel.biz.id",
   "protected_files": [
     "/www/dk_project/dk_app/mcp/mcp-hub/.env",
     "/www/dk_project/dk_app/mcp/mcp-hub/compose.yaml",

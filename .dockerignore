@@ -3,6 +3,9 @@
 !infra/
 !infra/Dockerfile.*
 !infra/nginx.conf
+!deploy/
+!deploy/aapanel/
+!deploy/aapanel/Dockerfile.*
 !backend/
 !backend/pyproject.toml
 !backend/uv.lock
@@ -22,6 +25,8 @@
 !frontend/src/**
 !frontend/public/
 !frontend/public/**
+!frontend/dist/
+!frontend/dist/**
 !reference/
 !reference/your_app/
 !reference/your_app/app.py

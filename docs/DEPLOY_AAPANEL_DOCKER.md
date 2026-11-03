@@ -12,9 +12,11 @@ Only then can the existing guarded SSH workflow deliver the tested commit.
 The environment remains `aapanel-production`, deployment is serialized, and
 superseded main commits are skipped.
 
-The Docker controller accepts exactly `status`, `upload <commit>` and
-`deploy <commit> <sha256>`. It uses the same bounded, allowlisted archive format
-as the systemd controller. The application checkout is never reset or cleaned.
+The Docker controller accepts `status`, `upload <commit>`,
+`upload-images <commit>` and `deploy-images <commit> <source-sha256> <image-sha256>`.
+Its protocol is `prebuilt-v1`; the previous server-build command is rejected.
+The source uses the bounded, allowlisted archive format of the systemd controller.
+The application checkout is never reset or cleaned.
 
 Before changing running services, the controller:
 
@@ -23,9 +25,10 @@ Before changing running services, the controller:
    effective environment.
 2. Requires both the database and the running backend to match the new schema.
    It never executes migrations or application bootstrap during automatic deployment.
-3. Builds isolated backend and edge images from the running image IDs. Backend
-   dependencies use the release lock file. Edge configuration, certificates and
-   previous hashed frontend assets remain in the image lineage.
+3. Imports the exact backend and edge images built and tested on GitHub, delivered
+   through the existing pinned SSH connection. No registry credential is needed.
+   Image IDs, commit/schema labels, platform, archive members, checksums and sizes
+   are validated. No build, dependency installation or compilation runs on the server.
 4. Creates a private PostgreSQL custom-format backup and verifies its table of
    contents with `pg_restore --list`. A successful archive check is not a full
    restore rehearsal; rehearse restoration separately before the first cutover.
@@ -40,11 +43,23 @@ are outside the activation command. Health failure restores the previous image
 IDs using the same schema. A database restore is never automatic.
 
 After activation, storage mounts, published ports, network IDs and effective
-environment must match the previous containers. Protected files and unrelated
+environment and restart policies must match the previous containers. All three
+main services must use `unless-stopped` before deployment can proceed. Protected files and unrelated
 container IDs must remain unchanged. A failure triggers application rollback.
 The previous Compose document, candidate document, backup and successful release
 state stay on the server with private permissions. They may contain credentials
 and must never be uploaded as CI artifacts.
+
+Success also requires valid HTTPS responses through the configured public domain:
+`/ready`, `/login`, and `/release-version.json` containing the new commit. An
+unreachable domain, wrong release marker, or unhealthy container triggers rollback.
+The public domain must already work before a release can start. Certificate checks
+are never disabled. A private `probe_ca` file is available for isolated CI certificates.
+
+Uploads/imports require at least 4 GiB free disk and 1 GiB available RAM. Imports
+also reserve twice the expanded archive size plus 2 GiB. Compressed image archives
+are limited to 512 MiB and expanded content to 2 GiB. Imports still consume disk
+I/O and CPU; these safeguards reduce load rather than guarantee uninterrupted service.
 
 ## Installation prerequisites
 
@@ -64,7 +79,7 @@ Keep the original project, volume names, network names, bind paths and loopback
 ports. Resolving Compose may include secrets: capture stdout directly to a private
 file and do not print it or attach it to an issue.
 
-Install `deploy.py` and `docker_deploy.py` together in a root-owned directory
+Install `deploy.py`, `docker_deploy.py`, and `image_archive.py` together in a root-owned directory
 outside the releases. Use a root-owned mode-`0600` configuration based on
 `deploy/aapanel/docker.example.json`. Adapt every path and container identifier.
 Protect the existing environment, Compose file, and secret-volume environment
@@ -82,6 +97,27 @@ Pin the host key verified through the existing authenticated panel session;
 do not disable SSH host verification. Set the optional `AAPANEL_SSH_PORT` variable
 if needed. Keep `AAPANEL_DEPLOY_ENABLED` unset until the first cutover and recovery
 checks succeed.
+
+### One-time transition from server builds
+
+Keep `AAPANEL_DEPLOY_ENABLED=false` throughout preparation. Preserve the installed
+controller/configuration before replacing any files. Set and verify
+`restart: unless-stopped` for backend, edge and PostgreSQL in both the live runtime
+and the server-owned Compose document. Do not change one-shot init/ready services.
+
+Run the reviewed `prepare_prebuilt.py CONFIG_PATH HTTPS_ORIGIN` as the operator,
+not through the deployment key. It makes a private backup, copies existing Nginx
+configuration, certificates and cached assets **within the server**, and recreates
+only the edge using its existing image. The copied paths are mounted read-only:
+`shared/edge-config/nginx.conf`, `shared/edge-config/certs`, and
+`shared/frontend-assets`. It checks the public site, unchanged backend/database
+and other container IDs, and all original protected-file hashes. Failure restores
+the previous edge configuration. No private server image or TLS material goes to CI.
+
+Check that the restricted key reports protocol `prebuilt-v1`. Only enable automatic
+deployment after the isolated Docker integration job and the first controlled
+prebuilt deployment succeed. The installed controller is deliberately server-owned;
+pushing repository changes does not replace this privileged controller automatically.
 
 ## First cutover and later schema changes
 

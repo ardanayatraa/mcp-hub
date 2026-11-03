@@ -36,26 +36,31 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/download-artifact@v4
         if: steps.latest.outputs.current == 'true'
         with:
-          version: 11
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+          name: prebuilt-release
+          path: ${{ runner.temp }}/prebuilt
+      - name: Recheck main and deployment switch immediately before transfer
         if: steps.latest.outputs.current == 'true'
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Build frontend from the tested commit
-        if: steps.latest.outputs.current == 'true'
-        working-directory: frontend
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          DEPLOY_ENABLED: ${{ vars.AAPANEL_DEPLOY_ENABLED }}
         run: |
-          pnpm install --frozen-lockfile
-          pnpm build
-      - name: Build release and deploy over pinned SSH
-        if: steps.latest.outputs.current == 'true'
+          set -euo pipefail
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$latest" == "$EXPECTED_COMMIT" && "$DEPLOY_ENABLED" == true ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Transfer tested images and deploy over pinned SSH
+        if: steps.release.outputs.current == 'true'
         env:
           DEPLOY_COMMIT: ${{ github.sha }}
+          RELEASE_INPUT: ${{ runner.temp }}/prebuilt
           AAPANEL_SSH_HOST: ${{ secrets.AAPANEL_SSH_HOST }}
           AAPANEL_SSH_USER: ${{ secrets.AAPANEL_SSH_USER }}
           AAPANEL_SSH_PORT: ${{ vars.AAPANEL_SSH_PORT || '22' }}
@@ -64,7 +69,7 @@ jobs:
         shell: bash
         run: bash deploy/aapanel/push-release.sh
       - name: Deployment result
-        if: success() && steps.latest.outputs.current == 'true'
+        if: success() && steps.release.outputs.current == 'true'
         env:
           DEPLOY_COMMIT: ${{ github.sha }}
         run: printf 'Deployed tested main commit %s. Server credentials stayed on the server.\n' "$DEPLOY_COMMIT" >> "$GITHUB_STEP_SUMMARY"

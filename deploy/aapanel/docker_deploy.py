@@ -12,13 +12,18 @@ import json
 import os
 import re
 import shlex
+import shutil
+import ssl
 import subprocess
 import sys
 import time
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 
-from deploy import DeploymentError, Manager, atomic_json, locked
+from deploy import DIGEST, SHA, DeploymentError, Manager, atomic_json, digest, locked
+from image_archive import MAX_COMPRESSED, inspect_archive
 
 
 def fingerprint(path):
@@ -39,9 +44,14 @@ def private_file(path):
 
 def load_config(path):
     data = json.loads(private_file(path).read_text())
-    required = {"base", "project", "compose", "backend", "edge", "postgres", "database", "database_user", "protected_files"}
-    if set(data) != required or not isinstance(data["protected_files"], list) or not data["protected_files"]:
+    required = {"base", "project", "compose", "backend", "edge", "postgres", "database", "database_user", "protected_files", "public_url"}
+    if not required <= data.keys() or set(data) - required - {"probe_ca"} or not isinstance(data["protected_files"], list) or not data["protected_files"]:
         raise DeploymentError("INVALID_DOCKER_CONFIG")
+    url = urllib.parse.urlsplit(data['public_url'])
+    if url.scheme != 'https' or not url.hostname or url.username or url.password or url.path not in {'', '/'} or url.query or url.fragment:
+        raise DeploymentError('PUBLIC_HTTPS_ORIGIN_REQUIRED')
+    if data.get('probe_ca'):
+        private_file(data['probe_ca'])
     for key in ("project", "backend", "edge", "postgres", "database", "database_user"):
         if not isinstance(data[key], str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}", data[key]):
             raise DeploymentError("INVALID_DOCKER_IDENTIFIER")
@@ -95,6 +105,7 @@ def runtime_boundary(container):
         "ports": container["HostConfig"].get("PortBindings"),
         "networks": {name: network["NetworkID"] for name, network in container["NetworkSettings"]["Networks"].items()},
         "environment": sorted(container["Config"].get("Env", [])),
+        "restart": container["HostConfig"].get("RestartPolicy", {"Name": "no", "MaximumRetryCount": 0}),
     }
 
 
@@ -149,6 +160,18 @@ class DockerRuntime:
                 raise DeploymentError("CONTAINER_PROJECT_MISMATCH")
             if item["State"].get("Health", {}).get("Status") != "healthy":
                 raise DeploymentError("EXISTING_STACK_NOT_HEALTHY")
+            if item['HostConfig']['RestartPolicy']['Name'] != 'unless-stopped' or document['services'][key].get('restart') != 'unless-stopped':
+                raise DeploymentError('RESTART_RECOVERY_NOT_CONFIGURED')
+        # These mounts preserve server-only TLS/configuration across clean CI images.
+        expected_mounts = {
+            '/etc/nginx/nginx.conf': self.base/'shared/edge-config/nginx.conf',
+            '/etc/nginx/certs': self.base/'shared/edge-config/certs',
+            '/usr/share/nginx/html/assets': self.base/'shared/frontend-assets',
+        }
+        for target, source in expected_mounts.items():
+            matches = [m for m in containers['edge']['Mounts'] if m['Destination'] == target]
+            if len(matches) != 1 or matches[0]['Type'] != 'bind' or matches[0]['Source'] != str(source) or matches[0]['RW']:
+                raise DeploymentError('SERVER_EDGE_MOUNTS_NOT_PREPARED')
         # Prevent an edited checkout from silently changing the live runtime configuration.
         for key in ("backend", "edge"):
             service = document["services"][key]
@@ -179,26 +202,45 @@ class DockerRuntime:
         if result.returncode:
             raise DeploymentError("DATABASE_BACKUP_VERIFICATION_FAILED")
 
-    def build(self, release, commit, containers):
-        backend_base = self.config["project"]+"-deploy-base-backend:"+commit
-        edge_base = self.config["project"]+"-deploy-base-edge:"+commit
-        for key, tag in (("backend", backend_base), ("edge", edge_base)):
-            self.run(["docker", "tag", containers[key]["Image"], tag])
-        recipes = {
-            "backend": f"FROM {backend_base}\nUSER root\nWORKDIR /app\nCOPY --chown=10001:10001 backend/pyproject.toml backend/uv.lock ./\nRUN uv sync --frozen --no-dev --no-install-project && rm -rf /app/app\nCOPY --chown=10001:10001 backend/app ./app\nCOPY --chown=10001:10001 backend/alembic.ini ./\nUSER 10001:10001\n",
-            "edge": f"FROM {edge_base}\nCOPY frontend/dist /usr/share/nginx/html\n",
-        }
-        # The archive already excludes server credentials; do not send its placeholder env link.
-        (release/".dockerignore").write_text("backend/.env\nrelease.json\nactivation.json\n")
-        images = {}
-        for key, recipe in recipes.items():
-            file = self.base/"shared"/(commit+"-"+key+".Dockerfile")
-            file.write_text(recipe)
-            os.chmod(file, 0o600)
-            tag = self.config["project"]+"-release-"+key+":"+commit
-            self.run(["docker", "build", "--file", str(file), "--tag", tag, str(release)], timeout=1200)
-            images[key] = json.loads(self.run(["docker", "image", "inspect", tag]))[0]["Id"]
+    def preflight(self):
+        # Fail before import/recreation when the shared host has little headroom.
+        if shutil.disk_usage(self.base).free < 4*1024**3:
+            raise DeploymentError('AT_LEAST_4_GIB_FREE_DISK_REQUIRED')
+        available = next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
+        if available < 1024**3:
+            raise DeploymentError('AT_LEAST_1_GIB_AVAILABLE_MEMORY_REQUIRED')
+
+    def load_images(self, commit, checksum, schema):
+        file = self.base/'incoming'/(commit+'.images.tar.gz')
+        if not SHA.fullmatch(commit) or not DIGEST.fullmatch(checksum) or file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_COMPRESSED or digest(file) != checksum:
+            raise DeploymentError('INVALID_IMAGE_ARCHIVE_OR_CHECKSUM')
+        images, expanded = inspect_archive(file, commit, schema)
+        self.preflight()
+        if shutil.disk_usage(self.base).free < 2*expanded+2*1024**3:
+            raise DeploymentError('INSUFFICIENT_IMAGE_IMPORT_DISK_HEADROOM')
+        self.run(['docker', 'load', '--input', str(file)], timeout=600)
+        for key, expected in images.items():
+            actual = json.loads(self.run(['docker', 'image', 'inspect', 'mcp-hub-ci-'+key+':'+commit]))[0]
+            if actual['Id'] != expected:
+                raise DeploymentError('IMPORTED_IMAGE_ID_MISMATCH')
         return images
+
+    def public_ready(self, commit=None):
+        context = ssl.create_default_context(cafile=self.config.get('probe_ca'))
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
+        origin = self.config['public_url'].rstrip('/')
+        def get(path):
+            request = urllib.request.Request(origin+path, headers={'Cache-Control': 'no-cache'})
+            with opener.open(request, timeout=4) as response:
+                if response.status != 200 or response.geturl().split('?', 1)[0] != (origin+path).split('?', 1)[0]:
+                    raise ValueError('PUBLIC_PROBE_STATUS_OR_REDIRECT')
+                return response.read(1024**2)
+        try:
+            if json.loads(get('/ready')) != {'status': 'ready'} or b'<title>MCP Hub</title>' not in get('/login'):
+                return False
+            return not commit or json.loads(get('/release-version.json?deployment='+commit)) == {'commit': commit}
+        except (OSError, ValueError):
+            return False
 
     def activate(self, file):
         self.run(["docker", "compose", "--project-name", self.config["project"], "--file", str(file),
@@ -217,14 +259,14 @@ class DockerRuntime:
                 if name not in attached:
                     self.run(["docker", "network", "connect", network["NetworkID"], self.config[key]])
 
-    def ready(self):
+    def ready(self, commit=None):
         deadline = time.monotonic()+90
         while time.monotonic() < deadline:
             try:
                 states = [self.inspect(self.config[key])["State"] for key in ("backend", "edge")]
                 if any(state.get("Status") in {"exited", "dead"} for state in states):
                     return False
-                if all(state.get("Health", {}).get("Status") == "healthy" for state in states):
+                if all(state.get("Health", {}).get("Status") == "healthy" for state in states) and self.public_ready(commit):
                     return True
             except DeploymentError:
                 pass
@@ -247,8 +289,36 @@ class DockerManager(Manager):
             raise DeploymentError("DOCKER_ENV_MARKER_MUST_BE_EMPTY")
         self.runtime = runtime or DockerRuntime(config)
 
-    def deploy(self, commit, checksum):
+    def upload_images(self, commit, stream):
+        if not SHA.fullmatch(commit):
+            raise DeploymentError('INVALID_COMMIT')
+        with locked(self.shared/'deploy.lock'):
+            self.runtime.preflight()
+            temporary = self.incoming/('.images-'+uuid.uuid4().hex)
+            target = self.incoming/(commit+'.images.tar.gz')
+            try:
+                size = 0
+                with temporary.open('xb') as output:
+                    os.chmod(temporary, 0o600)
+                    while chunk := stream.read(65536):
+                        size += len(chunk)
+                        if size > MAX_COMPRESSED:
+                            raise DeploymentError('COMPRESSED_IMAGE_ARCHIVE_TOO_LARGE')
+                        output.write(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                if target.exists() or target.is_symlink():
+                    if target.is_symlink() or digest(target) != digest(temporary):
+                        raise DeploymentError('DIFFERENT_IMAGE_ARCHIVE_ALREADY_UPLOADED')
+                else:
+                    os.link(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return {'status': 'images_uploaded', 'commit': commit}
+
+    def deploy(self, commit, checksum, image_checksum):
         with locked(self.shared/"deploy.lock"):
+            self.runtime.preflight()
             protected = {file: fingerprint(file) for file in self.config["protected_files"]}
             before = self.runtime.inventory()
             previous, containers = self.runtime.snapshot()
@@ -260,12 +330,16 @@ class DockerManager(Manager):
                                             "from app.persistence import SCHEMA_REVISION; print(SCHEMA_REVISION)"]).decode().strip()
             if live_schema != schema:
                 raise DeploymentError("BASELINE_SCHEMA_DIFFERS_OPERATOR_CUTOVER_REQUIRED")
-            images = self.runtime.build(release, commit, containers)
+            if not self.runtime.public_ready():
+                raise DeploymentError('PUBLIC_SITE_UNHEALTHY_NO_LIVE_CHANGES_MADE')
+            images = self.runtime.load_images(commit, image_checksum, schema)
+            self.publish_assets(release)
             candidate = release_compose(previous, self.config["project"], images)
             # previous is already normalized, so no migration/bootstrap commands remain.
             backup = self.shared/"backups"/(commit+"-"+uuid.uuid4().hex+".dump")
             self.runtime.backup(backup)
-            previous_file, candidate_file = (self.shared/(commit+suffix) for suffix in ("-previous.json", "-candidate.json"))
+            transaction = commit+'-'+uuid.uuid4().hex
+            previous_file, candidate_file = (self.shared/(transaction+suffix) for suffix in ("-previous.json", "-candidate.json"))
             atomic_json(previous_file, compose_literals(previous))
             atomic_json(candidate_file, compose_literals(candidate))
             self.assert_preserved(protected, before)
@@ -274,7 +348,7 @@ class DockerManager(Manager):
             try:
                 self.runtime.activate(candidate_file)
                 self.runtime.restore_networks(containers)
-                if not self.runtime.ready():
+                if not self.runtime.ready(commit):
                     raise DeploymentError("RELEASE_HEALTH_CHECK_FAILED")
                 self.assert_preserved(protected, before, updating=True)
                 for key in ("backend", "edge"):
@@ -307,11 +381,13 @@ def main():
     command = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", "status"))
     if command == ["status"]:
         state = manager.shared/"docker-state.json"
-        return {"status": "configured", "current": json.loads(private_file(state).read_text())["current"] if state.exists() else None}
+        return {"status": "configured", "protocol": "prebuilt-v1", "current": json.loads(private_file(state).read_text())["current"] if state.exists() else None}
     if len(command) == 2 and command[0] == "upload":
         return manager.upload(command[1], sys.stdin.buffer)
-    if len(command) == 3 and command[0] == "deploy":
-        return manager.deploy(command[1], command[2])
+    if len(command) == 2 and command[0] == 'upload-images':
+        return manager.upload_images(command[1], sys.stdin.buffer)
+    if len(command) == 4 and command[0] == 'deploy-images':
+        return manager.deploy(command[1], command[2], command[3])
     raise DeploymentError("COMMAND_NOT_ALLOWED")
 
 
