@@ -242,7 +242,7 @@ class DockerRuntime:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
         origin = self.config['public_url'].rstrip('/')
         def get(path):
-            request = urllib.request.Request(origin+path, headers={'Cache-Control': 'no-cache'})
+            request = urllib.request.Request(origin+path, headers={'Cache-Control': 'no-cache', 'User-Agent': 'MCP-Hub-Deploy/1.0'})
             with opener.open(request, timeout=4) as response:
                 if response.status != 200 or response.geturl().split('?', 1)[0] != (origin+path).split('?', 1)[0]:
                     raise ValueError('PUBLIC_PROBE_STATUS_OR_REDIRECT')

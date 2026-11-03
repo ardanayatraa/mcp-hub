@@ -10,7 +10,7 @@ import hashlib
 import tarfile
 import gzip
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import docker_deploy as docker
@@ -266,6 +266,27 @@ class ActivationTest(unittest.TestCase):
         runtime=docker.DockerRuntime({'base':str(self.root),'backend':'backend','edge':'edge'})
         with patch.object(runtime,'inspect',return_value={'State':{'Status':'running','Health':{'Status':'healthy'}}}), patch.object(runtime,'public_ready',return_value=False), patch.object(docker.time,'monotonic',side_effect=[0,0,100]), patch.object(docker.time,'sleep'):
             self.assertFalse(runtime.ready('a'*40))
+
+    def test_public_https_probe_identifies_itself_and_rejects_stale_commit(self):
+        runtime=docker.DockerRuntime({'base':str(self.root),'public_url':'https://hub.example'})
+        served_commit='a'*40
+        requests=[]
+        def respond(request,timeout):
+            requests.append(request)
+            response=MagicMock()
+            response.__enter__.return_value=response
+            response.status=200
+            response.geturl.return_value=request.full_url
+            body=(b'{"status":"ready"}' if request.full_url.endswith('/ready') else b'<title>MCP Hub</title>' if request.full_url.endswith('/login') else json.dumps({'commit':served_commit}).encode())
+            response.read.return_value=body
+            return response
+        opener=MagicMock()
+        opener.open.side_effect=respond
+        with patch.object(docker.urllib.request,'build_opener',return_value=opener):
+            self.assertTrue(runtime.public_ready('a'*40))
+            served_commit='b'*40
+            self.assertFalse(runtime.public_ready('a'*40))
+        self.assertTrue(all(q.get_header('User-agent')=='MCP-Hub-Deploy/1.0' for q in requests))
 
     def test_low_resources_abort_before_preparation(self):
         def fail():
