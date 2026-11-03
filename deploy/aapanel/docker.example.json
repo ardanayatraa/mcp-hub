@@ -1,0 +1,15 @@
+{
+  "base": "/www/wwwroot/mcp-hub-deploy",
+  "project": "mcp-hub-local",
+  "compose": "/www/wwwroot/mcp-hub-deploy/shared/baseline.json",
+  "backend": "mcp-hub-local-backend-1",
+  "edge": "mcp-hub-local-edge-1",
+  "postgres": "mcp-hub-local-postgres-1",
+  "database": "hub",
+  "database_user": "hub",
+  "protected_files": [
+    "/www/dk_project/dk_app/mcp/mcp-hub/.env",
+    "/www/dk_project/dk_app/mcp/mcp-hub/compose.yaml",
+    "/var/lib/docker/volumes/mcp-hub-local_hub-secrets/_data/env"
+  ]
+}

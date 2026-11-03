@@ -24,7 +24,7 @@ Production rejects unsafe configuration. Do not bypass readiness failures by dis
 
 Use the backend and frontend lock files. Run Alembic through your deployment procedure; the backend rejects an outdated schema. The proxy serves `/api/`, `/mcp`, `/chat/`, `/gateway/`, `/health`, and `/ready`, alongside frontend assets.
 
-`infra/compose.yml` is a development stack. Use the [complete deployment guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY.md) or [aaPanel guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY_AAPANEL_OTOMATIS.md) for guarded deployment. The server retains ownership of secrets and panel configuration.
+`infra/compose.yml` is a development stack. Use the [complete deployment guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY.md), [aaPanel systemd guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY_AAPANEL_OTOMATIS.md), or [aaPanel Docker guide](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/DEPLOY_AAPANEL_DOCKER.md) for guarded deployment. The server retains ownership of secrets and panel configuration.
 
 ## Administration and operations
 

@@ -119,8 +119,17 @@ jobs:
           docker compose -f infra/compose.yml logs
           docker compose -f infra/compose.yml down --volumes
 
+  docker-deploy-smoke:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Docker deployment and rollback on an isolated CI stack
+        run: sudo GITHUB_ACTIONS=true python3 deploy/aapanel/tests/docker_smoke.py
+
   deploy-aapanel:
-    needs: [docker-smoke]
+    needs: [docker-smoke, docker-deploy-smoke]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AAPANEL_DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/deploy-aapanel.yml
     secrets: inherit
