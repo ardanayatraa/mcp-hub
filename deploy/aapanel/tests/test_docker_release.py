@@ -112,6 +112,9 @@ class FakeRuntime:
     def ready(self):
         return self.probes.pop(0)
 
+    def restore_networks(self, containers):
+        pass
+
 
 class ActivationTest(unittest.TestCase):
     def setUp(self):
@@ -211,6 +214,23 @@ class ActivationTest(unittest.TestCase):
         self.assertIn("--no-build", command)
         self.assertNotIn("--volumes", command)
         self.assertNotIn("down", command)
+
+    def test_manual_network_membership_is_restored_without_creating_networks(self):
+        runtime = docker.DockerRuntime({"base": str(self.root), "backend": "backend", "edge": "edge"})
+        original = {key: copy.deepcopy(CONTAINER) for key in ("backend", "edge")}
+        original["edge"]["NetworkSettings"]["Networks"]["bridge"] = {"NetworkID": "old-bridge-id"}
+        with patch.object(runtime, "inspect", return_value=copy.deepcopy(CONTAINER)), patch.object(runtime, "run") as run:
+            runtime.restore_networks(original)
+        run.assert_called_once_with(["docker", "network", "connect", "old-bridge-id", "edge"])
+
+    def test_network_restoration_rejects_unexpected_membership(self):
+        runtime = docker.DockerRuntime({"base": str(self.root), "backend": "backend", "edge": "edge"})
+        unexpected = copy.deepcopy(CONTAINER)
+        unexpected["NetworkSettings"]["Networks"]["new-network"] = {"NetworkID": "unexpected"}
+        with patch.object(runtime, "inspect", return_value=unexpected), patch.object(runtime, "run") as run:
+            with self.assertRaisesRegex(docker.DeploymentError, "UNEXPECTED_CONTAINER_NETWORK"):
+                runtime.restore_networks({"backend": CONTAINER, "edge": CONTAINER})
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

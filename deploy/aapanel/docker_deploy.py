@@ -154,6 +154,12 @@ class DockerRuntime:
             service = document["services"][key]
             if service.get("environment", {}) != dict(x.split("=", 1) for x in containers[key]["Config"].get("Env", []) if x.split("=", 1)[0] in service.get("environment", {})):
                 raise DeploymentError("COMPOSE_ENVIRONMENT_DIFFERS_FROM_RUNNING_CONTAINER")
+            configured = service.get("networks", {"default": {}})
+            attached = containers[key]["NetworkSettings"]["Networks"]
+            for name in configured:
+                actual_name = document["networks"][name]["name"]
+                if actual_name not in attached:
+                    raise DeploymentError("COMPOSE_NETWORK_DIFFERS_FROM_RUNNING_CONTAINER")
             service["command"] = containers[key]["Config"]["Cmd"]
         previous = release_compose(document, self.config["project"], {k: containers[k]["Image"] for k in ("backend", "edge")})
         return previous, containers
@@ -197,6 +203,19 @@ class DockerRuntime:
     def activate(self, file):
         self.run(["docker", "compose", "--project-name", self.config["project"], "--file", str(file),
                   "up", "--detach", "--no-deps", "--no-build", "backend", "edge"], timeout=180)
+
+    def restore_networks(self, containers):
+        # Docker's default bridge cannot be declared as a normal Compose network
+        # with service aliases. Preserve memberships attached manually to the
+        # existing Hub containers, without creating networks or granting new ones.
+        for key in ("backend", "edge"):
+            expected = containers[key]["NetworkSettings"]["Networks"]
+            attached = self.inspect(self.config[key])["NetworkSettings"]["Networks"]
+            if any(name not in expected or expected[name]["NetworkID"] != value["NetworkID"] for name, value in attached.items()):
+                raise DeploymentError("UNEXPECTED_CONTAINER_NETWORK")
+            for name, network in expected.items():
+                if name not in attached:
+                    self.run(["docker", "network", "connect", network["NetworkID"], self.config[key]])
 
     def ready(self):
         deadline = time.monotonic()+90
@@ -254,6 +273,7 @@ class DockerManager(Manager):
                 raise DeploymentError("SCHEMA_CHANGED_DURING_BUILD")
             try:
                 self.runtime.activate(candidate_file)
+                self.runtime.restore_networks(containers)
                 if not self.runtime.ready():
                     raise DeploymentError("RELEASE_HEALTH_CHECK_FAILED")
                 self.assert_preserved(protected, before, updating=True)
@@ -262,6 +282,7 @@ class DockerManager(Manager):
                         raise DeploymentError("LIVE_RUNTIME_BOUNDARY_CHANGED")
             except Exception:
                 self.runtime.activate(previous_file)
+                self.runtime.restore_networks(containers)
                 if not self.runtime.ready():
                     raise DeploymentError("ROLLBACK_FAILED_OPERATOR_RECOVERY_REQUIRED") from None
                 raise DeploymentError("RELEASE_FAILED_PREVIOUS_IMAGES_RESTORED") from None

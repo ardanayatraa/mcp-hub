@@ -32,6 +32,9 @@ Before changing running services, the controller:
 5. Checks protected-file hashes and unrelated container IDs again.
 
 Activation runs Compose with `--no-deps --no-build` for `backend edge` only.
+Existing network memberships attached manually to those containers are restored
+after recreation and rollback. The controller connects only to the previously
+recorded network IDs; it does not create networks or add new memberships.
 PostgreSQL, existing secret volumes, reference applications and other projects
 are outside the activation command. Health failure restores the previous image
 IDs using the same schema. A database restore is never automatic.
