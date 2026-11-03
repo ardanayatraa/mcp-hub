@@ -145,6 +145,8 @@ pnpm build      # type-checks with vue-tsc
 
 ## Documentation
 
+Visit the [MCP Hub documentation portal](https://ardanayatraa.github.io/mcp-hub/) for Indonesian Hub guides, Laravel 1.0 integration, API references and troubleshooting. See [documentation contribution instructions](documentation/help/contributing.md) to preview or update the site.
+
 - [Tools and reporting](docs/TOOLS.md): templates, lifecycle, `run_report` reference
 - [Connector contract](docs/CONNECTOR_CONTRACT.md): what a connected app implements
 - [Admin and MCP API](docs/API.md)
