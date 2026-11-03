@@ -1,6 +1,7 @@
 # Connector pairing recovery
 
-These APIs are part of the unreleased development branch.
+These APIs are available in the Python edition on `main` and support the stable
+Laravel 1.0 package. See the [pairing guide](https://ardanayatraa.github.io/mcp-hub/laravel/connection/).
 
 All admin routes require an authenticated Hub session. Mutations also require
 CSRF and a write role with access to the application's current scope.
