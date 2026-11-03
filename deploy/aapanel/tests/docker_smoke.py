@@ -78,7 +78,7 @@ def main():
             with (artifacts/'source.tar.gz').open('rb') as incoming:
                 manager.upload(commit,incoming)
             with (artifacts/'images.tar.gz').open('rb') as incoming:
-                manager.upload_images(commit,incoming)
+                manager.upload_images(commit,docker.digest(artifacts/'images.tar.gz'),incoming)
             checksum=docker.digest(artifacts/'source.tar.gz')
             image_checksum=docker.digest(artifacts/'images.tar.gz')
             assert manager.deploy(commit,checksum,image_checksum)['status']=='deployed'

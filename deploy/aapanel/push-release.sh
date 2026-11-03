@@ -34,6 +34,6 @@ printf '%s' "$status" | python3 -c 'import json,sys; assert json.load(sys.stdin)
 # shellcheck disable=SC2029
 ssh "${options[@]}" "$destination" "upload $DEPLOY_COMMIT" < "$archive"
 # shellcheck disable=SC2029
-ssh "${options[@]}" "$destination" "upload-images $DEPLOY_COMMIT" < "$images"
+ssh "${options[@]}" "$destination" "upload-images $DEPLOY_COMMIT $image_checksum" < "$images"
 # shellcheck disable=SC2029
 ssh "${options[@]}" "$destination" "deploy-images $DEPLOY_COMMIT $checksum $image_checksum"

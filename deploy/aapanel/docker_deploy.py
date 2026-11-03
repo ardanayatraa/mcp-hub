@@ -22,8 +22,9 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from deploy import DIGEST, SHA, DeploymentError, Manager, atomic_json, digest, locked
 from image_archive import MAX_COMPRESSED, inspect_archive
+
+from deploy import DIGEST, SHA, DeploymentError, Manager, atomic_json, digest, locked
 
 
 def fingerprint(path):
@@ -289,9 +290,9 @@ class DockerManager(Manager):
             raise DeploymentError("DOCKER_ENV_MARKER_MUST_BE_EMPTY")
         self.runtime = runtime or DockerRuntime(config)
 
-    def upload_images(self, commit, stream):
-        if not SHA.fullmatch(commit):
-            raise DeploymentError('INVALID_COMMIT')
+    def upload_images(self, commit, checksum, stream):
+        if not SHA.fullmatch(commit) or not DIGEST.fullmatch(checksum):
+            raise DeploymentError('INVALID_COMMIT_OR_IMAGE_CHECKSUM')
         with locked(self.shared/'deploy.lock'):
             self.runtime.preflight()
             temporary = self.incoming/('.images-'+uuid.uuid4().hex)
@@ -307,6 +308,8 @@ class DockerManager(Manager):
                         output.write(chunk)
                     output.flush()
                     os.fsync(output.fileno())
+                if digest(temporary) != checksum:
+                    raise DeploymentError('INCOMPLETE_OR_CHANGED_IMAGE_UPLOAD')
                 if target.exists() or target.is_symlink():
                     if target.is_symlink() or digest(target) != digest(temporary):
                         raise DeploymentError('DIFFERENT_IMAGE_ARCHIVE_ALREADY_UPLOADED')
@@ -384,8 +387,8 @@ def main():
         return {"status": "configured", "protocol": "prebuilt-v1", "current": json.loads(private_file(state).read_text())["current"] if state.exists() else None}
     if len(command) == 2 and command[0] == "upload":
         return manager.upload(command[1], sys.stdin.buffer)
-    if len(command) == 2 and command[0] == 'upload-images':
-        return manager.upload_images(command[1], sys.stdin.buffer)
+    if len(command) == 3 and command[0] == 'upload-images':
+        return manager.upload_images(command[1], command[2], sys.stdin.buffer)
     if len(command) == 4 and command[0] == 'deploy-images':
         return manager.deploy(command[1], command[2], command[3])
     raise DeploymentError("COMMAND_NOT_ALLOWED")

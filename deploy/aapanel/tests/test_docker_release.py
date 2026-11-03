@@ -266,6 +266,26 @@ class ActivationTest(unittest.TestCase):
         with patch.object(runtime,'inspect',return_value={'State':{'Status':'running','Health':{'Status':'healthy'}}}), patch.object(runtime,'public_ready',return_value=False), patch.object(docker.time,'monotonic',side_effect=[0,0,100]), patch.object(docker.time,'sleep'):
             self.assertFalse(runtime.ready('a'*40))
 
+    def test_low_resources_abort_before_preparation(self):
+        def fail():
+            raise docker.DeploymentError('AT_LEAST_1_GIB_AVAILABLE_MEMORY_REQUIRED')
+        self.runtime.preflight=fail
+        with self.assertRaisesRegex(docker.DeploymentError,'AVAILABLE_MEMORY_REQUIRED'):
+            self.deploy()
+        self.assertFalse(self.runtime.built)
+        self.assertEqual([],self.runtime.activations)
+
+    def test_interrupted_image_upload_leaves_no_final_archive_and_can_be_retried(self):
+        self.manager.incoming=self.root/'incoming'
+        raw=b'complete image stream'
+        checksum=hashlib.sha256(raw).hexdigest()
+        with self.assertRaisesRegex(docker.DeploymentError,'INCOMPLETE_OR_CHANGED'):
+            self.manager.upload_images('a'*40,checksum,io.BytesIO(raw[:4]))
+        self.assertEqual([],list(self.manager.incoming.iterdir()))
+        with patch.object(docker.os,'link',side_effect=lambda a,b: Path(b).write_bytes(Path(a).read_bytes())):
+            self.manager.upload_images('a'*40,checksum,io.BytesIO(raw))
+        self.assertEqual(raw,(self.manager.incoming/('a'*40+'.images.tar.gz')).read_bytes())
+
 
 class ImageArchiveTest(unittest.TestCase):
     def archive(self, path, commit='a'*40, schema='d3e5a7c9f204', tag=None, link=False):

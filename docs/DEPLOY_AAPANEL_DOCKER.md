@@ -13,7 +13,7 @@ The environment remains `aapanel-production`, deployment is serialized, and
 superseded main commits are skipped.
 
 The Docker controller accepts `status`, `upload <commit>`,
-`upload-images <commit>` and `deploy-images <commit> <source-sha256> <image-sha256>`.
+`upload-images <commit> <image-sha256>` and `deploy-images <commit> <source-sha256> <image-sha256>`.
 Its protocol is `prebuilt-v1`; the previous server-build command is rejected.
 The source uses the bounded, allowlisted archive format of the systemd controller.
 The application checkout is never reset or cleaned.
