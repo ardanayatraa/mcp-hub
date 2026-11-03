@@ -1,8 +1,8 @@
-# Ekspor laporan privat
+# Private report exports
 
-CSV, XLSX, dan PDF dibuat di Laravel. Hub hanya menerima receipt/status job, bukan file laporan. Ini terpisah dari analitik JSON `run_report`.
+CSV, XLSX, and PDF files are generated in Laravel. The Hub receives job receipts and status, not the report file. This is separate from the JSON analytics provided by `run_report`.
 
-## Aktivasi
+## Enable exports
 
 ```php
 'exports' => [
@@ -13,39 +13,39 @@ CSV, XLSX, dan PDF dibuat di Laravel. Hub hanya menerima receipt/status job, buk
 ],
 ```
 
-Pada resource yang ditinjau, tambahkan format `exports`, misalnya `['csv', 'xlsx', 'pdf']`. Policy harus mengizinkan `list` dan `export` untuk actor saat ini. Definisikan export Gate dan migrasikan metadata package.
+Add the required `exports` formats to a reviewed resource, for example `['csv', 'xlsx', 'pdf']`. Its policy must allow both `list` and `export` for the current actor. Define the export Gate and migrate package metadata.
 
-Backend queue host harus tersedia; package tidak membuat infrastrukturnya. Contoh backend database:
+The host's queue backend must already exist; the package does not create that infrastructure. For a database queue:
 
 ```bash
 php artisan queue:work database --queue=default --tries=1 --timeout=60
 ```
 
-Produksi menolak driver `sync`. Atur `retry_after` lebih besar dari timeout worker, misalnya 90 detik untuk timeout 60 detik.
+Production rejects the `sync` driver. Set `retry_after` above the worker timeout, such as 90 seconds for a 60-second timeout.
 
-## Batas default
+## Limits and defaults
 
-| Batas | Nilai |
+| Limit | Value |
 |---|---|
-| TTL | 30–900 detik; default 600 |
-| Active exports | 2 per actor, 40 per instalasi |
-| Record | 1–500; default 200 |
-| PDF | Maksimal 100 record |
-| Kolom | Maksimal 10 field yang ditinjau |
-| File | Maksimal 5 MiB |
+| TTL | 30–900 seconds; default 600 |
+| Active exports | 2 per actor, 40 per installation |
+| Records | 1–500; default 200 |
+| PDF | At most 100 records |
+| Columns | At most 10 reviewed fields |
+| File size | At most 5 MiB |
 
 ```json
 {"format":"xlsx","columns":"title,status,total","limit":200,"status":"paid"}
 ```
 
-POST memerlukan assertion baru dan `Idempotency-Key` 16–128 karakter huruf/angka/underscore/hyphen. Tidak menerima query string atau input di luar schema. Aggregate terbatas pada record yang dipilih; `coverage: partial` bukan total populasi lengkap.
+POST requires a fresh assertion and an `Idempotency-Key` of 16–128 letters, digits, underscores, or hyphens. Query strings and inputs outside the schema are rejected. Aggregates cover only selected records; `coverage: partial` is not a complete population total.
 
-## Storage dan download
+## Storage and downloads
 
-Web/queue workers berbagi database, APP_KEY, config, dan private filesystem `storage/app/mcp-hub`. File terenkripsi dan tidak boleh dipublikasi/symlink ke public disk. Worker dengan storage lokal independen tidak didukung alur ini.
+Web and queue workers must share the database, APP_KEY, configuration, and private `storage/app/mcp-hub` filesystem. Files are encrypted and must not be published or symlinked to a public disk. This workflow does not support workers with independent local storage.
 
-Download memeriksa session, Gate, actor/tenant, grants, format, expiry, serta snapshot query/record saat ini. Link saja tidak memberi akses. Data/grants berubah menghasilkan conflict dan memerlukan export baru; expired download menghasilkan 410.
+Downloads recheck the session, Gate, actor and tenant, grants, format, expiry, and current query/record snapshot. A link alone grants no access. Changed data or grants cause a conflict requiring a new export; expired downloads return 410.
 
-Worker crash dapat meninggalkan job tidak tersedia sampai expiry. Buat request/key baru, bukan replay job manual. Jalankan scheduler host untuk prune berkala.
+A crashed worker can leave a job unavailable until expiry. Create a new request and key rather than manually replaying the job. Run the host scheduler for periodic pruning.
 
-[Kontrak ekspor lengkap](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/EXPORTS.md)
+[Complete export contract](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/EXPORTS.md)

@@ -1,22 +1,22 @@
-# Chat, settings, dan SDK server
+# Chat, settings, and the server SDK
 
-Package menyediakan `/mcp-hub` untuk settings dan `/mcp-hub/chat` untuk chat. Akses mengikuti permission dan identitas aplikasi host.
+The package provides `/mcp-hub` for settings and `/mcp-hub/chat` for chat. Access follows the host application's identity and permissions.
 
-## Gate aplikasi
+## Application Gates
 
-| Config | Gate default | Tujuan |
+| Configuration | Default Gate | Purpose |
 |---|---|---|
-| `web.manage_gate` | `mcp-hub.manage` | Koneksi dan grants |
-| `web.chat_gate` | `mcp-hub.chat` | Halaman/aksi chat |
-| `web.export_gate` | `mcp-hub.export` | Download privat |
+| `web.manage_gate` | `mcp-hub.manage` | Connections and grants |
+| `web.chat_gate` | `mcp-hub.chat` | Chat pages and actions |
+| `web.export_gate` | `mcp-hub.export` | Private downloads |
 
-Definisikan Gate melalui sistem izin aplikasi. Gate yang hilang menolak akses. Jangan menganggap semua user login adalah admin. `web.guard` dapat mengikuti guard host.
+Define these Gates using your application's permission system. Missing Gates deny access. Do not treat every signed-in user as an administrator. `web.guard` can follow the host's selected guard.
 
-Routes memakai session, CSRF/origin checks, batas input, aset lokal, dan CSP. Browser tidak menerima key Hub/provider.
+Routes use sessions, CSRF and origin checks, bounded input, local assets, and a Content Security Policy. Browsers never receive Hub or provider keys.
 
 ## Gateway SDK
 
-Contoh ini dijalankan dalam controller/route yang sudah diautentikasi dan memakai resolver host yang benar:
+Run this example inside an authenticated controller or route with a correctly implemented host resolver:
 
 ```php
 use McpHub\Laravel\Gateway;
@@ -26,13 +26,13 @@ $gateway = app(Gateway::class);
 $models = $gateway->models($user);
 $config = $gateway->chatConfig($user);
 $answer = $gateway->turn($user, [
-    'message' => 'Ringkas pesanan yang boleh saya akses.',
+    'message' => 'Summarize the orders I am allowed to access.',
     'history' => [],
-    'locale' => 'id',
+    'locale' => 'en',
 ]);
 ```
 
-`turn()` mengembalikan data jawaban JSON non-streaming. Untuk orchestration mandiri, `complete($user, $input)` menerima model dari katalog yang diizinkan dan messages tervalidasi. Allowlist/budget Hub tetap berlaku.
+`turn()` returns non-streaming JSON answer data. For application-managed orchestration, `complete($user, $input)` accepts an allowed model and validated messages. Hub allowlists and budgets still apply.
 
 ## MCP SDK
 
@@ -42,13 +42,13 @@ use McpHub\Laravel\Security\Assertions;
 
 $catalog = app(HubClient::class)->rpc('tools/list');
 $delegation = app(Assertions::class)->delegate(auth()->user());
-// Ambil nama tool dan schema arguments dari katalog.
+// Read tool names and argument schemas from the catalog.
 ```
 
-Pada `tools/call`, kirim `X-Hub-Delegation` melalui parameter headers `rpc`. Client membatasi ukuran/waktu, memeriksa response ID, dan mendukung JSON/SSE Hub. SDK ini bukan client umum untuk semua MCP server.
+For `tools/call`, send `X-Hub-Delegation` through the `rpc` headers parameter. The client bounds response size and time, validates response IDs, and supports Hub JSON and SSE. It is not a general-purpose client for every MCP server.
 
-## UI proposal dan laporan
+## Proposal and report UI
 
-Tampilkan proposal sebagai menunggu persetujuan pengguna. Widget membangun download link same-origin dari structured export reference yang tervalidasi; jangan mengambil tautan dari prosa model.
+Present proposals as awaiting user approval. The widget constructs same-origin download links from validated structured export references; never extract download links from model prose.
 
-[Konfigurasi model di Hub](../hub/chat.md) · [Interface Gateway](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/src/Gateway.php)
+[Configure Hub models](../hub/chat.md) · [Gateway interface](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/src/Gateway.php)

@@ -21,10 +21,10 @@ for source, target in SOURCES.items():
         return f"[{label}]({resolved})"
     text = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", rewrite, text)
     heading, _, body = text.partition("\n")
-    notice = ("\n\n!!! info \"Referensi teknis dalam bahasa Inggris\"\n"
-              f"    Halaman ini disinkronkan otomatis dari [docs/{source}]"
-              f"(https://github.com/ardanayatraa/mcp-hub/blob/main/docs/{source}) pada commit build. "
-              "Panduan penggunaan berbahasa Indonesia tersedia melalui navigasi portal.\n\n")
+    notice = ("\n\n!!! info \"Synchronized technical reference\"\n"
+              f"    This page is generated from [docs/{source}]"
+              f"(https://github.com/ardanayatraa/mcp-hub/blob/main/docs/{source}) at the build commit. "
+              "Use the portal navigation for setup guides and integration workflows.\n\n")
     destination = ROOT / "documentation" / "reference" / target
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(heading + notice + body, encoding="utf-8", newline="\n")

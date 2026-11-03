@@ -5,58 +5,58 @@ hide:
 <div class="hero" markdown>
 <p class="eyebrow">Developer documentation</p>
 
-# Satu penghubung AI.<br>Data dalam kendali aplikasi.
+# Connect AI to your apps.<br>Keep your data under your control.
 
-Bangun integrasi AI yang mengikuti izin pengguna, scope tenant, dan aturan bisnis aplikasi Anda. MCP Hub mengelola koneksi dan tools; package Laravel menyediakan batas akses di sisi aplikasi.
+Build AI integrations that respect user permissions, tenant boundaries, and application business rules. MCP Hub manages connections and tools; the Laravel package enforces access within your application.
 
-[Mulai implementasi](start/quickstart.md){ .md-button .md-button--primary }
-[Instal Laravel 1.0](laravel/install.md){ .md-button }
+[Get started](start/quickstart.md){ .md-button .md-button--primary }
+[Install Laravel 1.0](laravel/install.md){ .md-button }
 
-<p class="meta">Laravel package 1.0.0 stable · Hub Python edition · Diperiksa 3 November 2026</p>
+<p class="meta">Laravel package 1.0.0 stable · Hub Python edition · Reviewed November 3, 2026</p>
 </div>
 
-## Pilih jalur Anda
+## Choose your path
 
 <div class="doc-cards" markdown>
 <div class="doc-card" markdown>
-<span class="label">Untuk pengelola platform</span>
+<span class="label">For platform administrators</span>
 
 ## MCP Hub
 
-Jalankan Hub, hubungkan aplikasi, atur client key dan tools, lalu kelola akses model dari satu tempat.
+Run the Hub, connect applications, configure client keys and tools, and manage model access in one place.
 
-[Siapkan Hub →](hub/local.md)
+[Set up the Hub →](hub/local.md)
 </div>
 <div class="doc-card" markdown>
-<span class="label">Untuk developer aplikasi</span>
+<span class="label">For application developers</span>
 
 ## Laravel MCP Hub
 
-Pasang package Composer, daftarkan resource yang ditinjau, lalu terapkan identitas dan izin pengguna dari aplikasi Anda sendiri.
+Install the Composer package, register reviewed resources, and apply your application's own user identity and permission rules.
 
-[Integrasikan Laravel →](laravel/install.md)
+[Integrate Laravel →](laravel/install.md)
 </div>
 </div>
 
-## Cara komponen bekerja bersama
+## How the components work together
 
-<div class="flow" role="img" aria-label="Client AI memanggil Hub; Hub meneruskan permintaan terverifikasi ke aplikasi Laravel">
-<div class="node"><strong>Client AI</strong><small>MCP client atau chat aplikasi</small></div>
+<div class="flow" role="img" aria-label="An AI client calls the Hub, which forwards a verified request to the Laravel application">
+<div class="node"><strong>AI client</strong><small>MCP client or application chat</small></div>
 <div class="arrow" aria-hidden="true">→</div>
-<div class="node"><strong>MCP Hub</strong><small>Tools, key, profil, model, audit</small></div>
+<div class="node"><strong>MCP Hub</strong><small>Tools, keys, profiles, models, audit</small></div>
 <div class="arrow" aria-hidden="true">→</div>
-<div class="node"><strong>Aplikasi Laravel</strong><small>Identitas, policy, record, persetujuan</small></div>
+<div class="node"><strong>Laravel application</strong><small>Identity, policies, records, approval</small></div>
 </div>
 
-Hub memeriksa akses pada setiap pemanggilan. Aplikasi memeriksa ulang pengguna dan record sebelum memberikan data atau menjalankan perubahan. Model tidak menetapkan identitas pengguna, tenant, URL sumber, maupun persetujuan transaksi.
+The Hub checks access on every call. The application rechecks the user and record scope before returning data or making changes. The model cannot establish user identity, tenant membership, source URLs, or transaction approval.
 
-| Kebutuhan | Panduan |
+| Goal | Guide |
 |---|---|
-| Memahami batas tanggung jawab | [Konsep dan arsitektur](start/concepts.md) |
-| Menghubungkan aplikasi pertama | [Pairing Laravel](laravel/connection.md) |
-| Mengekspos data secara terbatas | [Resource dan izin](laravel/resources.md) |
-| Membuat perubahan dengan persetujuan | [Proposal CRUD](laravel/commands.md) |
-| Membuat laporan privat | [CSV, XLSX, dan PDF](laravel/exports.md) |
-| Menangani koneksi gagal | [Pemecahan masalah](help/troubleshooting.md) |
+| Understand component responsibilities | [Concepts and architecture](start/concepts.md) |
+| Connect your first application | [Laravel pairing](laravel/connection.md) |
+| Expose a limited set of data | [Resources and permissions](laravel/resources.md) |
+| Make changes with user approval | [CRUD proposals](laravel/commands.md) |
+| Generate private reports | [CSV, XLSX, and PDF exports](laravel/exports.md) |
+| Diagnose a failed connection | [Troubleshooting](help/troubleshooting.md) |
 
-[Repository Hub](https://github.com/ardanayatraa/mcp-hub) · [Repository Laravel](https://github.com/ardanayatraa/laravel-mcp-hub) · [Package Composer](https://packagist.org/packages/ardanayatraa/laravel-mcp-hub)
+[Hub repository](https://github.com/ardanayatraa/mcp-hub) · [Laravel repository](https://github.com/ardanayatraa/laravel-mcp-hub) · [Composer package](https://packagist.org/packages/ardanayatraa/laravel-mcp-hub)

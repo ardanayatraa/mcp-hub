@@ -1,10 +1,10 @@
-# Client, tools, dan profil akses
+# Clients, tools, and access profiles
 
-Client key membatasi pemanggil ke aplikasi dan operasi tertentu. Ia tidak menggantikan identitas pengguna sumber.
+A client key restricts a caller to an application and its permitted operations. It does not replace source user identity.
 
-## Sambungkan MCP client
+## Connect an MCP client
 
-Buat key di Access, simpan token satu kali pada secret store client, lalu gunakan endpoint Streamable HTTP:
+Create a key under Access, store the one-time token in the client's secret store, and configure the Streamable HTTP endpoint:
 
 ```json
 {
@@ -18,22 +18,22 @@ Buat key di Access, simpan token satu kali pada secret store client, lalu gunaka
 }
 ```
 
-Format wrapper bisa berbeda antar client. Untuk resource per pengguna, trusted server juga mengirim `X-Hub-Delegation`. User ID dalam percakapan tidak dapat menetapkan identitas.
+Wrapper configuration can differ between clients. For user-scoped resources, a trusted server also sends `X-Hub-Delegation`. A user ID in a conversation cannot establish identity.
 
-## Katalog tools
+## Tool catalog
 
-| Tool | Fungsi |
+| Tool | Purpose |
 |---|---|
-| `list_data_sources` | Resource dan field yang boleh dilihat |
-| `run_report` | Filter, record, total, grouped metrics dengan batas waktu/record |
-| Memory tools | Recall/save/forget per pengguna bila diaktifkan |
+| `list_data_sources` | Discover permitted resources and fields |
+| `run_report` | Filter records and compute totals or grouped metrics within time and record limits |
+| Memory tools | Recall, save, or forget user memory when enabled |
 
-Tools manual mengikuti draft → test → publish. Tools mode source mengikuti grants manifest. Gunakan **Tools → What the agent sees** untuk memeriksa katalog dari sisi key tertentu. Listing bukan otorisasi permanen; setiap call memeriksa ulang.
+Manual tools follow draft → test → publish. Source-managed tools follow manifest grants. Use **Tools → What the agent sees** to inspect a particular key's catalog. Discovery is not permanent authorization: every call rechecks access.
 
-## Profil
+## Profiles
 
-Akses efektif adalah irisan izin aplikasi, grants resource, profil, allowlist key, dan write scope. Profil tidak dapat membuka field yang dilarang developer atau memperbesar budget model. Daftar profil kosong memberi nol akses pada dimensi tersebut; profil disabled memblokir key terikat pada panggilan berikutnya.
+Effective access is the intersection of application permissions, resource grants, the profile, the key's tool allowlist, and write scope. A profile cannot expose fields forbidden by the developer or increase a model budget. An empty profile list grants no access in that dimension; a disabled profile blocks bound keys on their next call.
 
-Uji pencabutan dengan data sintetis: panggil tool sah, cabut izin, lalu ulangi. Call harus ditolak walaupun client masih menyimpan katalog lama.
+Test revocation using synthetic data: make an authorized call, revoke permission, then repeat it. The call must fail even if the client has cached the old catalog.
 
-[Referensi tools/reporting](../reference/tools.md) · [API profil dan revision](../reference/profiles.md)
+[Tools and reporting reference](../reference/tools.md) · [Profile API and revisions](../reference/profiles.md)

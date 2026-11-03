@@ -1,24 +1,24 @@
-# Chat dan model gateway
+# Chat and the model gateway
 
-Provider credentials tetap di Hub. Server aplikasi memakai key scoped; browser tidak menerima provider key, Hub client key, atau delegation secret.
+Provider credentials stay in the Hub. Application servers use scoped client keys; browsers never receive provider keys, Hub client keys, or delegation secrets.
 
-| Pola | API | Penggunaan |
+| Integration | API | Use case |
 |---|---|---|
-| Hub chat | `/chat/v1/config`, `/chat/v1/turn` | Percakapan dengan tools dan pengaturan Hub |
-| Model gateway | `/gateway/v1/models`, `/gateway/v1/chat/completions` | Aplikasi mengelola orchestration sendiri |
-| Laravel SDK/UI | `Gateway`, `/mcp-hub/chat` | Integrasi dengan resolver dan izin host |
+| Hub chat | `/chat/v1/config`, `/chat/v1/turn` | Conversations using Hub tools and chat settings |
+| Model gateway | `/gateway/v1/models`, `/gateway/v1/chat/completions` | Application-managed orchestration |
+| Laravel SDK/UI | `Gateway`, `/mcp-hub/chat` | Integration with host identity and permissions |
 
-## Konfigurasi
+## Configuration
 
-Tambahkan provider pada AI providers, simpan key, uji koneksi, lalu pilih provider/model di tab Chat aplikasi. Tetapkan allowlist model dan budget bulanan gateway. Aktifkan chat jika menggunakan Hub chat, kemudian panggil dari server dengan konteks actor.
+Add a provider under AI providers, save its key, test the connection, then select the application's chat provider and model. Set its gateway model allowlist and monthly budget. Enable chat when using Hub chat, then call the API from the application server with actor context.
 
-!!! important "Akses model produksi harus dikonfigurasi"
-    Produksi menolak discovery/completion sampai allowlist dan budget tersedia. Daftar kosong atau budget nol bukan akses tanpa batas.
+!!! important "Production model access must be configured"
+    Production rejects discovery and completions until the allowlist and budget are set. An empty list or a zero budget does not mean unlimited access.
 
-## Riwayat dan memory
+## History and memory
 
-Hub chat tidak menyimpan riwayat percakapan secara persisten; history dikirim aplikasi pada request. Memory merupakan fitur terpisah, opsional, dan terenkripsi per pengguna. Audit metadata dan file laporan memiliki lifecycle yang berbeda.
+Hub chat does not persist conversation history; the application sends history with each request. Memory is a separate optional feature, encrypted per user. Audit metadata and report files have different lifecycles.
 
-SDK Laravel `Gateway::turn()` memakai JSON non-streaming. Kontrak streaming Hub tersedia pada [API reference](../reference/admin-api.md) bagi implementasi client sendiri.
+Laravel's `Gateway::turn()` uses non-streaming JSON. The Hub streaming contract is documented in the [API reference](../reference/admin-api.md) for custom clients.
 
-Proposal pending harus ditampilkan sebagai menunggu pengguna. Persetujuan tetap berada dalam sesi aplikasi. Lihat [chat Laravel](../laravel/chat.md) dan [proposal CRUD](../laravel/commands.md).
+Show a pending proposal as awaiting user approval. Approval remains inside the application's authenticated session. See [Laravel chat](../laravel/chat.md) and [CRUD proposals](../laravel/commands.md).

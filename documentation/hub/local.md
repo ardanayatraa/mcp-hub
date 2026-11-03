@@ -1,27 +1,27 @@
-# Jalankan Hub secara lokal
+# Run the Hub locally
 
-Sediakan Python 3.12, uv, Node.js 22, dan pnpm. Gunakan environment dan port terpisah dari layanan yang sudah berjalan.
+Install Python 3.12, uv, Node.js 22, and pnpm. Use a separate environment and ports from services that are already running.
 
 ```bash
 git clone https://github.com/ardanayatraa/mcp-hub.git
 cd mcp-hub
 ```
 
-## Launcher Windows
+## Windows launcher
 
 ```powershell
 .\dev.ps1
 ```
 
-Alternatifnya, jalankan `dev.cmd`. Launcher menyiapkan dependensi yang belum tersedia dan membuat `dev.env` dengan key acak pada penggunaan pertama, lalu menjalankan migrasi, bootstrap admin, API, dan admin UI. Simpan kredensial hasil bootstrap secara privat.
+Alternatively, run `dev.cmd`. The launcher installs missing dependencies and creates `dev.env` with random keys on first use, then runs migrations, bootstraps the administrator, and starts the API and admin UI. Keep the generated credentials private.
 
-Port mengikuti `HUB_PORT` dan `UI_PORT` pada environment. Launcher dapat menghentikan proses Hub/UI lama yang dikenalnya pada port tersebut. Gunakan port berbeda untuk instance paralel. Ctrl+C menghentikan instance yang Anda jalankan.
+Ports follow `HUB_PORT` and `UI_PORT` in the environment file. The launcher may stop a recognized older Hub or UI process on those ports. Use different ports for parallel instances. Ctrl+C stops the instance you started.
 
-## Komponen manual
+## Run components manually
 
-Siapkan konfigurasi development seperti pada [README repository](https://github.com/ardanayatraa/mcp-hub#quick-start-local-development): database SQLite, encryption key, session signing key, password admin, allowed hosts/origins, dan URL publik yang sesuai port.
+Prepare the development configuration described in the [repository README](https://github.com/ardanayatraa/mcp-hub#quick-start-local-development): a SQLite database, encryption key, session signing key, initial administrator password, allowed hosts and origins, and public URLs matching your chosen ports.
 
-Dari `backend`:
+From `backend`:
 
 ```bash
 uv sync --frozen --group dev
@@ -30,7 +30,7 @@ uv run --frozen python -m app.bootstrap
 uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 18080
 ```
 
-Dari `frontend` pada terminal lain, arahkan proxy ke port backend yang sama:
+From `frontend` in another terminal, point the proxy at the same backend port:
 
 === "PowerShell"
 
@@ -48,10 +48,10 @@ Dari `frontend` pada terminal lain, arahkan proxy ke port backend yang sama:
     pnpm dev --host 127.0.0.1 --port 15180
     ```
 
-Samakan proxy frontend, allowed origins, dan URL MCP dengan port yang dipilih. Gunakan launcher untuk konfigurasi lokal yang dikelola otomatis.
+Keep the frontend proxy, allowed origins, and MCP URL consistent with your ports. Use the launcher when you want it to manage local configuration automatically.
 
-## Verifikasi
+## Verify the installation
 
-Login ke admin UI, periksa `/health` serta `/ready`, daftarkan sumber uji, lalu buat client key read-only. Verifikasi katalog dengan actor sintetis sebelum mengaktifkan akses bisnis.
+Sign in to the admin UI, check `/health` and `/ready`, register a test source, and create a read-only client key. Verify the catalog with a synthetic actor before enabling business access.
 
-HTTP lokal, loopback egress, dan SQLite adalah pilihan development. Layanan publik mengikuti [panduan produksi](operations.md).
+Local HTTP, loopback egress, and SQLite are development options. Public services should follow the [production guide](operations.md).

@@ -1,33 +1,33 @@
-# Pemecahan masalah
+# Troubleshooting
 
-Mulai dari `php artisan mcp-hub:status` dan `php artisan mcp-hub:doctor --online`. Catat error code, waktu, serta trace ID; hindari secrets dan payload bisnis.
+Start with `php artisan mcp-hub:status` and `php artisan mcp-hub:doctor --online`. Record the error code, time, and trace ID; exclude secrets and business payloads.
 
-| Gejala | Pemeriksaan | Tindakan |
+| Symptom | Check | Action |
 |---|---|---|
-| Doctor/health 503 | Metadata security tersedia? | Review dry-run dan jalankan migrasi package |
-| Tools kosong | Registry/grants belum aktif? | Implementasikan resolver/policy, tinjau resource, sync |
-| Source catalog unavailable | Manifest valid dan terjangkau? | Perbaiki sumber; refresh gagal tidak memakai izin lama |
-| Source 401 | App token sama di dua sisi? | Tinjau provisioning tanpa mencetak token |
-| Operasi pengguna 403 | Delegation, actor, policy, profil sah? | Uji akun/tenant dan izin terkini |
-| Settings/chat 403 | Gate/guard host tersedia? | Definisikan Gate sesuai permission host |
-| Mutation web 419 | Session dan CSRF satu aplikasi? | Perbaiki sesi/origin, jangan matikan CSRF |
-| Pairing terputus | Proof terenkripsi tersimpan? | Jalankan `connect --resume` |
-| Replacement tidak efektif | Env lama override bundle? | Tinjau pinned configuration melalui operator |
-| Model kosong/ditolak | Allowlist dan budget tersedia? | Konfigurasikan akses model aplikasi |
-| Proposal conflict/expired | Versi record/policy/expiry berubah? | Buat proposal baru, minta approval ulang |
-| Export pending/failed | Worker, queue, storage siap? | Perbaiki worker; job crash perlu request/key baru |
-| Download 409 | Snapshot data/grants berubah? | Buat export baru |
-| Download 410 | TTL berakhir? | Buat export baru |
-| Composer conflict | PHP/framework/Guzzle sesuai? | Review solver dan lock, tanpa bypass security/platform |
+| Doctor or health returns 503 | Is security metadata present? | Review the dry run and execute package migrations |
+| Empty tool catalog | Are the registry and grants enabled? | Implement the resolver and policies, review resources, then sync |
+| Source catalog unavailable | Is the manifest valid and reachable? | Fix the source; failed refreshes do not use stale grants |
+| Source returns 401 | Do app tokens match on both sides? | Review provisioning without printing tokens |
+| User operation returns 403 | Are delegation, actor, policy, and profile valid? | Check current account, tenant, and permissions |
+| Settings or chat returns 403 | Are host Gates and guard available? | Define Gates using host permissions |
+| Web mutation returns 419 | Do the session and CSRF token belong to the same application? | Fix session and origin handling; do not disable CSRF |
+| Pairing interrupted | Was the encrypted proof saved? | Run `connect --resume` |
+| Replacement has no effect | Do old environment values override the bundle? | Review pinned configuration through the operator |
+| Models missing or denied | Are allowlists and budgets configured? | Configure application model access |
+| Proposal conflicts or expires | Did the record version, policy, or expiry change? | Prepare a new proposal and request approval again |
+| Export remains pending or fails | Are the worker, queue, and storage ready? | Fix the worker; crashed jobs need a new request and key |
+| Download returns 409 | Did the data or grant snapshot change? | Create a new export |
+| Download returns 410 | Has the TTL expired? | Create a new export |
+| Composer conflict | Are PHP, framework, and Guzzle constraints compatible? | Review solver output and the lock file without security or platform bypasses |
 
-## Bedakan URL dan kredensial
+## Distinguish URLs and credentials
 
-`MCP_HUB_URL` menunjuk Hub `/mcp`. `MCP_HUB_BASE_URL` menunjuk sumber. Client key dipakai Laravel ke Hub; app token dipakai Hub ke Laravel. Delegation secret menandatangani actor dan bukan token API biasa.
+`MCP_HUB_URL` points to the Hub's `/mcp` endpoint. `MCP_HUB_BASE_URL` points to the source. The client key authenticates Laravel to the Hub; the app token authenticates the Hub to Laravel. The delegation secret signs actor context and is not a general API token.
 
-## Pemeriksaan worker
+## Worker checks
 
-Web/queue harus memakai release, config, APP_KEY, database, serta private filesystem yang sama. Restart worker sesuai prosedur host setelah perubahan. Perbarui cached configuration melalui proses deployment terkontrol.
+Web and queue workers must use the same release, configuration, APP_KEY, database, and private filesystem. Restart workers through the host's deployment procedure after changes. Refresh cached configuration through a controlled deployment process.
 
-## Laporan masalah
+## Issue reports
 
-Sertakan versi package/server, PHP/Laravel, error code, dan reproduksi dengan data sintetis. Sebutkan apakah kasus berasal dari unit test, simulasi, staging, atau produksi. Hapus token, code, identitas pengguna, alamat internal, dan record bisnis dari laporan publik.
+Include package and server versions, PHP and Laravel versions, the error code, and reproduction steps using synthetic data. Identify whether the case comes from a unit test, simulation, staging, or production. Remove tokens, codes, user identities, internal addresses, and business records from public reports.
