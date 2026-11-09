@@ -34,4 +34,4 @@ Pending is not business success. Expiry, revoked permissions, changed configurat
 !!! warning "External side effects belong to the application"
     A database rollback cannot undo an email, HTTP request, or observer side effect that has already been sent. Use the host's transactional outbox for external effects. The generic handler requires the same default transaction connection as the package metadata.
 
-[Handler and WritePolicy interfaces](https://github.com/ardanayatraa/laravel-mcp-hub/tree/v1.0.0/src/Contracts)
+[Handler and WritePolicy interfaces](https://github.com/ardanayatraa/laravel-mcp-hub/tree/v1.0.1/src/Contracts)

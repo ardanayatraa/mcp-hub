@@ -51,4 +51,4 @@ For `tools/call`, send `X-Hub-Delegation` through the `rpc` headers parameter. T
 
 Present proposals as awaiting user approval. The widget constructs same-origin download links from validated structured export references; never extract download links from model prose.
 
-[Configure Hub models](../hub/chat.md) · [Gateway interface](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/src/Gateway.php)
+[Configure Hub models](../hub/chat.md) · [Gateway interface](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.1/src/Gateway.php)

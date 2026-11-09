@@ -24,6 +24,6 @@ Transaction approval takes place within an application session belonging to the 
 
 Use GitHub private vulnerability reporting when available. Otherwise, request a private channel without posting exploits, credentials, or personal data in a public issue.
 
-[Package security policy](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/SECURITY.md) · [Hub security model](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/SECURITY.md)
+[Package security policy](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.1/SECURITY.md) · [Hub security model](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/SECURITY.md)
 
 Audit host dependencies. Compatibility with older PHP or Laravel versions does not extend upstream security maintenance.

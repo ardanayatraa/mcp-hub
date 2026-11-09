@@ -50,4 +50,4 @@ Configured environment values take precedence over the saved bundle. Never print
 | `record_references` | `opaque` |
 | `maintenance.scheduled_prune` | `true`; the host scheduler must run |
 
-Use scalars, arrays, and class strings for `config:cache` compatibility. See the [version 1.0.0 configuration](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/config/mcp-hub.php).
+Use scalars, arrays, and class strings for `config:cache` compatibility. See the [version 1.0.1 configuration](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.1/config/mcp-hub.php).
