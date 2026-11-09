@@ -26,6 +26,10 @@ from image_archive import MAX_COMPRESSED, inspect_archive
 
 from deploy import DIGEST, SHA, DeploymentError, Manager, atomic_json, digest, locked
 
+# Archives a deployment uploads, and the image tags `docker load` creates from them.
+ARCHIVE_NAME = re.compile(r'[a-f0-9]{40}(\.images)?\.tar\.gz')
+CI_IMAGE = re.compile(r'mcp-hub-ci-(?:backend|edge):([a-f0-9]{40})')
+
 
 def fingerprint(path):
     result = hashlib.sha256()
@@ -237,6 +241,21 @@ class DockerRuntime:
             images[key] = actual['Id']
         return images
 
+    def remove_old_images(self, keep):
+        """Untag the images earlier deployments loaded, except those of the `keep` commits. Best effort:
+        Docker refuses to remove an image a container still uses, and that failure is not an error."""
+        removed = 0
+        for name in self.run(['docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}']).decode().split():
+            match = CI_IMAGE.fullmatch(name)
+            if not match or match.group(1) in keep:
+                continue
+            try:
+                self.run(['docker', 'image', 'rm', name], timeout=120)
+                removed += 1
+            except (DeploymentError, subprocess.TimeoutExpired):
+                pass
+        return removed
+
     def public_ready(self, commit=None):
         context = ssl.create_default_context(cafile=self.config.get('probe_ca'))
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
@@ -374,9 +393,30 @@ class DockerManager(Manager):
                 if not self.runtime.ready():
                     raise DeploymentError("ROLLBACK_FAILED_OPERATOR_RECOVERY_REQUIRED") from None
                 raise DeploymentError("RELEASE_FAILED_PREVIOUS_IMAGES_RESTORED") from None
-            atomic_json(self.shared/"docker-state.json", {"current": commit, "schema": schema,
+            state = self.shared/"docker-state.json"
+            replaced = json.loads(private_file(state).read_text()).get("current") if state.exists() else None
+            atomic_json(state, {"current": commit, "schema": schema,
                         "compose": str(candidate_file), "backup": str(backup), "images": images})
-            return {"status": "deployed", "commit": commit, "protected_files_unchanged": True}
+            return {"status": "deployed", "commit": commit, "protected_files_unchanged": True,
+                    "cleanup": self.tidy({commit, replaced})}
+
+    def tidy(self, keep):
+        """After a verified release, drop what the next one does not need. Uploaded archives are not used for
+        rollback (that reuses the loaded images and the saved Compose files), and each deployment loads two
+        more images. Keeps the current and the replaced release's images. Never fails the deployment."""
+        summary = {"archives_removed": 0, "images_removed": 0}
+        try:
+            for file in self.incoming.iterdir():
+                if ARCHIVE_NAME.fullmatch(file.name) and file.is_file() and not file.is_symlink():
+                    file.unlink()
+                    summary["archives_removed"] += 1
+        except OSError:
+            pass
+        try:
+            summary["images_removed"] = self.runtime.remove_old_images({item for item in keep if item})
+        except Exception:
+            pass
+        return summary
 
     def assert_preserved(self, protected, before, updating=False):
         if any(fingerprint(path) != expected for path, expected in protected.items()):
