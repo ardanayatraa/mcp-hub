@@ -12,7 +12,7 @@ Build AI integrations that respect user permissions, tenant boundaries, and appl
 [Get started](start/quickstart.md){ .md-button .md-button--primary }
 [Install Laravel 1.0](laravel/install.md){ .md-button }
 
-<p class="meta">Laravel package 1.0.0 stable · Hub Python edition · Reviewed November 3, 2026</p>
+<p class="meta">Laravel package 1.0.1 stable · Hub Python edition · Reviewed November 9, 2026</p>
 </div>
 
 ## Choose your path

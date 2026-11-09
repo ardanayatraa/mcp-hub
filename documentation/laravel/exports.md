@@ -48,4 +48,4 @@ Downloads recheck the session, Gate, actor and tenant, grants, format, expiry, a
 
 A crashed worker can leave a job unavailable until expiry. Create a new request and key rather than manually replaying the job. Run the host scheduler for periodic pruning.
 
-[Complete export contract](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/EXPORTS.md)
+[Complete export contract](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.1/EXPORTS.md)

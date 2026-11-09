@@ -42,4 +42,4 @@ Roll back code and the lock file through the host's procedure. Do not automatica
 
 File rollback does not restore revoked credentials. Use pairing resume or replacement. APP_KEY rotation requires a separate file and queue recovery plan; the package does not rotate it automatically.
 
-[Complete upgrade and recovery guide](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.0/UPGRADE.md)
+[Complete upgrade and recovery guide](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.1/UPGRADE.md)
