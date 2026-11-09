@@ -4,7 +4,7 @@ The `ardanayatraa/laravel-mcp-hub` package provides source connectors and a serv
 
 ## Prerequisites
 
-Use PHP and Laravel versions from the [compatibility matrix](../start/releases.md), Composer, and the extensions required by dependency resolution. You need a stable `APP_KEY`, a metadata database, a Hub reachable from the application, and a source URL reachable from the Hub.
+Use PHP and Laravel versions from the [compatibility matrix](../start/releases.md), Composer, and the extensions required by dependency resolution. The package accepts Guzzle 7.15.2+ and Guzzle 8, so a fresh Laravel 13 application installs it without `-W` (package 1.0.1 or later). You need a stable `APP_KEY`, a metadata database, a Hub reachable from the application, and a source URL reachable from the Hub.
 
 ```bash
 composer require ardanayatraa/laravel-mcp-hub:^1.0
