@@ -21,4 +21,6 @@ Hub chat does not persist conversation history; the application sends history wi
 
 Laravel's `Gateway::turn()` uses non-streaming JSON. The Hub streaming contract is documented in the [API reference](../reference/admin-api.md) for custom clients.
 
+Write tools (create, update, delete) are offered only when the user's current message asks for a change, for example "create", "cancel" or "mark as paid", or in Indonesian "buat", "buatkan", "bikinin", "tambahkan", "ubah", "batalkan" or "tandai". Questions such as "pesanan yang batal ada berapa?" only read. Every change is still a proposal the user approves in the application.
+
 Show a pending proposal as awaiting user approval. Approval remains inside the application's authenticated session. See [Laravel chat](../laravel/chat.md) and [CRUD proposals](../laravel/commands.md).

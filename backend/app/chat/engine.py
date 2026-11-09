@@ -148,8 +148,12 @@ def _explicit_write_intent(text: str) -> bool:
     # Tool results and prior assistant messages are deliberately excluded.
     text = re.sub(r'"[^"\n]*"|\'[^\'\n]*\'|`[^`\n]*`', ' ', text.casefold())
     return bool(re.search(
-        r"\b(?:create|add|update|edit|change|delete|remove|send|publish|approve|assign|"
-        r"buat|bikin|tambah|tambahkan|ubah|perbarui|ganti|hapus|kirim|terbitkan|setujui|"
+        r"\b(?:create|add|update|edit|change|delete|remove|send|publish|approve|assign|cancel|mark|make|"
+        # Indonesian stems also take -kan, -in and -lah (buatkan, bikinin, tambahin, hapuslah).
+        r"(?:buat|bikin|tambah|ubah|ganti|hapus|kirim|catat|simpan)(?:kan|in|lah)?|"
+        # Only the verb forms: bare batal, daftar and masuk describe data ("pesanan yang batal").
+        r"batalkan|batalin|tandai|tandain|daftarkan|daftarin|masukkan|masukin|pesankan|pesanin|input|"
+        r"perbarui|perbaharui|selesaikan|terbitkan|setujui|"
         r"crear|agregar|actualizar|editar|eliminar|enviar|publicar|"
         r"créer|ajouter|modifier|supprimer|envoyer|publier|"
         r"erstellen|hinzufügen|ändern|löschen|senden|veröffentlichen)\b",

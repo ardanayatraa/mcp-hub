@@ -18,7 +18,10 @@ Start with `php artisan mcp-hub:status` and `php artisan mcp-hub:doctor --online
 | Export remains pending or fails | Are the worker, queue, and storage ready? | Fix the worker; crashed jobs need a new request and key |
 | Download returns 409 | Did the data or grant snapshot change? | Create a new export |
 | Download returns 410 | Has the TTL expired? | Create a new export |
-| Composer conflict | Are PHP, framework, and Guzzle constraints compatible? | Review solver output and the lock file without security or platform bypasses |
+| Composer conflict | Are PHP, framework, and Guzzle constraints compatible? | Review solver output and the lock file without security or platform bypasses. Package 1.0.0 needs Guzzle 7; on a fresh Laravel 13 (Guzzle 8) require 1.0.1 or later |
+| Pairing works, `doctor --online` shows `operation: FAIL` | Is the package 1.0.0? | 1.0.0 sends an `Origin` the Hub's `/mcp` rejects. Update the package, or add the Laravel source URL to the Hub's `ALLOWED_ORIGINS` |
+| Chat says it cannot create or change data | Does the message ask for the change? Does the client key allow writes? | Ask with a verb such as "buatkan", "ubah", "batalkan", "create"; turn on write for the app's key under Access |
+| App login returns 429 after Hub activity | Does a host route use plain `throttle:N,M`? | Package 1.0.1 uses its own counters; on 1.0.0 give host throttles a named prefix |
 
 ## Distinguish URLs and credentials
 

@@ -48,3 +48,7 @@ php artisan mcp-hub:connect --import-env
 The app token and delegation secret require at least 32 random characters. The connection copy is stored encrypted at `storage/app/mcp-hub/connection.enc` using `APP_KEY`.
 
 `MCP_HUB_URL` points to the Hub's `/mcp` endpoint; `MCP_HUB_BASE_URL` points to the Laravel source. HTTP is permitted only for loopback in local/testing environments. Use HTTPS in production.
+
+## Network requirements
+
+The Hub calls `MCP_HUB_BASE_URL`, so the Hub's egress allowlist (`EGRESS_ALLOWED_HOSTS`, `EGRESS_ALLOWED_PORTS`) must permit that host and port. Laravel's calls to the Hub are server-to-server: since package 1.0.1 they send no `Origin` header, and the Hub's `ALLOWED_ORIGINS` does not need the Laravel URL. Package 1.0.0 sent its source URL as `Origin`, which the Hub's `/mcp` endpoint rejects unless it is listed; with 1.0.0, pairing succeeds but `php artisan mcp-hub:doctor --online` reports `operation: FAIL`. Upgrade with `composer update ardanayatraa/laravel-mcp-hub`, or add the source URL to `ALLOWED_ORIGINS`.

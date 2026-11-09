@@ -229,7 +229,8 @@ provider, with model lists fetched from the providers.
 
 - `Authorization: Bearer <client key>` (required)
 - `X-Hub-Delegation: <token signed by the app>` for user-scoped data
-- `Origin` must be in `ALLOWED_ORIGINS` when present (DNS-rebinding protection)
+- `Origin` must be in `ALLOWED_ORIGINS` when present (DNS-rebinding protection). Server-side clients
+  should send none; the Laravel package does not since 1.0.1.
 
 `prompts/list` and `prompts/get` serve the app's skills to keys that can call every tool
 the skill names.
