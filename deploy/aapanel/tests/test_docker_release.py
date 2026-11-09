@@ -126,6 +126,10 @@ class FakeRuntime:
     def restore_networks(self, containers):
         pass
 
+    def remove_old_images(self, keep):
+        self.kept = keep
+        return 4
+
 
 class ActivationTest(unittest.TestCase):
     def setUp(self):
@@ -144,6 +148,7 @@ class ActivationTest(unittest.TestCase):
         self.manager = docker.DockerManager.__new__(docker.DockerManager)
         self.manager.base = self.root
         self.manager.shared = self.root/"shared"
+        self.manager.incoming = self.root/"incoming"
         self.manager.config = {"project": "mcp-hub-local", "backend": "backend", "edge": "edge", "protected_files": [str(self.protected)]}
         self.manager.runtime = self.runtime
         self.unpack = patch.object(self.manager, "unpack", return_value=self.release)
@@ -186,6 +191,54 @@ class ActivationTest(unittest.TestCase):
         self.assertEqual("same-postgres", self.runtime.containers["postgres"])
         self.assertEqual("same-other", self.runtime.containers["unrelated"])
         self.assertEqual("PRIVATE_CANARY=keep-existing-value", self.protected.read_text())
+
+    def test_success_removes_uploaded_archives_and_keeps_current_and_replaced_images(self):
+        incoming = self.root/"incoming"
+        for name in ("a"*40+".tar.gz", "a"*40+".images.tar.gz", "e"*40+".tar.gz", "f"*40+".images.tar.gz"):
+            (incoming/name).write_bytes(b"archive")
+        (self.root/"shared/docker-state.json").write_text(json.dumps({"current": "f"*40}))
+        with patch.object(docker, "private_file", side_effect=lambda path: path):
+            result = self.deploy()
+        self.assertEqual({"archives_removed": 4, "images_removed": 4}, result["cleanup"])
+        self.assertEqual([], list(incoming.iterdir()))
+        self.assertEqual({"a"*40, "f"*40}, self.runtime.kept)
+
+    def test_cleanup_touches_only_named_archives(self):
+        incoming = self.root/"incoming"
+        keep = [".images-"+"0"*32, "notes.txt", "A"*40+".tar.gz", "a"*39+".tar.gz", "a"*40+".tar.gz.part", "a"*40+".zip"]
+        for name in keep:
+            (incoming/name).write_bytes(b"other")
+        (incoming/"directory.tar.gz").mkdir()
+        (incoming/("b"*40+".tar.gz")).mkdir()
+        outside = self.root/"outside"
+        outside.write_bytes(b"outside")
+        try:
+            (incoming/("c"*40+".tar.gz")).symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pass
+        self.deploy()
+        self.assertEqual(sorted(keep + ["directory.tar.gz", "b"*40+".tar.gz"]
+                                + (["c"*40+".tar.gz"] if (incoming/("c"*40+".tar.gz")).is_symlink() else [])),
+                         sorted(path.name for path in incoming.iterdir()))
+        self.assertEqual(b"outside", outside.read_bytes())
+
+    def test_failed_cleanup_never_fails_a_verified_release(self):
+        def fail(keep):
+            raise RuntimeError("docker unavailable")
+        self.runtime.remove_old_images = fail
+        (self.root/"incoming"/("a"*40+".tar.gz")).write_bytes(b"archive")
+        result = self.deploy()
+        self.assertEqual("deployed", result["status"])
+        self.assertEqual({"archives_removed": 1, "images_removed": 0}, result["cleanup"])
+
+    def test_failed_release_keeps_its_archives_for_a_retry(self):
+        self.runtime.probes = [False, True]
+        archive = self.root/"incoming"/("a"*40+".images.tar.gz")
+        archive.write_bytes(b"archive")
+        with self.assertRaises(docker.DeploymentError):
+            self.deploy()
+        self.assertTrue(archive.exists())
+        self.assertFalse(hasattr(self.runtime, "kept"))
 
     def test_secret_change_or_unrelated_restart_during_build_aborts_before_activation(self):
         def mutate(*args):
@@ -307,6 +360,37 @@ class ActivationTest(unittest.TestCase):
         with patch.object(docker.os,'link',side_effect=lambda a,b: Path(b).write_bytes(Path(a).read_bytes())):
             self.manager.upload_images('a'*40,checksum,io.BytesIO(raw))
         self.assertEqual(raw,(self.manager.incoming/('a'*40+'.images.tar.gz')).read_bytes())
+
+
+class ImageCleanupTest(unittest.TestCase):
+    def runtime(self, listing, refuse=()):
+        runtime = docker.DockerRuntime.__new__(docker.DockerRuntime)
+        self.commands = []
+
+        def run(command, *, input=None, timeout=900):
+            self.commands.append(command)
+            if command[:3] == ["docker", "image", "ls"]:
+                return "\n".join(listing).encode()
+            if command[-1] in refuse:
+                raise docker.DeploymentError("DOCKER_OPERATION_FAILED_CHECK_SERVER")
+            return b""
+        runtime.run = run
+        return runtime
+
+    def test_removes_only_older_deployment_images(self):
+        old, current, replaced = "1"*40, "2"*40, "3"*40
+        listing = [f"mcp-hub-ci-backend:{old}", f"mcp-hub-ci-edge:{old}", f"mcp-hub-ci-backend:{current}",
+                   f"mcp-hub-ci-edge:{replaced}", "postgres:16-alpine", "mcp-hub-ci-backend:latest",
+                   f"mcp-hub-ci-worker:{old}", f"other-mcp-hub-ci-backend:{old}", "<none>:<none>"]
+        runtime = self.runtime(listing)
+        self.assertEqual(2, runtime.remove_old_images({current, replaced}))
+        self.assertEqual([["docker", "image", "rm", f"mcp-hub-ci-backend:{old}"],
+                          ["docker", "image", "rm", f"mcp-hub-ci-edge:{old}"]], self.commands[1:])
+
+    def test_an_image_docker_refuses_to_remove_is_not_an_error(self):
+        old = "1"*40
+        runtime = self.runtime([f"mcp-hub-ci-backend:{old}", f"mcp-hub-ci-edge:{old}"], refuse={f"mcp-hub-ci-backend:{old}"})
+        self.assertEqual(1, runtime.remove_old_images(set()))
 
 
 class ImageArchiveTest(unittest.TestCase):

@@ -147,7 +147,16 @@ stack and verifies a real release, backup, preserved database administrator
 records, stable volume/container identities, and rollback after an injected
 backend startup failure. It refuses execution outside GitHub CI.
 
-Keep enough disk space for build layers, previous images and database backups.
-The controller does not prune images, delete volumes or remove unrelated Docker
-resources. Review retention separately and retain at least the active and last
-known-good images plus a restore-tested database backup.
+Keep enough disk space for previous images and database backups.
+
+After a release passes its health and public-version checks, the controller tidies
+up once, and a failure there never fails the release. It deletes the uploaded
+`incoming/<commit>.tar.gz` and `<commit>.images.tar.gz` files (rollback reuses the
+loaded images and saved Compose files, not the uploads), and it untags the
+`mcp-hub-ci-backend` and `mcp-hub-ci-edge` images of earlier deployments. The active
+release's images and those of the release it replaced stay, and Docker refuses to
+remove an image a container still uses. A release that fails keeps its uploads so
+the job can be re-run. Nothing else is pruned: no volumes, no unrelated images,
+containers or networks. `releases/`, `shared/backups` and the Compose files saved per
+release grow with every deployment, so review their retention separately and keep a
+restore-tested database backup.
