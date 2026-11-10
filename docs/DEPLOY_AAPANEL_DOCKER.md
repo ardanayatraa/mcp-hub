@@ -118,6 +118,9 @@ Check that the restricted key reports protocol `prebuilt-v1`. Only enable automa
 deployment after the isolated Docker integration job and the first controlled
 prebuilt deployment succeed. The installed controller is deliberately server-owned;
 pushing repository changes does not replace this privileged controller automatically.
+`status` reports the SHA-256 of the installed `docker_deploy.py`, and the deploy job
+raises a warning annotation when it differs from the repository copy, so a stale
+controller is visible instead of silent. The release still runs with the installed one.
 
 ## First cutover and later schema changes
 
@@ -155,8 +158,11 @@ up once, and a failure there never fails the release. It deletes the uploaded
 loaded images and saved Compose files, not the uploads), and it untags the
 `mcp-hub-ci-backend` and `mcp-hub-ci-edge` images of earlier deployments. The active
 release's images and those of the release it replaced stay, and Docker refuses to
-remove an image a container still uses. A release that fails keeps its uploads so
-the job can be re-run. Nothing else is pruned: no volumes, no unrelated images,
+remove an image a container still uses. Deploying a commit that is already deployed
+moves its tags to the new images and leaves the previous ones untagged (`<none>`);
+the controller records which images carried a deployment tag before the load and also
+removes those that ended up with no tag and no container. A release that fails keeps
+its uploads so the job can be re-run. Nothing else is pruned: no volumes, no unrelated images,
 containers or networks. `releases/`, `shared/backups` and the Compose files saved per
 release grow with every deployment, so review their retention separately and keep a
 restore-tested database backup.

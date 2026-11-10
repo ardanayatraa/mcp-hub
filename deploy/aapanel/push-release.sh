@@ -30,6 +30,12 @@ options=(-i "$key" -p "$AAPANEL_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes
 destination="$AAPANEL_SSH_USER@$AAPANEL_SSH_HOST"
 status="$(ssh "${options[@]}" "$destination" status)"
 printf '%s' "$status" | python3 -c 'import json,sys; assert json.load(sys.stdin).get("protocol") == "prebuilt-v1", "Install the reviewed prebuilt controller first"'
+# The controller is server-owned and never updated from CI. Say so when it differs from the reviewed copy.
+expected_controller="$(sha256sum "$(dirname "${BASH_SOURCE[0]}")/docker_deploy.py" | cut -d ' ' -f1)"
+installed_controller="$(printf '%s' "$status" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("controller",""))')"
+if [[ "$installed_controller" != "$expected_controller" ]]; then
+  echo "::warning title=Server controller is out of date::The installed docker_deploy.py (${installed_controller:-no fingerprint reported}) differs from the repository copy ($expected_controller). This release still runs with the installed controller; ask for it to be updated."
+fi
 # The forced-command protocol receives client-side values already restricted to hexadecimal.
 # shellcheck disable=SC2029
 ssh "${options[@]}" "$destination" "upload $DEPLOY_COMMIT" < "$archive"
