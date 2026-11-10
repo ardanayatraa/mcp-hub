@@ -256,6 +256,30 @@ class DockerRuntime:
                 pass
         return removed
 
+    def ci_image_ids(self):
+        """IDs of the images that currently carry a deployment tag, read before a new release is loaded."""
+        ids = set()
+        for line in self.run(['docker', 'image', 'ls', '--no-trunc', '--format', '{{.ID}} {{.Repository}}']).decode().splitlines():
+            parts = line.split()
+            if len(parts) == 2 and re.fullmatch(r'sha256:[a-f0-9]{64}', parts[0]) and re.fullmatch(r'mcp-hub-ci-(?:backend|edge)', parts[1]):
+                ids.add(parts[0])
+        return ids
+
+    def remove_orphan_images(self, candidates, active):
+        """Remove deployment images that lost their tag. Loading a commit that is already deployed moves its tag
+        to the new image and leaves the previous one as <none>. Only IDs seen with a deployment tag before the
+        load are considered; an image that still has any tag, or that a container uses, is left alone."""
+        removed = 0
+        for image in sorted(set(candidates) - set(active)):
+            try:
+                if json.loads(self.run(['docker', 'image', 'inspect', '--format', '{{json .RepoTags}}', image])):
+                    continue
+                self.run(['docker', 'image', 'rm', image], timeout=120)
+                removed += 1
+            except (DeploymentError, subprocess.TimeoutExpired, ValueError):
+                pass
+        return removed
+
     def public_ready(self, commit=None):
         context = ssl.create_default_context(cafile=self.config.get('probe_ca'))
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
@@ -365,6 +389,10 @@ class DockerManager(Manager):
                 raise DeploymentError("BASELINE_SCHEMA_DIFFERS_OPERATOR_CUTOVER_REQUIRED")
             if not self.runtime.public_ready():
                 raise DeploymentError('PUBLIC_SITE_UNHEALTHY_NO_LIVE_CHANGES_MADE')
+            try:
+                tagged_before = self.runtime.ci_image_ids()
+            except Exception:
+                tagged_before = set()
             images = self.runtime.load_images(commit, image_checksum, schema)
             self.publish_assets(release)
             candidate = release_compose(previous, self.config["project"], images)
@@ -398,12 +426,13 @@ class DockerManager(Manager):
             atomic_json(state, {"current": commit, "schema": schema,
                         "compose": str(candidate_file), "backup": str(backup), "images": images})
             return {"status": "deployed", "commit": commit, "protected_files_unchanged": True,
-                    "cleanup": self.tidy({commit, replaced})}
+                    "cleanup": self.tidy({commit, replaced}, tagged_before, set(images.values()))}
 
-    def tidy(self, keep):
+    def tidy(self, keep, tagged_before=(), active=()):
         """After a verified release, drop what the next one does not need. Uploaded archives are not used for
         rollback (that reuses the loaded images and the saved Compose files), and each deployment loads two
-        more images. Keeps the current and the replaced release's images. Never fails the deployment."""
+        more images. Keeps the current and the replaced release's images, and removes deployment images that
+        a redeploy of the same commit left without a tag. Never fails the deployment."""
         summary = {"archives_removed": 0, "images_removed": 0}
         try:
             for file in self.incoming.iterdir():
@@ -414,6 +443,10 @@ class DockerManager(Manager):
             pass
         try:
             summary["images_removed"] = self.runtime.remove_old_images({item for item in keep if item})
+        except Exception:
+            pass
+        try:
+            summary["images_removed"] += self.runtime.remove_orphan_images(tagged_before, active)
         except Exception:
             pass
         return summary
@@ -435,7 +468,8 @@ def main():
     command = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", "status"))
     if command == ["status"]:
         state = manager.shared/"docker-state.json"
-        return {"status": "configured", "protocol": "prebuilt-v1", "current": json.loads(private_file(state).read_text())["current"] if state.exists() else None}
+        return {"status": "configured", "protocol": "prebuilt-v1", "controller": fingerprint(__file__),
+                "current": json.loads(private_file(state).read_text())["current"] if state.exists() else None}
     if len(command) == 2 and command[0] == "upload":
         return manager.upload(command[1], sys.stdin.buffer)
     if len(command) == 3 and command[0] == 'upload-images':

@@ -130,6 +130,13 @@ class FakeRuntime:
         self.kept = keep
         return 4
 
+    def ci_image_ids(self):
+        return {"sha256:"+"9"*64, "sha256:"+"8"*64}
+
+    def remove_orphan_images(self, candidates, active):
+        self.orphan_candidates, self.orphan_active = set(candidates), set(active)
+        return 0
+
 
 class ActivationTest(unittest.TestCase):
     def setUp(self):
@@ -202,6 +209,18 @@ class ActivationTest(unittest.TestCase):
         self.assertEqual({"archives_removed": 4, "images_removed": 4}, result["cleanup"])
         self.assertEqual([], list(incoming.iterdir()))
         self.assertEqual({"a"*40, "f"*40}, self.runtime.kept)
+
+    def test_cleanup_hands_the_tagged_images_seen_before_the_load_to_the_orphan_pass(self):
+        result = self.deploy()
+        self.assertEqual({"sha256:"+"9"*64, "sha256:"+"8"*64}, self.runtime.orphan_candidates)
+        self.assertEqual(set(NEW_IMAGES.values()), self.runtime.orphan_active)
+        self.assertEqual(4, result["cleanup"]["images_removed"])
+
+    def test_failed_orphan_cleanup_never_fails_a_verified_release(self):
+        def fail(candidates, active):
+            raise RuntimeError("docker unavailable")
+        self.runtime.remove_orphan_images = fail
+        self.assertEqual("deployed", self.deploy()["status"])
 
     def test_cleanup_touches_only_named_archives(self):
         incoming = self.root/"incoming"
@@ -391,6 +410,47 @@ class ImageCleanupTest(unittest.TestCase):
         old = "1"*40
         runtime = self.runtime([f"mcp-hub-ci-backend:{old}", f"mcp-hub-ci-edge:{old}"], refuse={f"mcp-hub-ci-backend:{old}"})
         self.assertEqual(1, runtime.remove_old_images(set()))
+
+
+class OrphanImageTest(unittest.TestCase):
+    def runtime(self, tags, refuse=()):
+        runtime = docker.DockerRuntime.__new__(docker.DockerRuntime)
+        self.commands = []
+
+        def run(command, *, input=None, timeout=900):
+            self.commands.append(command)
+            if command[:3] == ["docker", "image", "ls"]:
+                return (f"sha256:{'1'*64} mcp-hub-ci-backend\nsha256:{'2'*64} mcp-hub-ci-edge\n"
+                        f"sha256:{'3'*64} postgres\nsha256:{'4'*64} <none>\nbroken line\n"
+                        f"sha256:{'5'*64} other-mcp-hub-ci-backend\n").encode()
+            if command[:3] == ["docker", "image", "inspect"]:
+                return json.dumps(tags[command[-1]]).encode()
+            if command[-1] in refuse:
+                raise docker.DeploymentError("DOCKER_OPERATION_FAILED_CHECK_SERVER")
+            return b""
+        runtime.run = run
+        return runtime
+
+    def test_lists_only_deployment_image_ids(self):
+        self.assertEqual({"sha256:"+"1"*64, "sha256:"+"2"*64}, self.runtime({}).ci_image_ids())
+
+    def test_removes_only_untagged_images_that_were_deployment_images(self):
+        untagged, retagged, active, unknown = ("sha256:"+c*64 for c in "1234")
+        runtime = self.runtime({untagged: None, retagged: ["mcp-hub-ci-edge:"+"b"*40], active: None})
+        self.assertEqual(1, runtime.remove_orphan_images({untagged, retagged, active}, {active}))
+        self.assertEqual([["docker", "image", "rm", untagged]], [c for c in self.commands if c[:3] == ["docker", "image", "rm"]])
+        self.assertNotIn(unknown, [c[-1] for c in self.commands])
+
+    def test_an_orphan_docker_refuses_to_remove_is_not_an_error(self):
+        first, second = "sha256:"+"1"*64, "sha256:"+"2"*64
+        runtime = self.runtime({first: [], second: []}, refuse={first})
+        self.assertEqual(1, runtime.remove_orphan_images({first, second}, set()))
+
+    def test_unreadable_tag_data_leaves_the_image(self):
+        image = "sha256:"+"1"*64
+        runtime = self.runtime({image: []})
+        runtime.run = lambda command, **kw: b"not json"
+        self.assertEqual(0, runtime.remove_orphan_images({image}, set()))
 
 
 class ImageArchiveTest(unittest.TestCase):
