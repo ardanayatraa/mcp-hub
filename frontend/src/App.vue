@@ -20,6 +20,7 @@ const groups = computed(() => [
     label: "Platform",
     links: [
       { label: "Overview", to: "/", icon: "home" },
+      { label: "Monitoring", to: "/monitoring", icon: "monitor" },
       { label: "Apps", to: "/apps", icon: "apps" },
       { label: "Tools", to: "/tools", icon: "tools" },
       { label: "Access", to: "/access", icon: "key" },

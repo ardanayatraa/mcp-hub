@@ -157,10 +157,33 @@ published or enabled automatically.
 |---|---|---|
 | GET | `/dashboard?period=24h\|7d\|30d` | Counts, success rate, p95 latency, top tools, recent events, setup checklist. |
 | GET | `/executions` | Audit log. Filters: `trace_id, tool_key, app_key, result, kind=calls\|admin, period, from_time, to_time, before, limit`. |
-| GET | `/system` | Version, MCP URL, limits and security posture (no secrets). |
-| POST | `/operations/export` | Super admin. Configuration backup; secrets stay ciphertext. |
-| POST | `/operations/import` | Super admin. Replaces exported tables after validating the whole document. |
+| GET | `/monitoring?window=5m\|1h\|24h` | The live board: clients, checks, apps, model providers and recent traffic. See below. |
+| GET | `/hub-settings` | Super or hub admin. Runtime settings: limits, `mfa_required`, `egress_allowed_hosts`, SMTP (never the password), each with `source` `hub` or `environment`, plus the environment-only values. |
+| PATCH | `/hub-settings` | Root. `{max_records?, report_max_records?, report_timeout_seconds?, tool_rate_limit?, tool_rate_window_seconds?, audit_retention_days?, mfa_required?, egress_allowed_hosts?, smtp?}`; `null` resets one to its `.env` value. Applies at once in every Hub process (within 5 s). Secure cookies, plain HTTP and private-network access stay in `.env`. |
+| POST | `/hub-settings/test-email` | Root. Sends a test email to the signed-in root administrator. |
+| GET | `/system` | Version, MCP URL, backup key fingerprint, limits and security posture (no secrets). |
+| POST | `/operations/export` | Super or hub admin. Sealed configuration backup (`mcp-hub-backup-v2`), encrypted with `SECRET_ENCRYPTION_KEY`; see [BACKUP.md](BACKUP.md). |
+| POST | `/operations/import` | Root. Opens a sealed backup with the current or a previous key (`BACKUP_KEY_MISMATCH`, `BACKUP_DAMAGED` otherwise), or an unsealed one from an earlier release, and replaces exported tables after validating the whole document. |
 | POST | `/operations/purge` | Super admin. Deletes activity and test records older than the retention period, and expired memories. |
+
+`GET /monitoring` is read-only and built from the audit log, so it holds metadata only: no request
+bodies, results or user identities. App admins and auditors see their own apps. The Monitoring page
+polls it every few seconds.
+
+| Field | Meaning |
+|---|---|
+| `totals` | `requests`, `passed`, `blocked` (stopped by a check), `failed` (reached the app, the model or the Hub and failed there) and `per_minute`, for the window. |
+| `gates[]` | The four checks in the order a request meets them: `key`, `privacy`, `permissions`, `limits`. `stopped` counts the requests each one refused, `codes` names the error codes behind them. |
+| `clients[]` | One per client key: `state` is `live` (traffic in the last `live_seconds`), `on` (ready) or `off`, with `reason` (`revoked`, `expired`, `profile_off`, `app_off`). `kind` is `key`, or a pseudo-client that only appears with traffic: `unknown` (a missing or wrong key) and `preview` (an admin trying the chat). |
+| `apps[]` | One per connected app (archived ones are left out): `state` is `live`, `on`, `warn` (health check failing or circuit open) or `off`, with `reason` and the last health check. |
+| `models[]` | Model providers that are ready, used by a chat, or had traffic: `state` and `reason`. |
+| `hub` | `answered`: requests the Hub answered itself (`list_data_sources`, memory, skills). |
+| `events[]` | The latest traffic, newest first (at most 60): `kind` (`tool`, `chat`, `model`, `skill`), `client`, `app` and `model` ids, `destination` (`app`, `model` or `hub`), and `stopped_at`: `null` when it succeeded, otherwise the gate, or `app`, `model` or `hub` when it failed there. |
+
+Each audited step counts once: a chat answer goes to the model, and each tool it calls goes to the
+app. Which check stopped a request is read from its error code, so a refusal by the connected app
+(`PERMISSION_DENIED`) counts under `permissions` like the Hub's own. Requests with a wrong key are
+turned away before anything is logged, so they never reach the board.
 
 ## Chat endpoint
 

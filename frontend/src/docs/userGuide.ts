@@ -296,8 +296,9 @@ export const USER_SECTIONS: GuideSection[] = [
   {
     id: "monitor",
     title: "Monitoring",
-    body: ["Three places show how the Hub is used and whether apps are healthy."],
+    body: ["Four places show how the Hub is used and whether apps are healthy."],
     list: [
+      "**Monitoring**: a live map that updates every few seconds. Every client key is a box on the left, the Hub's four checks (key, privacy, permissions, limits) sit on the main pipe, and connected apps and AI models are on the right. Each new request flows across as a drop of water; a check that refuses it closes its gate. Every box says whether it is Live, On, Off (and why) or needs attention; point at a box or a gate for details. Drag boxes to arrange the board, zoom with the mouse wheel or the + and − buttons, drag empty space to pan, and use Tidy up to put everything back.",
       "**Overview**: active apps, live tools, tool calls and response time, a chart of calls and unsuccessful calls over 24 hours, 7 or 30 days, each app's allowed data sources and the most used tools.",
       "**Activity**: every tool call, skill use and configuration change, with who, which app, the result and a trace id. Filter by kind, app, result and period, or search a tool or trace id.",
       "**App → History**: recent connection checks with response times, and every contract version the app published.",

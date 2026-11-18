@@ -56,6 +56,11 @@ const PATHS: Record<string, string> = {
   monitor: "M3 4.5h18v12H3zM8 20.5h8M12 16.5v4",
   send: "M4 12 20 4l-4 16-4-7zM12 13l8-9",
   power: "M12 3v8M7 6.3a7 7 0 1 0 10 0",
+  minus: "M5 12h14",
+  fit: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M9 9h6v6H9z",
+  tidy: "M4 5h6v5H4zM14 5h6v5h-6zM4 14h6v5H4zM14 14h6v5h-6z",
+  maximize: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  minimize: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",
 };
 
 const d = () => PATHS[props.name] ?? PATHS.info;

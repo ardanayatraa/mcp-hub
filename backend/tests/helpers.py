@@ -147,6 +147,16 @@ def publish(admin: dict, tool_id: str, body: dict | None = None) -> dict:
     return api(admin, "POST", f"/tools/{tool_id}/publish", expect=200).json()["data"]
 
 
+def export_backup(admin: dict) -> tuple[dict, dict]:
+    """A sealed export as the API returns it, and the document inside it."""
+
+    from app.config import get_settings
+    from app.services.backup import open_backup
+
+    sealed = api(admin, "POST", "/operations/export", expect=200).json()["data"]
+    return sealed, open_backup(sealed, get_settings().secret_encryption_key)
+
+
 def issue_key(admin: dict, *, app_key: str = "your_app", **options) -> str:
     created = api(admin, "POST", "/service-identities", {"name": "gateway", "app_key": app_key, "environment": "dev", **options},
                   expect=201).json()["data"]

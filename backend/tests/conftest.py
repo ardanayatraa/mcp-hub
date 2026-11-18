@@ -36,6 +36,10 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
     reset_limits()
+    from app.config import get_settings
+    from app.services import runtime_settings
+
+    runtime_settings.forget(get_settings())  # no test inherits settings another test saved
     # Each TestClient starts the MCP session manager, and that manager can run once.
     application = create_app()
     assert db_session.engine is not None

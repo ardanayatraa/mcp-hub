@@ -106,6 +106,8 @@ const ACTIONS: Record<string, string> = {
   "backup.export": "Backup exported",
   "backup.import": "Backup restored",
   "backup.purge": "Old records purged",
+  "settings.update": "Hub settings changed",
+  "settings.email_test": "Test email sent",
   "tool.generate": "Tools generated",
   "skill.create": "Skill created",
   "skill.update": "Skill changed",

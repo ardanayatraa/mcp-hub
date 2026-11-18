@@ -1,5 +1,36 @@
 # What changed after 1.0
 
+## Settings in the admin UI
+
+- **Settings → Limits, Sign-in, Approved app hosts and Email for invitations** can be changed by the root
+  administrator without editing `.env` or restarting (handy in Docker). A saved value wins over `.env`
+  until it is reset, applies in every Hub process within 5 seconds, is audited (`settings.update`), and
+  travels in the encrypted backup. The SMTP password is stored encrypted; a mail server on a private
+  network is refused, and **Send test email** checks delivery.
+- Secure cookies, plain HTTP and private-network access stay in `.env`, shown read-only: a wrong value
+  could lock every administrator out or let the Hub reach internal networks. Production still enforces
+  the safe values. Migration `e7b2c9d4a1f3` adds the `hub_settings` table.
+
+## Encrypted backups
+
+- **Exports are sealed.** The configuration backup is compressed and encrypted with the Hub's
+  `SECRET_ENCRYPTION_KEY`; the file shows only its date, the Hub version and a key fingerprint.
+  Settings shows the fingerprint and, before a restore, whether a file matches this Hub's key.
+- Restore opens sealed backups with the current or a previous key, refuses another key
+  (`BACKUP_KEY_MISMATCH`) or a changed file (`BACKUP_DAMAGED`), and still accepts unencrypted
+  backups from earlier releases. Keep a copy of the key outside the server. No migration.
+
+## Monitoring
+
+- **A Monitoring page** (sidebar, under Overview): a live board of every client key, the four checks a
+  request meets (key, privacy, permissions, limits), the connected apps and the AI models, refreshed
+  every 4 seconds. New requests flow across the board; a refused one stops at the gate that refused it.
+  Each part shows Live, On, Off with the reason, or Check when its calls or health check fail. The board
+  is a canvas: drag boxes into place (remembered in that browser), zoom with the wheel or buttons, pan by
+  dragging empty space, Tidy up to reset, and full screen.
+- `GET /api/admin/v1/monitoring?window=5m|1h|24h` serves it from the audit log: metadata only, scoped
+  to the admin's apps, no migration.
+
 ## Model gateway
 
 - **Apps pick their model from every provider the Hub holds keys for.** `/gateway/v1/models` lists

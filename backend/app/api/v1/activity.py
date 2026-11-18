@@ -7,12 +7,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.common import ok
+from app.config import get_settings
 from app.errors import HubError
 from app.ids import utcnow
 from app.persistence.models import AdminUser, AuditEvent
 from app.persistence.session import get_db
 from app.security.auth import require_csrf
 from app.security.authorization import allowed_app_ids
+from app.services import monitoring
 from app.services.dashboard import events_view, scoped_events, summary
 
 router = APIRouter(tags=["activity"])
@@ -75,3 +77,12 @@ def dashboard(environment: str | None = None, period: str | None = None, from_ti
               to_time: str | None = None, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     start, end = _window(period, from_time, to_time)
     return ok(summary(db, environment=environment, start=start, end=end, app_ids=allowed_app_ids(db, user)))
+
+
+@router.get("/monitoring")
+def monitoring_board(window: str = "5m", db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    """The live board: clients, the checks a request meets, apps, model providers and recent traffic."""
+
+    if window not in monitoring.WINDOWS:
+        raise HubError("VALIDATION_FAILED", "Window must be 5m, 1h or 24h", 422)
+    return ok(monitoring.snapshot(db, get_settings(), window=window, app_ids=allowed_app_ids(db, user)))

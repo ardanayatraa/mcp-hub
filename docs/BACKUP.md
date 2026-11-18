@@ -3,20 +3,33 @@
 ## Configuration backup
 
 **Settings → Export configuration** (or `POST /api/admin/v1/operations/export`, super
-admin) produces `mcp-hub-metadata-v1` JSON with apps, connector credentials (ciphertext),
-contract history, data sources and field policy, tools with their routes and test runs,
-admin app assignments and client key hashes. Admin users, sessions, MFA state and the
-activity log are not included; keep a database dump for those.
+admin or hub admin) downloads a sealed backup (`mcp-hub-backup-v2`). Inside is the
+`mcp-hub-metadata-v1` document: apps, connector credentials (still ciphertext), contract
+history, data sources and field policy, tools with their routes and test runs, skills, admin
+app assignments and client key hashes. Admin users, sessions, MFA state and the activity log
+are not included; keep a database dump for those.
 
-**Restore** (`POST /operations/import`) validates the whole document before replacing
-anything, inserts parents before children in one transaction, and rolls back on invalid
-relationships. Invalid or unknown tool configurations are restored disabled. Unknown admin
-ids are never granted access. Backups from 0.1 are accepted: their placeholder tables
-(MCP profiles, skills) are ignored and tools left in the old `validated`/`approved` states
-come back as drafts. A restore replaces all exported tables, so export first.
+The whole document is compressed and encrypted with the Hub's `SECRET_ENCRYPTION_KEY`
+(Fernet: AES with an authentication tag). Outside the ciphertext the file carries only its
+date, the Hub version and a key fingerprint, a one-way label that Settings also shows, so you
+can tell which key opens which backup. Without the key the file cannot be read, and a changed
+file is refused rather than half restored. **Keep a copy of `SECRET_ENCRYPTION_KEY` outside the
+server** (a password manager or the secret manager that injects it): if the key is lost, its
+backups and the credentials stored in the database are lost with it.
 
-Restores need the `SECRET_ENCRYPTION_KEY` the backup was made with, as the current key or in
-`SECRET_ENCRYPTION_KEY_PREVIOUS`; with another key, stored credentials cannot be decrypted. The request limit is 1 MB; use a database dump for larger states.
+**Restore** (`POST /operations/import`, root) opens the backup with the current key or any key
+in `SECRET_ENCRYPTION_KEY_PREVIOUS`, validates the whole document before replacing anything,
+inserts parents before children in one transaction, and rolls back on invalid relationships.
+A backup made with another key is refused with `BACKUP_KEY_MISMATCH`, naming that key's
+fingerprint; add the key to `SECRET_ENCRYPTION_KEY_PREVIOUS`, restart and try again. A damaged
+or edited file is refused with `BACKUP_DAMAGED`. Unencrypted backups from earlier releases are
+still accepted. Invalid or unknown tool configurations are restored disabled, unknown admin ids
+are never granted access, and 0.1 placeholder tables are ignored. A restore replaces all
+exported tables, so export first. The request limit is 1 MB (sealed backups are compressed); use
+a database dump for larger states.
+
+After a key rotation (`python -m app.rotate_keys`), keep the old key in
+`SECRET_ENCRYPTION_KEY_PREVIOUS` for as long as you may need backups made with it.
 
 **Purge** removes activity, health checks, test runs and sessions older than
 `AUDIT_RETENTION_DAYS` (default 90), plus expired MFA challenges and memories and model
