@@ -13,11 +13,11 @@ branch_labels = None
 depends_on = None
 
 
+# Plain ALTERs, not batch mode: on SQLite a batch rebuild of `connectors` drops and recreates the table,
+# which deletes its child rows (secrets, enrollments, health checks) while foreign keys are on.
 def upgrade():
-    with op.batch_alter_table("connectors") as batch:
-        batch.add_column(sa.Column("custom_spec", sa.JSON(), nullable=True))
+    op.add_column("connectors", sa.Column("custom_spec", sa.JSON(), nullable=True))
 
 
 def downgrade():
-    with op.batch_alter_table("connectors") as batch:
-        batch.drop_column("custom_spec")
+    op.drop_column("connectors", "custom_spec")
