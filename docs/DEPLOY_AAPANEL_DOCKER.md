@@ -138,6 +138,27 @@ automatically. This does not change a development-mode installation into a
 production-safe one: use the production requirements in `DEPLOY.md`, including
 authenticated shared Redis and the appropriate egress policy.
 
+### Edge proxy and backend restarts
+
+The edge must look the backend up on each request, or a backend that restarts with a new container
+address leaves the site answering 502 until nginx reloads. In the server-owned
+`shared/edge-config/nginx.conf`, inside the `server` block, add
+`resolver 127.0.0.11 valid=10s ipv6=off;` and `set $backend http://backend:8000;`, change every
+`proxy_pass http://backend:8000...;` to `proxy_pass $backend;`, then run
+`docker exec mcp-hub-local-edge-1 nginx -t && docker exec mcp-hub-local-edge-1 nginx -s reload`.
+`infra/nginx.conf` shows the result.
+
+### Applying a release that carries a migration
+
+The controller stops such a release with `SCHEMA_CHANGE_REQUIRES_OPERATOR_REVIEW` and changes nothing.
+As root on the server: take a verified `pg_dump`, load the release images, run `alembic upgrade head`
+once with the new backend image and the backend command's own environment (it builds `DATABASE_URL`
+from `/secrets/env`), then run the controller's deploy for the same commit. The old backend keeps
+serving until the new one is healthy; the controller still verifies images, backs up again and rolls
+back the containers if the release is unhealthy. If that rollback is needed after a migration, downgrade
+the schema with the new image first (`alembic downgrade <previous revision>`), because older code refuses
+a newer schema.
+
 ## Verification and retention
 
 Run `python -m unittest discover -s deploy/aapanel/tests -v` for the controller

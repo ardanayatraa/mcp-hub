@@ -76,3 +76,26 @@ def test_nullable_model_attributes_keep_closed_scalar_schema_and_bounds():
         with pytest.raises(HubError):
             validate_input_schema({"type": "object", "additionalProperties": False,
                                    "properties": {"value": {"type": types}}})
+
+
+@pytest.mark.parametrize("value", [
+    1_500_000_000, 2_500_000_000.0, 1_762_847_000, 999_000_000,   # amounts and unix timestamps
+    "INV2026110900123", "INV-2026-11-0001", "PO/2026/11/000123", "20261109-0001",
+    "2026-11-09 10:30:00", "2026-11-09T10:30:00+08:00", "Paid 2026-11-09 at 10:30",
+    "8991234567890", "4006381333931",                               # EAN-13 barcodes
+    "Rp 1.500.000.000", "Kirim sebelum jam 5 sore",
+])
+def test_business_values_are_not_personal_data(value):
+    from app.privacy.pii_inspector import tree_contains_pii
+    assert not tree_contains_pii(value), value
+
+
+@pytest.mark.parametrize("value", [
+    CANARY, "budi@localhost", PHONE, "6281234567890", "081234567890", "Hubungi 0812-3456-7890 ya",
+    "+62 812 3456 7890", "(021) 555-1234 ext", "555-123-4567 office", "2125551234",
+    NID, "NIK: 3201010101010001", 3201010101010001, float("inf"), "123-45-6789",
+    "password=hunter2-secret", "token: abc", "sk-abcdefghijklmnopqrstuv",
+])
+def test_personal_data_is_still_caught(value):
+    from app.privacy.pii_inspector import tree_contains_pii
+    assert tree_contains_pii(value), value

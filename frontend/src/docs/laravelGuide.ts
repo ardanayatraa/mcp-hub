@@ -6,11 +6,28 @@ import { guideMarkdown as renderMarkdown, withMcpUrl, type GuideMeta, type Guide
 export const GUIDE: GuideMeta = {
   badge: "Integration guide",
   title: "Connect a Laravel app to MCP Hub",
-  summary: "Publish a small, authenticated JSON API from Laravel so AI clients can read your data and create, update or delete it through MCP Hub, with your app's own permissions on every request and every change confirmed by the user.",
-  meta: ["Laravel 11, 12 or 13", "PHP 8.2+", "About 30 minutes"],
+  summary: "The quickest way is the Laravel package: install it, pair the app with a one-use code and register the models AI may use. The rest of this guide builds the same integration by hand, for apps that cannot use the package.",
+  meta: ["Package: Laravel 5.8 to 13", "By hand: Laravel 11 to 13, PHP 8.2+", "About 10 minutes with the package"],
 };
 
 export const SECTIONS: GuideSection[] = [
+  {
+    id: "package",
+    title: "Quickest: use the Laravel package",
+    body: [
+      "The `ardanayatraa/laravel-mcp-hub` package ships everything this guide builds by hand: the authenticated source API, signed user context, change proposals the user confirms, private report downloads, a settings page and a chat page. It supports Laravel 5.8 to 13 and needs MCP Hub 1.1.0 or later.",
+    ],
+    steps: [
+      "Install it: `composer require ardanayatraa/laravel-mcp-hub:^1.0`, then `php artisan mcp-hub:install --migrate` (add `--force` in production).",
+      "In the Hub, open **Apps → Connect app → Laravel package**, enter the app's name, key and public URL, and click **Create pairing code**.",
+      "Run the command the Hub shows (`php artisan mcp-hub:connect --hub=...`) in the Laravel project and paste the one-use code at the prompt. The Hub checks the app and activates it.",
+      "Register the models AI may use in `config/mcp-hub.php` with your own actor resolver and policies; `php artisan mcp-hub:discover` and `php artisan make:mcp-resource` help. Nothing is shared until you do.",
+      "Check it: `php artisan mcp-hub:doctor --online` lists every check, including the Hub's version.",
+    ],
+    after: [
+      "Full package documentation: [Laravel integration guide](https://ardanayatraa.github.io/mcp-hub/laravel/install/). The sections below are for apps that cannot use the package.",
+    ],
+  },
   {
     id: "overview",
     title: "How it works",

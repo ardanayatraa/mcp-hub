@@ -266,6 +266,23 @@ def resend_invite(user_id: str, payload: dict | None = None, db: Session = Depen
                if target.activation_expires_at else None})
 
 
+@router.post("/users/{user_id}/password-reset")
+def password_reset_link(user_id: str, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
+    """Root: a one-use link (24 hours) another administrator opens to set a new password."""
+
+    from app.services import password_reset
+
+    require_root(user)
+    target = db.get(AdminUser, user_id)
+    if target is None:
+        raise HubError("NOT_FOUND", "Administrator was not found", 404)
+    if target.id == user.id:
+        raise HubError("CONFLICT", "Change your own password from your account menu", 409)
+    url, expires = password_reset.issue(db, target, actor_ref=f"admin:{user.id}")
+    db.commit()
+    return ok({"reset_url": url, "expires_at": expires})
+
+
 @router.patch("/users/{user_id}")
 def update_user(user_id: str, payload: dict, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     require_root(user)

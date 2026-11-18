@@ -8,8 +8,8 @@ signed-in user may see. The Hub stores configuration, encrypted credentials and 
 audit log. It never receives database credentials and never stores business records.
 
 This branch, `main`, is the Python edition: a FastAPI server (`backend/`) and a Vue admin UI
-(`frontend/`). The JavaScript edition, one Nuxt app with the same API and database schema, is on
-the `mcp-js` branch.
+(`frontend/`). An older JavaScript edition (one Nuxt app) lives on the `mcp-js` branch; it stopped at an earlier
+schema and lacks the model gateway, pairing, access profiles, monitoring and runtime settings.
 
 ## Concepts
 

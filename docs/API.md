@@ -24,6 +24,8 @@ configure, test, publish, issue keys), and `auditor` (read-only on assigned apps
 | POST | `/auth/mfa` | `{mfa_token, code}`; single use, replay-protected. |
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | Current admin and CSRF token. |
+| POST | `/auth/password` | `{current_password, new_password}` changes your own password; other sessions of the account are signed out. |
+| POST | `/auth/password-reset` | `{token, password}` from a one-use reset link (public, rate limited); signs the account out everywhere. |
 
 Root and hub admins can create a Team user with `POST /users` and `{role, app_ids, invite_expiry}`. The
 expiry is `1_day` (default), `1_week`, `1_month` (30 days), or `never`. The response shows
@@ -35,6 +37,10 @@ Password-based creation by root is accepted only for non-production
 compatibility and requires `email`; production requires activation.
 After activation, invited admins sign in with email and password without another email code.
 Root sign-in still requires an authenticator in production.
+
+Root creates a password reset link for another active administrator with `POST /users/{id}/password-reset`
+(`{reset_url, expires_at}`, valid 24 hours, one use, replaces earlier links). For root itself, run
+`python -m app.bootstrap --reset-password EMAIL` on the server. Two-step sign-in is unchanged.
 
 ### Apps (connectors)
 

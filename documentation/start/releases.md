@@ -2,7 +2,7 @@
 
 ## Laravel package
 
-**`ardanayatraa/laravel-mcp-hub` 1.0.1** is the current stable release, published November 9, 2026. Install it with `^1.0`, without an `@alpha` flag or `-W`.
+**`ardanayatraa/laravel-mcp-hub` 1.0.2** is the current stable release. It hides a single value that looks personal instead of failing a page, applies the Hub 1.1 privacy rules, and checks the Hub's version. **1.0.1** was published November 9, 2026. Install it with `^1.0`, without an `@alpha` flag or `-W`.
 
 [Release and verified ZIP](https://github.com/ardanayatraa/laravel-mcp-hub/releases/tag/v1.0.1) · [Packagist](https://packagist.org/packages/ardanayatraa/laravel-mcp-hub) · [Version 1.0.1 CI](https://github.com/ardanayatraa/laravel-mcp-hub/actions/runs/42583066466)
 
@@ -27,6 +27,15 @@ Version 1.0.1 installs on a fresh Laravel 13 application, which ships Guzzle 8, 
 Effective PHP requirements depend on the host framework and dependencies. The matrix tests the reference patches listed in the [package README](https://github.com/ardanayatraa/laravel-mcp-hub/blob/v1.0.1/README.md), rather than every patch combination. Package compatibility does not restore expired upstream security maintenance.
 
 ## Hub server
+
+**MCP Hub 1.1.0** is the current release. It adds monitoring, sealed backups, settings in the admin UI,
+administrator password changes and reset links, fewer false privacy matches, and reports its version to
+connected applications. See [What changed](https://github.com/ardanayatraa/mcp-hub/blob/main/docs/CHANGES.md).
+
+| Laravel package | MCP Hub |
+|---|---|
+| 1.0.2 | 1.1.0 or later (`php artisan mcp-hub:doctor --online` checks it) |
+| 1.0.0 – 1.0.1 | Hubs with pairing, from November 2026 |
 
 Hub documentation follows the Python edition on `main`. The Laravel package's stable version does not automatically become the server's release number. Review the server commit, database schema, and API contracts before a coordinated upgrade. The JavaScript edition on `mcp-js` is outside this operations guide.
 

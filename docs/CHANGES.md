@@ -1,4 +1,47 @@
-# What changed after 1.0
+# What changed in 1.1
+
+1.1.0 is the first numbered release after 1.0. Upgrade: back up, run `alembic upgrade head` (one new
+migration, `e7b2c9d4a1f3`), and use Laravel package 1.0.2 or later.
+
+## Fewer false privacy matches
+
+- JSON numbers (amounts, counts, timestamps) are no longer treated as phone numbers; a 16-digit number is
+  still treated as a national ID. ISO dates and times, codes that start with letters
+  (`INV-2026-11-0001`, `PO/2026/11/000123`) and long digit runs that do not start like a phone number
+  (`0`, `62` or `+`, so barcodes such as EAN-13) are not phone numbers either.
+- Emails, credentials, `+country` and local `08…` numbers, 10–12 digit numbers and 16-digit national IDs
+  still match. A bare 10-digit number inside text stays blocked: it cannot be told apart from a phone.
+- Laravel package 1.0.2 applies the same rules and hides a single suspicious value (sends `null`) instead
+  of failing the whole page, export or proposal preview.
+
+## Administrator passwords
+
+- **Change password** in the account menu (current password required). Other devices are signed out.
+- **Access → Team → Reset password** (root): a one-use link, valid 24 hours, that the administrator opens
+  to set a new password; it signs them out everywhere and replaces earlier links. The login page points
+  to it. Root's own password: `python -m app.bootstrap --reset-password EMAIL` on the server prints a link.
+- Two-step sign-in is not changed by either. Audited as `auth.password_change`, `admin.password_reset`
+  and `auth.password_reset`.
+
+## Hub version
+
+- The Hub reports its release (`1.1.0`) in the MCP `initialize` answer and as an `X-Hub-Version` header on
+  `/mcp`, `/chat/`, `/gateway/` and `/api/connect/` (not on public probes or to a wrong key). Laravel
+  package 1.0.2 reads it, and `mcp-hub:doctor --online` fails its `hub_version` check below 1.1.0.
+
+## Edge proxy
+
+- The Docker edge (`infra/nginx.conf`) looks the backend up through Docker's DNS on every request (cached
+  10 seconds). A backend container that restarts with a new address no longer leaves the site answering
+  502 until nginx is reloaded. Servers that keep their own `nginx.conf` should make the same change.
+
+## Documentation
+
+- The in-app Laravel guide and the pairing screen start with the package; the hand-built integration
+  follows for apps that cannot use it. Stale release notes and per-process rate-limit statements were
+  corrected.
+
+# Earlier changes after 1.0
 
 ## Settings in the admin UI
 

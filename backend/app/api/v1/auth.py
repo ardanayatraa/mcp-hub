@@ -68,6 +68,16 @@ class ActivationCodeBody(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
 
+class PasswordChangeBody(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=1, max_length=200)
+
+
+class PasswordResetBody(BaseModel):
+    token: str = Field(min_length=32, max_length=200)
+    password: str = Field(min_length=1, max_length=200)
+
+
 class ActivationBody(BaseModel):
     token: str = Field(min_length=32, max_length=200)
     proof_token: str = Field(min_length=20, max_length=1000)
@@ -271,6 +281,32 @@ def logout(request: Request, db: Session = Depends(get_db), user: AdminUser = De
     payload = ok({"signed_out": True})
     clear_session(payload)
     return payload
+
+
+@router.post("/password")
+def change_password(body: PasswordChangeBody, request: Request, db: Session = Depends(get_db),
+                    user: AdminUser = Depends(require_csrf)):
+    """Change your own password. Other signed-in sessions of this account are signed out."""
+
+    from app.services import password_reset
+
+    hit(f"password-change:{user.id}", 5, 900)
+    session, _ = _session_from_request(request, db)
+    password_reset.change(db, user, session.id, body.current_password, body.new_password)
+    db.commit()
+    return ok({"changed": True})
+
+
+@router.post("/password-reset")
+def complete_password_reset(body: PasswordResetBody, request: Request, db: Session = Depends(get_db)):
+    """Set a new password from a one-use reset link. Every session of the account is signed out."""
+
+    from app.services import password_reset
+
+    hit(f"password-reset:{client_host(request)}", 10, 900)
+    password_reset.complete(db, body.token, body.password)
+    db.commit()
+    return ok({"reset": True})
 
 
 @router.get("/me")

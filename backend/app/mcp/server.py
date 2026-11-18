@@ -16,6 +16,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS, CallToolResult, GetPromptResult, Prompt, TextContent, Tool
 from pydantic import AnyHttpUrl
 
+from app import __version__
 from app.config import Settings, get_settings
 from app.connectors.discovery import sync_source_permissions
 from app.errors import HubError
@@ -164,6 +165,7 @@ def _hosts(settings: Settings) -> list[str]:
 def build_mcp_server(settings: Settings) -> MCPServer:
     return HubMCPServer(
         "MCP Hub",
+        version=__version__,  # reported to clients in the initialize answer
         instructions=catalog.SERVER_INSTRUCTIONS,
         token_verifier=HubTokenVerifier(settings.mcp_public_url),
         auth=AuthSettings(

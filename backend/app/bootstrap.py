@@ -64,10 +64,32 @@ def reset_admin_mfa(email: str) -> None:
         db.close()
 
 
+def reset_admin_password(email: str) -> None:
+    """Recovery from the server shell: print a one-use link (24 hours) to set a new password."""
+
+    from app.services import password_reset
+
+    settings = get_settings()
+    init_engine(settings.database_url)
+    db = open_session()
+    try:
+        user = db.scalar(select(AdminUser).where(AdminUser.email == email.strip().lower()))
+        if user is None:
+            raise SystemExit("no admin with that email")
+        url, expires = password_reset.issue(db, user, actor_ref="system:cli")
+        db.commit()
+        print(f"open this link to set a new password (valid until {expires}, works once):")
+        print(url)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--reset-mfa":
         reset_admin_mfa(sys.argv[2])
+    elif len(sys.argv) == 3 and sys.argv[1] == "--reset-password":
+        reset_admin_password(sys.argv[2])
     elif len(sys.argv) == 1:
         seed_admin()
     else:
-        raise SystemExit("usage: python -m app.bootstrap [--reset-mfa EMAIL]")
+        raise SystemExit("usage: python -m app.bootstrap [--reset-mfa EMAIL | --reset-password EMAIL]")
