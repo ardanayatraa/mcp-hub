@@ -8,11 +8,11 @@
   var T = {
     en: { signIn: "Sign in", signInTo: "Sign in to %s", signInHint: "Use your %s account. Only you can see your data.",
       signOut: "Sign out", working: "Signing in…", type: "Type a message…", unavailable: "This chat is not available right now.",
-      failed: "Something went wrong. Try again.", reading: "Reading %s", preview: "Admin preview as %s · read-only",
+      failed: "Something went wrong. Try again.", reading: "Reading", read: "Read", failedRead: "Could not read", preview: "Admin preview as %s · read-only",
       signedAs: "Signed in as %s", expired: "Your session ended. Sign in again.", offline: "Can't reach the chat. Check your connection." },
     id: { signIn: "Masuk", signInTo: "Masuk ke %s", signInHint: "Gunakan akun %s kamu. Hanya kamu yang bisa melihat datamu.",
       signOut: "Keluar", working: "Sedang masuk…", type: "Ketik pesan…", unavailable: "Chat ini sedang tidak tersedia.",
-      failed: "Terjadi kesalahan. Coba lagi.", reading: "Membaca %s", preview: "Pratinjau admin sebagai %s · hanya baca",
+      failed: "Terjadi kesalahan. Coba lagi.", reading: "Membaca", read: "Dibaca:", failedRead: "Gagal membaca", preview: "Pratinjau admin sebagai %s · hanya baca",
       signedAs: "Masuk sebagai %s", expired: "Sesi kamu berakhir. Silakan masuk lagi.", offline: "Chat tidak bisa dihubungi. Periksa koneksimu." }
   }[lang];
   function t(key, value) { return T[key].replace("%s", value == null ? "" : value); }
@@ -62,16 +62,71 @@
     return text.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
   }
   function inline(text) {
-    return escapeHtml(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+    var out = escapeHtml(text);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>");
+    return out;
   }
+  function cells(line) {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (cell) { return cell.trim(); });
+  }
+  var ROW = /^\s*\|.*\|\s*$/;
+  var RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  var BULLET = /^\s*[-*\u2022]\s+/;
+  var NUMBER = /^\s*\d+[.)]\s+/;
+  // A small, safe Markdown subset: everything is escaped first, then headings, lists, tables and code are built.
   function render(text) {
-    return text.split(/\n{2,}/).map(function (block) {
-      var lines = block.split("\n");
-      if (lines.every(function (line) { return /^\s*[-*]\s+/.test(line); })) {
-        return "<ul>" + lines.map(function (line) { return "<li>" + inline(line.replace(/^\s*[-*]\s+/, "")) + "</li>"; }).join("") + "</ul>";
+    var lines = text.replace(/\r/g, "").split("\n");
+    var out = [];
+    var i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (/^\s*$/.test(line)) { i++; continue; }
+      if (/^```/.test(line)) {
+        var code = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) code.push(lines[i++]);
+        i++;
+        out.push("<pre><code>" + escapeHtml(code.join("\n")) + "</code></pre>");
+        continue;
       }
-      return "<p>" + lines.map(inline).join("<br>") + "</p>";
-    }).join("");
+      if (ROW.test(line) && i + 1 < lines.length && RULE.test(lines[i + 1])) {
+        var head = cells(line);
+        var aligns = cells(lines[i + 1]).map(function (rule) { return /^:-+:$/.test(rule) ? "center" : /-:$/.test(rule) ? "right" : "left"; });
+        i += 2;
+        var rows = [];
+        while (i < lines.length && ROW.test(lines[i])) rows.push(cells(lines[i++]));
+        out.push("<div class='tw'><table><thead><tr>" + head.map(function (cell, n) {
+          return "<th class='a-" + (aligns[n] || "left") + "'>" + inline(cell) + "</th>";
+        }).join("") + "</tr></thead><tbody>" + rows.map(function (row) {
+          return "<tr>" + head.map(function (_cell, n) {
+            return "<td class='a-" + (aligns[n] || "left") + "'>" + inline(row[n] || "") + "</td>";
+          }).join("") + "</tr>";
+        }).join("") + "</tbody></table></div>");
+        continue;
+      }
+      var heading = /^(#{1,4})\s+(.*)$/.exec(line);
+      if (heading) { out.push("<h4>" + inline(heading[2]) + "</h4>"); i++; continue; }
+      if (BULLET.test(line)) {
+        var items = [];
+        while (i < lines.length && BULLET.test(lines[i])) items.push(lines[i++].replace(BULLET, ""));
+        out.push("<ul>" + items.map(function (item) { return "<li>" + inline(item) + "</li>"; }).join("") + "</ul>");
+        continue;
+      }
+      if (NUMBER.test(line)) {
+        var numbered = [];
+        while (i < lines.length && NUMBER.test(lines[i])) numbered.push(lines[i++].replace(NUMBER, ""));
+        out.push("<ol>" + numbered.map(function (item) { return "<li>" + inline(item) + "</li>"; }).join("") + "</ol>");
+        continue;
+      }
+      var para = [];
+      while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^```/.test(lines[i]) && !/^(#{1,4})\s+/.test(lines[i])
+             && !BULLET.test(lines[i]) && !NUMBER.test(lines[i])
+             && !(ROW.test(lines[i]) && i + 1 < lines.length && RULE.test(lines[i + 1]))) para.push(lines[i++]);
+      out.push("<p>" + para.map(inline).join("<br>") + "</p>");
+    }
+    return out.join("");
   }
   function scroll() { main.scrollTop = main.scrollHeight; }
 
@@ -240,7 +295,8 @@
     if (chips) chips.remove();
     main.appendChild(bubble("user", text));
     var tools = el("div", "tools");
-    var answer = bubble("bot", "…");
+    var answer = el("div", "msg bot");
+    answer.innerHTML = "<span class='dots' aria-label='…'><i></i><i></i><i></i></span>";
     main.appendChild(tools);
     main.appendChild(answer);
     scroll();
@@ -273,10 +329,12 @@
             full += payload.delta || "";
             answer.innerHTML = render(full);
           } else if (event === "tool") {
+            // Only the app's own data is worth showing; the Hub's built-in helper tools stay out of sight.
+            if (String(payload.name || "").indexOf("__") < 0) return;
             var chip = chipsById[payload.id];
             if (!chip) { chip = el("span", "tool"); chipsById[payload.id] = chip; tools.appendChild(chip); }
-            chip.textContent = t("reading", payload.title || payload.name);
-            chip.className = "tool" + (payload.status === "running" ? " run" : "");
+            chip.textContent = (payload.status === "done" ? T.read : payload.status === "error" ? T.failedRead : T.reading) + " " + (payload.title || payload.name);
+            chip.className = "tool" + (payload.status === "running" ? " run" : payload.status === "error" ? " bad" : " ok");
           } else if (event === "notice" && payload.message) {
             main.insertBefore(el("p", "foot", payload.message), answer.nextSibling);
           } else if (event === "error") {

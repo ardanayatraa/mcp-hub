@@ -52,6 +52,20 @@ Editing the list later (same `PUT`) updates the tools. Nothing is redeployed.
   Leave it out when the response itself is the record or the list. A single object becomes one row.
 - **`alias`** words are added to the tool description so AI and chat can map everyday words to the resource.
 
+## The editor, headers and the test request
+
+The **Endpoints** tab has a visual editor (Visual / JSON switch). Per endpoint you set the path, where the
+records sit, parameters (type, required, a test value) and fixed headers. **Send** calls the API as this
+connection and shows the status, the time, the records it found and the fields with their types; one click
+fills in the result path and the fields. Sensitive-looking fields are listed but never offered to AI, and
+the sample is masked.
+
+- **Headers** on an endpoint are fixed and not secret (for example `Accept-Language`). Names the Hub controls
+  (`Authorization`, `Cookie`, `Host`, `X-Hub-*` and similar) are refused.
+- **API key:** when connecting, choose *API key in a header* and name the header (`X-API-Key`); the key is stored
+  encrypted with the connection and sent on every call. *Bearer token* and *nothing* are the other choices.
+- Only reading (GET) is supported.
+
 ## Data per user (`user_auth`)
 
 Add `user_auth` to the list when each user should see only their own data:

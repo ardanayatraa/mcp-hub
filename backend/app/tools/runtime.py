@@ -76,6 +76,7 @@ class Route:
     error_mapping: dict = field(default_factory=dict)
     workflow: str = "direct"
     result_path: str | None = None
+    headers: dict = field(default_factory=dict)
 
     @classmethod
     def of(cls, route: dict, mapping: RestToolMapping | None = None, *, timeout_ms: int = 5000) -> "Route":
@@ -90,6 +91,7 @@ class Route:
             error_mapping=(mapping.error_mapping if mapping else {}) or {},
             workflow=route.get("workflow", "direct"),
             result_path=route.get("result_path"),
+            headers=route.get("headers") or {},
         )
 
 
@@ -154,8 +156,10 @@ async def call_source(source: Source, route: Route, arguments: dict, delegation:
             raise HubError("SIGN_IN_REQUIRED", "This app answers signed-in users only. Sign in to it in its chat.", 401)
         credential = {"Authorization": f"Bearer {user_token}"}
     else:
-        credential = auth_headers(source.connector.auth_type, source.api_secret)
-    base_headers = {"Accept": "application/json", **credential, "X-Request-ID": new_request_id()}
+        credential = auth_headers(source.connector.auth_type, source.api_secret,
+                                  (source.connector.custom_spec or {}).get("auth_header"))
+    # Static headers the admin listed for this endpoint never override the credential or the Hub's own.
+    base_headers = {"Accept": "application/json", **route.headers, **credential, "X-Request-ID": new_request_id()}
     if write or route.method == "POST":
         # Also de-duplicate read-only POST jobs, such as private report exports.
         # The Hub itself never retries a POST.

@@ -39,7 +39,7 @@ def module_fingerprint(module: dict) -> str:
 async def fetch_manifest(connector: Connector, application: Application, secret: str, settings: Settings) -> dict:
     if connector.connector_type == "custom_api":
         # The admin wrote the endpoint list, so there is nothing to fetch from the other side.
-        if not connector.custom_spec:
+        if not (connector.custom_spec or {}).get("resources"):
             raise HubError("SCHEMA_MISMATCH", "Add at least one resource and endpoint before syncing", 422)
         return build_manifest(connector.custom_spec, application.key)[1]
     status, body, _elapsed = await execute_request(
