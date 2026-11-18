@@ -17,7 +17,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -74,6 +74,7 @@ class Route:
     pagination: dict = field(default_factory=dict)
     error_mapping: dict = field(default_factory=dict)
     workflow: str = "direct"
+    result_path: str | None = None
 
     @classmethod
     def of(cls, route: dict, mapping: RestToolMapping | None = None, *, timeout_ms: int = 5000) -> "Route":
@@ -87,6 +88,7 @@ class Route:
             pagination=(mapping.pagination if mapping else pagination_for(route)) or {},
             error_mapping=(mapping.error_mapping if mapping else {}) or {},
             workflow=route.get("workflow", "direct"),
+            result_path=route.get("result_path"),
         )
 
 
@@ -188,6 +190,29 @@ def sample_fetch(document: dict) -> Fetch:
     return fetch
 
 
+def _plain_rows(document, result_path: str, max_rows: int) -> tuple[list[dict], dict]:
+    """A custom API answers in its own shape: follow the reviewed path to a record or a list."""
+
+    node = document
+    for part in filter(None, result_path.split(".")):
+        if not isinstance(node, dict) or part not in node:
+            raise HubError("SCHEMA_MISMATCH", "Upstream response does not contain the reviewed result path", 502)
+        node = node[part]
+    rows = [node] if isinstance(node, dict) else node
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise HubError("SCHEMA_MISMATCH", "Upstream response records are invalid", 502)
+    if len(rows) > max_rows:
+        raise HubError("PAYLOAD_TOO_LARGE", "Upstream response exceeds the record limit", 413)
+    # The API does not describe its data the way the Hub envelope does, so the Hub states it.
+    total = document.get("total") if isinstance(document, dict) else None
+    more = type(total) is int and 0 <= total <= 1_000_000_000 and total > len(rows)
+    meta = {"as_of": datetime.now(UTC).isoformat(), "timezone": "UTC", "scope": "custom_api",
+            "coverage": "partial" if more else "complete"}
+    if type(total) is int and 0 <= total <= 1_000_000_000:
+        meta.update(total_count=total, has_more=more)
+    return rows, meta
+
+
 def parse_rows(status: int, raw: bytes, route: Route, *, max_rows: int) -> tuple[list[dict], dict]:
     if status == 401:
         raise HubError("UPSTREAM_UNAUTHORIZED", "The connected application rejected the service credential", 401)
@@ -204,6 +229,8 @@ def parse_rows(status: int, raw: bytes, route: Route, *, max_rows: int) -> tuple
         document = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HubError("SCHEMA_MISMATCH", "Upstream response was not valid JSON", 502) from exc
+    if route.result_path is not None:
+        return _plain_rows(document, route.result_path, max_rows)
     if isinstance(document, dict) and document.get("success") is False:
         error = document.get("error") if isinstance(document.get("error"), dict) else {}
         code = error.get("code") if error.get("code") in SAFE_UPSTREAM_CODES else "UPSTREAM_ERROR"

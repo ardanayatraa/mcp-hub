@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import AppCredentials from "@/components/AppCredentials.vue";
 import AppSkillsPanel from "@/components/AppSkillsPanel.vue";
 import ChatPanel from "@/components/ChatPanel.vue";
+import CustomApiPanel from "@/components/CustomApiPanel.vue";
 import DataSourcesPanel from "@/components/DataSourcesPanel.vue";
 import ClientKeysPanel from "@/components/ClientKeysPanel.vue";
 import AccessProfilesPanel from "@/components/AccessProfilesPanel.vue";
@@ -32,7 +33,7 @@ const router = useRouter();
 const session = useSession();
 const toast = useToast();
 const id = String(route.params.id);
-const TABS = ["sources", "tools", "skills", "chat", "try", "keys", "memory", "connection", "history"];
+const TABS = ["endpoints", "sources", "tools", "skills", "chat", "try", "keys", "memory", "connection", "history"];
 // Skills that are on, reported by the Skills tab once it has loaded.
 const skillsOn = ref<number | undefined>(undefined);
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : "sources");
@@ -58,6 +59,7 @@ const switchFor = computed(() => new Map((switches.value?.tools ?? []).map((row)
 const hubTools = computed(() => (switches.value?.tools ?? []).filter((row) => row.kind !== "app"));
 
 
+let opened = false;
 async function load(background = false) {
   if (background && busy.value) return;
   try {
@@ -65,6 +67,11 @@ async function load(background = false) {
     if (background && busy.value) return;
     app.value = nextApp;
     loadError.value = "";
+    if (!background && !opened) {
+      opened = true;
+      // A custom API connection starts where its work is: the endpoint list.
+      if (nextApp.connector_type === "custom_api" && !route.query.tab) tab.value = "endpoints";
+    }
     if (!background) {
       const { name, base_url, manifest_path, health_path, timeout_ms, tls_verify, connector_type } = nextApp;
       edit.value = { name, base_url, manifest_path, health_path, timeout_ms, tls_verify, connector_type };
@@ -74,7 +81,7 @@ async function load(background = false) {
       hub.sources(id), hub.tools(), hub.toolSwitches(id).catch(() => null)]);
     if (background && busy.value) return;
     switches.value = nextSwitches;
-    const managed = nextApp.connector_type === "source_managed";
+    const managed = nextApp.connector_type === "source_managed" || nextApp.connector_type === "custom_api";
     sources.value = nextSources.filter((source) => !managed || source.enabled);
     tools.value = nextTools.filter((tool) => tool.connector_id === id && (!managed || tool.status === "published"));
     catalogError.value = "";
@@ -232,6 +239,7 @@ async function archive() {
 }
 
 const tabs = computed(() => [
+  ...(app.value?.connector_type === "custom_api" ? [{ key: "endpoints", label: "Endpoints" }] : []),
   { key: "sources", label: "Data sources", count: catalogLoaded.value ? sources.value.length : undefined },
   { key: "tools", label: "Tools", count: catalogLoaded.value ? tools.value.length : undefined },
   { key: "skills", label: "Skills", count: skillsOn.value },
@@ -243,7 +251,9 @@ const tabs = computed(() => [
   { key: "history", label: "History" },
 ]);
 const archived = computed(() => app.value?.status === "archived");
-const sourceManaged = computed(() => app.value?.connector_type === "source_managed");
+const customApi = computed(() => app.value?.connector_type === "custom_api");
+// Both kinds have tools the Hub keeps in step with the contract instead of the admin editing them.
+const sourceManaged = computed(() => app.value?.connector_type === "source_managed" || customApi.value);
 </script>
 
 <template>
@@ -289,6 +299,9 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
 
     <LoadingSkeleton v-if="!catalogLoaded && (tab === 'sources' || tab === 'tools')" :variant="tab === 'sources' ? 'panel' : 'rows'"
                      :count="tab === 'sources' ? 6 : 3" :label="tab === 'sources' ? 'Loading data sources' : 'Loading tools'" />
+
+    <CustomApiPanel v-else-if="tab === 'endpoints' && customApi" :app="app" :editable="session.canWrite && !archived"
+                    @saved="load()" />
 
     <DataSourcesPanel v-else-if="tab === 'sources'" :sources="sources" :app-name="app.name"
                       :editable="session.canWrite && !archived" :managed="sourceManaged" @updated="sourceSaved" />
@@ -398,15 +411,16 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
           <label><span class="label">Name</span><input v-model="edit.name" class="input" required /></label>
           <label><span class="label">Timeout (ms)</span><input v-model.number="edit.timeout_ms" class="input" type="number" min="100" max="30000" /></label>
           <label class="sm:col-span-2"><span class="label">Permission management</span>
-            <select v-model="edit.connector_type" class="input">
+            <select v-model="edit.connector_type" class="input" :disabled="customApi">
+              <option v-if="customApi" value="custom_api">Custom API (endpoints listed in the Hub)</option>
               <option value="http_contract">Set up in Hub</option>
               <option value="source_managed">Follow application permissions automatically</option>
             </select>
           </label>
           <label class="sm:col-span-2"><span class="label">Base URL</span><input v-model="edit.base_url" class="input" required />
             <span class="hint">Changing the address or manifest path returns the app to setup: test, sync and review again.</span></label>
-          <label><span class="label">Manifest path</span><input v-model="edit.manifest_path" class="input font-mono" /></label>
-          <label><span class="label">Health path</span><input v-model="edit.health_path" class="input font-mono" /></label>
+          <label v-if="!customApi"><span class="label">Manifest path</span><input v-model="edit.manifest_path" class="input font-mono" /></label>
+          <label v-if="!customApi"><span class="label">Health path</span><input v-model="edit.health_path" class="input font-mono" /></label>
           <label class="flex items-center gap-3"><ToggleSwitch v-model="edit.tls_verify" label="Verify TLS" /> Verify TLS certificate</label>
         </fieldset>
         <div v-if="session.canWrite && !archived" class="flex justify-end border-t border-line pt-4">

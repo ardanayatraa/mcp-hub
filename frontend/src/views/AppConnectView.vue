@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
 import CodeBlock from "@/components/CodeBlock.vue";
 import PageHeader from "@/components/PageHeader.vue";
@@ -13,6 +14,7 @@ import { errorMessage, slugify } from "@/utils/format";
 import { useSlowFlag } from "@/utils/loading";
 
 const toast = useToast();
+const router = useRouter();
 const step = ref(1);
 const onboarding = ref("manual");
 const busy = ref(false);
@@ -44,6 +46,7 @@ const done = ref(false);
 
 watch(() => form.value.name, (name) => { if (!keyEdited.value) form.value.app_key = slugify(name); });
 
+const customApi = computed(() => form.value.connector_type === "custom_api");
 const sourceManaged = computed(() => form.value.connector_type === "source_managed");
 const steps = computed(() => sourceManaged.value ? ["App details", "Set up the app", "Choose tools"]
   : ["App details", "Set up the app", "Choose data", "Choose tools"]);
@@ -107,6 +110,15 @@ async function save() {
   hostBlocked.value = false;
   busy.value = true;
   try {
+    if (!app.value && customApi.value) {
+      // Any HTTP API: no pairing and no .env. A token is optional; the endpoints are listed on the app's page.
+      const created = await hub.createApp({ name: form.value.name, app_key: form.value.app_key,
+        environment: form.value.environment, base_url: form.value.base_url, connector_type: "custom_api",
+        auth_type: form.value.secret ? "bearer" : "none", secret: form.value.secret,
+        timeout_ms: form.value.timeout_ms, tls_verify: form.value.tls_verify, approve_host: approveHost.value });
+      await router.push({ path: `/apps/${created.id}`, query: { tab: "endpoints" } });
+      return;
+    }
     if (!app.value) {
       // The Hub makes the bearer token unless the app already has one, so there is nothing to generate by hand.
       const secret = form.value.secret || randomToken();
@@ -276,7 +288,7 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
         <span class="hint">Lowercase id. Must match <span class="code">application</span> in the app's manifest.</span></label>
       <label class="sm:col-span-2"><span class="label">Base URL</span>
         <input v-model="form.base_url" class="input" placeholder="https://app.example.com" required />
-        <span class="hint">The Hub only calls routes under this address that the app lists in its manifest.</span></label>
+        <span class="hint">{{ customApi ? "The Hub only calls the endpoints you list under this address." : "The Hub only calls routes under this address that the app lists in its manifest." }}</span></label>
       <label><span class="label">Environment</span>
         <select v-model="form.environment" class="input" :disabled="!!app">
           <option value="dev">Development</option><option value="test">Test</option><option value="staging">Staging</option><option value="production">Production</option>
@@ -285,7 +297,9 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
         <select v-model="form.connector_type" class="input" :disabled="!!app">
           <option value="http_contract">Set up in Hub</option>
           <option value="source_managed">Follow application permissions automatically</option>
+          <option value="custom_api">Custom API: any HTTP API, list its endpoints here</option>
         </select>
+        <span v-if="customApi" class="hint">For an API you cannot or do not want to change. Next you list its read endpoints; nothing is installed on the API.</span>
       </label>
     </div>
 
@@ -295,13 +309,13 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
     <div v-if="advanced" class="grid gap-4 rounded-lg bg-muted/60 p-4 sm:grid-cols-2">
       <label class="sm:col-span-2"><span class="label">Bearer token (optional)</span>
         <SecretInput v-model="form.secret" minlength="8" maxlength="500"
-                     :placeholder="app ? 'Leave blank to keep the saved token' : 'Leave blank and the Hub creates one'" />
+                     :placeholder="app ? 'Leave blank to keep the saved token' : customApi ? 'Leave blank if the API is public' : 'Leave blank and the Hub creates one'" />
         <span class="hint">Only if the app already has a token. Sent as <code class="code">Authorization: Bearer &lt;token&gt;</code> on every call; stored encrypted and never sent to AI clients.</span></label>
-      <label><span class="label">Manifest path</span><input v-model="form.manifest_path" class="input font-mono" /></label>
-      <label><span class="label">Health path</span><input v-model="form.health_path" class="input font-mono" /></label>
+      <label v-if="!customApi"><span class="label">Manifest path</span><input v-model="form.manifest_path" class="input font-mono" /></label>
+      <label v-if="!customApi"><span class="label">Health path</span><input v-model="form.health_path" class="input font-mono" /></label>
       <label><span class="label">Timeout (ms)</span><input v-model.number="form.timeout_ms" class="input" type="number" min="100" max="30000" /></label>
       <label class="flex items-center gap-3 pt-6"><ToggleSwitch v-model="form.tls_verify" label="Verify TLS" /> Verify TLS certificate</label>
-      <label v-if="!app" class="sm:col-span-2"><span class="label">User delegation secret (optional)</span>
+      <label v-if="!app && !customApi" class="sm:col-span-2"><span class="label">User delegation secret (optional)</span>
         <SecretInput v-model="form.delegation_secret" />
         <span class="hint">Shared with the app to sign which user is asking. Leave blank and the Hub creates one.</span></label>
     </div>

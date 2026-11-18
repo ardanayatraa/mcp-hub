@@ -15,8 +15,10 @@ from app.api.v1.configuration import ConnectorChanges, ConnectorConfiguration, c
 from app.config import Settings
 from app.connectors.auth_profiles import auth_headers
 from app.connectors.contracts import KEY_RE
+from app.connectors.custom_api import build_manifest
 from app.connectors.discovery import connector_secret, discover_capabilities
 from app.connectors.http_adapter import execute_request, join_url
+from app.connectors.kinds import is_managed
 from app.connectors.registry import list_connectors
 from app.connectors.ssrf_guard import validate_destination
 from app.errors import HubError
@@ -65,7 +67,7 @@ def connector_view(db: Session, connector: Connector, application: Application) 
                          .where(ModuleDefinition.app_id == application.id)).scalars().all()
     tool_counts = dict(db.execute(select(ToolDefinition.status, func.count()).where(ToolDefinition.connector_id == connector.id)
                                   .group_by(ToolDefinition.status)).all())
-    if connector.connector_type == "source_managed":
+    if is_managed(connector.connector_type):
         modules = [enabled for enabled in modules if enabled]
         tool_counts = {"published": tool_counts.get("published", 0)}
     contract = db.scalar(select(ContractSnapshot).where(ContractSnapshot.connector_id == connector.id)
@@ -84,6 +86,7 @@ def connector_view(db: Session, connector: Connector, application: Application) 
         "status": connector.status,
         "tls_verify": connector.tls_verify,
         "timeout_ms": connector.timeout_ms,
+        "custom_spec": connector.custom_spec if connector.connector_type == "custom_api" else None,
         "secret_configured": secret_rotated_at is not None,
         "secret_updated_at": as_utc(secret_rotated_at).isoformat() if secret_rotated_at else None,
         "failure_count": connector.failure_count,
@@ -116,6 +119,14 @@ def create_connector(db: Session, admin: AdminUser, payload: dict, settings: Set
     if not KEY_RE.match(app_key):
         raise HubError("VALIDATION_FAILED", "App key must be lowercase letters, digits and underscores", 422)
     base_url = data["base_url"].rstrip("/")
+    custom = data["connector_type"] == "custom_api"
+    if data["auth_type"] == "none" and not custom:
+        raise HubError("VALIDATION_FAILED", "Only a custom API connection can skip authentication", 422)
+    if data["auth_type"] == "bearer" and not 8 <= len(data["secret"]) <= 500:
+        raise HubError("VALIDATION_FAILED", "The secret must be 8 to 500 characters", 422)
+    if custom and data["auth_type"] == "none":
+        # Never sent anywhere (no auth header); stored only because every connection keeps a secret row.
+        data["secret"] = secrets.token_urlsafe(32)
     if payload.get("approve_host") is True:
         from app.services import runtime_settings
 
@@ -158,21 +169,41 @@ def create_connector(db: Session, admin: AdminUser, payload: dict, settings: Set
     return body
 
 
+def _custom_probe(connector: Connector) -> str | None:
+    """The first saved endpoint that needs no input: a real read is the honest health check."""
+
+    for resource in ((connector.custom_spec or {}).get("resources") or {}).values():
+        for endpoint in resource.get("endpoints") or []:
+            path = endpoint.get("path") or ""
+            if "{" not in path and not endpoint.get("required"):
+                return path
+    return None
+
+
 async def test_connector(db: Session, admin: AdminUser, connector: Connector, application: Application, settings: Settings) -> dict:
     if connector.status == "archived":
         raise HubError("CONFLICT", "Archived apps cannot be tested", 409)
     secret = decrypt_secret(settings.secret_encryption_key, connector_secret(db, connector.id).secret_ciphertext)
     started = time.perf_counter()
     category, status_label, latency = None, "ok", None
+    custom = connector.connector_type == "custom_api"
+    probe = _custom_probe(connector) if custom else None
+    if custom and not connector.custom_spec:
+        raise HubError("VALIDATION_FAILED", "Save at least one endpoint before testing the connection", 422)
     try:
         status, body, latency = await execute_request(
-            method="GET", url=join_url(connector.base_url, connector.health_path), settings=settings,
+            method="GET", url=join_url(connector.base_url, probe if custom else connector.health_path), settings=settings,
             headers={**auth_headers(connector.auth_type, secret), "Accept": "application/json"},
             timeout_ms=connector.timeout_ms, tls_verify=connector.tls_verify, retries=0)
         if status in {401, 403}:
             status_label, category = "fail", "authorization"
         elif status >= 400:
             status_label, category = "fail", "network"
+        elif custom:
+            try:
+                json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                status_label, category = ("fail", "schema") if probe is not None else ("ok", None)
         else:
             try:
                 parsed = json.loads(body.decode("utf-8"))
@@ -190,6 +221,24 @@ async def test_connector(db: Session, admin: AdminUser, connector: Connector, ap
     _audit(db, admin, "connector.test", application, result="success" if status_label == "ok" else "error",
            error_code=category, duration_ms=latency)
     return {"status": status_label, "latency_ms": latency, "error_category": category, "hint": HINTS.get(category)}
+
+
+async def save_custom_spec(db: Session, admin: AdminUser, connector: Connector, application: Application,
+                           payload: dict, settings: Settings) -> dict:
+    """Store the admin's endpoint list, then rebuild the data sources and tools it describes."""
+
+    if connector.connector_type != "custom_api":
+        raise HubError("CONFLICT", "Only a custom API connection has an endpoint list", 409)
+    if connector.status == "archived":
+        raise HubError("CONFLICT", "Archived apps cannot be changed", 409)
+    spec, _manifest = build_manifest(payload, application.key)
+    connector.custom_spec = spec
+    connector.updated_at = utcnow()
+    _audit(db, admin, "connector.custom_spec", application)
+    db.flush()
+    await discover_capabilities(db, connector, application, settings=settings,
+                                encryption_key=settings.secret_encryption_key)
+    return connector_view(db, connector, application)
 
 
 async def discover(db: Session, admin: AdminUser, connector: Connector, application: Application, settings: Settings) -> dict:
@@ -214,7 +263,7 @@ def activate(db: Session, admin: AdminUser, connector: Connector, application: A
     latest = db.scalar(select(ConnectorHealthCheck).where(ConnectorHealthCheck.connector_id == connector.id)
                        .order_by(ConnectorHealthCheck.created_at.desc()))
     discovered = db.scalar(select(ModuleDefinition.id).where(ModuleDefinition.app_id == application.id))
-    if connector.connector_type == "source_managed":
+    if is_managed(connector.connector_type):
         snapshot = db.scalar(select(ContractSnapshot).where(ContractSnapshot.connector_id == connector.id)
                              .order_by(ContractSnapshot.created_at.desc()).limit(1))
         discovered = snapshot.id if snapshot and snapshot.manifest_json.get("managed_by") == "application" else None
@@ -269,6 +318,8 @@ def edit_connector(db: Session, admin: AdminUser, connector: Connector, applicat
     if connector.status == "archived":
         raise HubError("CONFLICT", "Archived apps cannot be changed", 409)
     changes = checked(ConnectorChanges, payload, partial=True)
+    if "connector_type" in changes and (changes["connector_type"] == "custom_api") != (connector.connector_type == "custom_api"):
+        raise HubError("CONFLICT", "A custom API connection cannot be switched to another type, or the other way around", 409)
     base = changes.get("base_url", connector.base_url).rstrip("/")
     validate_destination(base + "/", settings)
     for key in ("manifest_path", "health_path"):

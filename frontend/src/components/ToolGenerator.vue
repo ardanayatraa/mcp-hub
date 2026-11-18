@@ -19,7 +19,7 @@ const slow = useSlowFlag(running);
 const outcome = ref<GeneratedTools | null>(null);
 const chosen = computed(() => eligible.value.find((app) => app.id === appId.value));
 // Apps that manage their own permissions decide their tools; the Hub can only re-read them.
-const managed = computed(() => chosen.value?.connector_type === "source_managed");
+const managed = computed(() => ["source_managed", "custom_api"].includes(chosen.value?.connector_type ?? ""));
 const listed = computed(() => outcome.value ? [
   ...outcome.value.created.map((item) => ({ ...item, kind: "New" })),
   ...outcome.value.repaired.map((item) => ({ ...item, kind: "Fixed" })),

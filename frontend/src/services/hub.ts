@@ -29,7 +29,9 @@ export interface AppSummary {
   manifest_path: string;
   health_path: string;
   auth_type: string;
-  connector_type: "http_contract" | "data_push" | "source_managed";
+  connector_type: "http_contract" | "data_push" | "source_managed" | "custom_api";
+  /** The endpoint list of a custom API connection; null for every other type. */
+  custom_spec?: Record<string, unknown> | null;
   source_sync_error?: { code: string; message: string };
   status: "draft" | "active" | "paused" | "archived";
   tls_verify: boolean;
@@ -661,6 +663,7 @@ export const hub = {
   revokeEnrollment: (id: string) => post<ConnectorEnrollment>("/connector-enrollments/" + encodeURIComponent(id) + "/revoke"),
   updateApp: (id: string, body: Record<string, unknown>) => patch<AppSummary>(`/connectors/${id}`, body),
   deleteApp: (id: string) => remove(`/connectors/${id}`),
+  saveCustomApi: (id: string, body: unknown) => api<AppSummary>(`/connectors/${id}/custom-api`, { method: "PUT", ...json(body) }),
   testApp: (id: string) => post<Health>(`/connectors/${id}/test`),
   syncApp: (id: string) => post<{ modules: { id: string; module_key: string; name: string; change: string; enabled: boolean }[] }>(`/connectors/${id}/discover`),
   appAction: (id: string, action: "activate" | "pause" | "archive") => post<AppSummary>(`/connectors/${id}/${action}`),
