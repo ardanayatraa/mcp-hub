@@ -71,6 +71,8 @@ def normalize_endpoints(raw, readable_fields: list[str], max_page_size: int) -> 
         if "result_path" in route:
             # Custom API connections read a plain JSON body at this path instead of the Hub envelope.
             result[-1]["result_path"] = route["result_path"]
+        if route.get("headers"):
+            result[-1]["headers"] = route["headers"]
     return result
 
 

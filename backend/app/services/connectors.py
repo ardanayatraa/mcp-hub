@@ -15,7 +15,7 @@ from app.api.v1.configuration import ConnectorChanges, ConnectorConfiguration, c
 from app.config import Settings
 from app.connectors.auth_profiles import auth_headers
 from app.connectors.contracts import KEY_RE
-from app.connectors.custom_api import build_manifest
+from app.connectors.custom_api import analyze, build_manifest, header_name, static_headers
 from app.connectors.discovery import connector_secret, discover_capabilities
 from app.connectors.http_adapter import execute_request, join_url
 from app.connectors.kinds import is_managed
@@ -44,6 +44,8 @@ from app.security.authorization import (
     require_role,
 )
 from app.security.crypto import decrypt_secret, encrypt_secret
+from app.tools.rest_mapper import render_path
+from app.tools.schema_tools import NAME_RE, validate_path_template
 
 HINTS = {
     "authorization": "The application rejected the bearer token. Check that the app reads the Authorization header and expects this token.",
@@ -123,7 +125,11 @@ def create_connector(db: Session, admin: AdminUser, payload: dict, settings: Set
     custom = data["connector_type"] == "custom_api"
     if data["auth_type"] == "none" and not custom:
         raise HubError("VALIDATION_FAILED", "Only a custom API connection can skip authentication", 422)
-    if data["auth_type"] == "bearer" and not 8 <= len(data["secret"]) <= 500:
+    if data["auth_type"] == "header" and not custom:
+        raise HubError("VALIDATION_FAILED", "An API key header is only for a custom API connection", 422)
+    if data["auth_type"] == "header":
+        header_name(data["auth_header"], "The API key header")
+    if data["auth_type"] in {"bearer", "header"} and not 8 <= len(data["secret"]) <= 500:
         raise HubError("VALIDATION_FAILED", "The secret must be 8 to 500 characters", 422)
     if custom and data["auth_type"] == "none":
         # Never sent anywhere (no auth header); stored only because every connection keeps a secret row.
@@ -150,7 +156,8 @@ def create_connector(db: Session, admin: AdminUser, payload: dict, settings: Set
     connector = Connector(id=new_id(), app_id=application.id, connector_type=data["connector_type"], base_url=base_url,
                           manifest_path=data["manifest_path"], health_path=data["health_path"],
                           auth_type=data["auth_type"], status="draft", tls_verify=data["tls_verify"],
-                          timeout_ms=data["timeout_ms"])
+                          timeout_ms=data["timeout_ms"],
+                          custom_spec={"auth_header": data["auth_header"]} if data["auth_type"] == "header" else None)
     db.add(connector)
     db.flush()
     generated = not data["delegation_secret"]
@@ -194,7 +201,8 @@ async def test_connector(db: Session, admin: AdminUser, connector: Connector, ap
     try:
         status, body, latency = await execute_request(
             method="GET", url=join_url(connector.base_url, (probe or "/") if custom else connector.health_path), settings=settings,
-            headers={**auth_headers(connector.auth_type, secret), "Accept": "application/json"},
+            headers={**auth_headers(connector.auth_type, secret, (connector.custom_spec or {}).get("auth_header")),
+                     "Accept": "application/json"},
             timeout_ms=connector.timeout_ms, tls_verify=connector.tls_verify, retries=0)
         if status in {401, 403} and custom and signs_in_users(connector):
             pass  # reachable and protected: each user signs in with their own account
@@ -235,6 +243,12 @@ async def save_custom_spec(db: Session, admin: AdminUser, connector: Connector, 
         raise HubError("CONFLICT", "Only a custom API connection has an endpoint list", 409)
     if connector.status == "archived":
         raise HubError("CONFLICT", "Archived apps cannot be changed", 409)
+    if isinstance(payload, dict):
+        payload = dict(payload)
+        if connector.auth_type == "header":
+            payload["auth_header"] = payload.get("auth_header") or (connector.custom_spec or {}).get("auth_header")
+        else:
+            payload.pop("auth_header", None)
     spec, _manifest = build_manifest(payload, application.key)
     connector.custom_spec = spec
     connector.updated_at = utcnow()
@@ -243,6 +257,48 @@ async def save_custom_spec(db: Session, admin: AdminUser, connector: Connector, 
     await discover_capabilities(db, connector, application, settings=settings,
                                 encryption_key=settings.secret_encryption_key)
     return connector_view(db, connector, application)
+
+
+async def probe_custom_endpoint(db: Session, admin: AdminUser, connector: Connector, application: Application,
+                                payload: dict, settings: Settings) -> dict:
+    """Send one GET to the API as this connection and describe the answer, so an endpoint can be written from it."""
+
+    if connector.connector_type != "custom_api":
+        raise HubError("CONFLICT", "Only a custom API connection can send test requests", 409)
+    if connector.status == "archived":
+        raise HubError("CONFLICT", "Archived apps cannot send requests", 409)
+    body = payload if isinstance(payload, dict) else {}
+    path = body.get("path")
+    params = {} if body.get("params") is None else body["params"]
+    if not isinstance(path, str) or not isinstance(params, dict) or len(params) > 20:
+        raise HubError("VALIDATION_FAILED", "Give a path that starts with / and its parameters", 422)
+    validate_path_template(path, {"properties": {name: {} for name in params}})
+    rendered, rest = render_path(path, params)
+    query = {}
+    for name, value in rest.items():
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name) or isinstance(value, (dict, list)) or value is None:
+            raise HubError("VALIDATION_FAILED", f"Parameter '{name}' needs a plain value", 422)
+        query[name] = value
+    extra = static_headers(body.get("headers"), "the test request")
+    credential = {}
+    if not signs_in_users(connector):
+        secret = decrypt_secret(settings.secret_encryption_key, connector_secret(db, connector.id).secret_ciphertext)
+        credential = auth_headers(connector.auth_type, secret, (connector.custom_spec or {}).get("auth_header"))
+    status, raw, elapsed = await execute_request(
+        method="GET", url=join_url(connector.base_url, rendered), settings=settings, params=query or None,
+        headers={"Accept": "application/json", **extra, **credential}, timeout_ms=connector.timeout_ms,
+        max_bytes=262_144, tls_verify=connector.tls_verify, retries=0)
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        document = None
+    _audit(db, admin, "connector.probe", application, result="success" if status < 400 else "error",
+           error_code=None if status < 400 else str(status), duration_ms=elapsed)
+    result = {"status": status, "elapsed_ms": elapsed, "json": document is not None,
+              "needs_user_sign_in": signs_in_users(connector) and status in {401, 403}}
+    if document is not None and status < 400:
+        result.update(analyze(document))
+    return result
 
 
 async def discover(db: Session, admin: AdminUser, connector: Connector, application: Application, settings: Settings) -> dict:

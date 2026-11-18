@@ -50,6 +50,19 @@ export interface AppSummary {
   delegation_secret?: string;
 }
 
+/** The answer of a test request sent to a custom API, with what the Hub detected in it. */
+export interface CustomApiProbe {
+  status: number;
+  elapsed_ms: number;
+  json: boolean;
+  needs_user_sign_in: boolean;
+  result_path?: string | null;
+  fields?: Record<string, string>;
+  count?: number;
+  sensitive?: string[];
+  sample?: Record<string, unknown>[];
+}
+
 export interface EmbedWidget {
   public_id: string;
   enabled: boolean;
@@ -683,6 +696,7 @@ export const hub = {
   revokeEnrollment: (id: string) => post<ConnectorEnrollment>("/connector-enrollments/" + encodeURIComponent(id) + "/revoke"),
   updateApp: (id: string, body: Record<string, unknown>) => patch<AppSummary>(`/connectors/${id}`, body),
   deleteApp: (id: string) => remove(`/connectors/${id}`),
+  probeCustomApi: (id: string, body: unknown) => post<CustomApiProbe>(`/connectors/${id}/custom-api/probe`, body),
   saveCustomApi: (id: string, body: unknown) => api<AppSummary>(`/connectors/${id}/custom-api`, { method: "PUT", ...json(body) }),
   embed: (id: string) => api<EmbedWidget>(`/connectors/${id}/embed`),
   updateEmbed: (id: string, body: Partial<EmbedWidget>) => api<EmbedWidget>(`/connectors/${id}/embed`, { method: "PUT", ...json(body) }),

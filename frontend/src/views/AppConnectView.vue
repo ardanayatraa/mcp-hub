@@ -24,7 +24,7 @@ const keyEdited = ref(false);
 const form = ref({
   name: "", app_key: "", environment: "dev", base_url: "", auth_type: "bearer", secret: "", delegation_secret: "",
   manifest_path: "/api/ai/v1/capabilities", health_path: "/api/ai/v1/health", timeout_ms: 5000, tls_verify: true,
-  connector_type: "http_contract",
+  connector_type: "http_contract", auth_mode: "none", auth_header: "X-API-Key",
 });
 const app = ref<AppSummary | null>(null);
 const delegation = ref("");
@@ -52,7 +52,9 @@ const steps = computed(() => sourceManaged.value ? ["App details", "Set up the a
   : ["App details", "Set up the app", "Choose data", "Choose tools"]);
 const toolsStep = computed(() => steps.value.length);
 const canNext = computed(() => form.value.name && form.value.app_key && form.value.base_url
-  && (!form.value.secret || form.value.secret.length >= 8));
+  && (!form.value.secret || form.value.secret.length >= 8)
+  && (!customApi.value || form.value.auth_mode === "none" || form.value.secret.length >= 8)
+  && (!customApi.value || form.value.auth_mode !== "header" || /^[A-Za-z][A-Za-z0-9-]{0,40}$/.test(form.value.auth_header)));
 
 // Everything the app needs, in the variable names of the Laravel guide, ready to paste into its .env.
 const envBlock = computed(() => appToken.value ? [
@@ -114,7 +116,8 @@ async function save() {
       // Any HTTP API: no pairing and no .env. A token is optional; the endpoints are listed on the app's page.
       const created = await hub.createApp({ name: form.value.name, app_key: form.value.app_key,
         environment: form.value.environment, base_url: form.value.base_url, connector_type: "custom_api",
-        auth_type: form.value.secret ? "bearer" : "none", secret: form.value.secret,
+        auth_type: form.value.auth_mode, auth_header: form.value.auth_mode === "header" ? form.value.auth_header : "",
+        secret: form.value.auth_mode === "none" ? "" : form.value.secret,
         timeout_ms: form.value.timeout_ms, tls_verify: form.value.tls_verify, approve_host: approveHost.value });
       await router.push({ path: `/apps/${created.id}`, query: { tab: "endpoints" } });
       return;
@@ -301,13 +304,26 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
         </select>
         <span v-if="customApi" class="hint">For an API you cannot or do not want to change. Next you list its read endpoints; nothing is installed on the API.</span>
       </label>
+      <template v-if="customApi">
+        <label :class="form.auth_mode === 'header' ? '' : 'sm:col-span-2'"><span class="label">How the API checks the connection</span>
+          <select v-model="form.auth_mode" class="input">
+            <option value="none">Nothing: a public API</option>
+            <option value="bearer">Bearer token</option>
+            <option value="header">API key in a header</option>
+          </select></label>
+        <label v-if="form.auth_mode === 'header'"><span class="label">Header name</span>
+          <input v-model="form.auth_header" class="input font-mono" placeholder="X-API-Key" /></label>
+        <label v-if="form.auth_mode !== 'none'" class="sm:col-span-2"><span class="label">{{ form.auth_mode === "header" ? "API key" : "Token" }}</span>
+          <SecretInput v-model="form.secret" minlength="8" maxlength="500" placeholder="Paste it here" />
+          <span class="hint">Stored encrypted, sent only to this address and never shown to AI. Users' own sign-in is set in the endpoint list.</span></label>
+      </template>
     </div>
 
     <button type="button" class="btn-ghost btn-sm" @click="advanced = !advanced">
       <AppIcon :name="advanced ? 'chevron-down' : 'chevron-right'" :size="14" /> Advanced settings
     </button>
     <div v-if="advanced" class="grid gap-4 rounded-lg bg-muted/60 p-4 sm:grid-cols-2">
-      <label class="sm:col-span-2"><span class="label">Bearer token (optional)</span>
+      <label v-if="!customApi" class="sm:col-span-2"><span class="label">Bearer token (optional)</span>
         <SecretInput v-model="form.secret" minlength="8" maxlength="500"
                      :placeholder="app ? 'Leave blank to keep the saved token' : customApi ? 'Leave blank if the API is public' : 'Leave blank and the Hub creates one'" />
         <span class="hint">Only if the app already has a token. Sent as <code class="code">Authorization: Bearer &lt;token&gt;</code> on every call; stored encrypted and never sent to AI clients.</span></label>

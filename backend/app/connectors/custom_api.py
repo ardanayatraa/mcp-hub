@@ -15,6 +15,12 @@ NAME_PART = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 RESULT_PATH_RE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9_]{0,39}(?:\.[A-Za-z][A-Za-z0-9_]{0,39}){0,3})?$")
 PLACEHOLDER = re.compile(r"\{([A-Za-z][A-Za-z0-9_]{0,40})\}")
 MAX_RESOURCES, MAX_ENDPOINTS, MAX_FIELDS, MAX_PARAMS = 20, 30, 40, 20
+HEADER_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,40}$")
+# Headers the Hub or the transport owns, or that would carry another identity.
+RESERVED_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie", "host", "content-length",
+                    "content-type", "connection", "transfer-encoding", "upgrade", "te", "trailer", "accept",
+                    "idempotency-key", "x-request-id", "x-hub-assertion", "x-hub-delegation", "x-forwarded-for",
+                    "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "forwarded"}
 
 
 def _fail(message: str) -> HubError:
@@ -76,6 +82,31 @@ def _params(raw, path: str, endpoint: str) -> tuple[dict, list[str]]:
     return properties, required
 
 
+def header_name(raw, label: str = "Header") -> str:
+    if not isinstance(raw, str) or not HEADER_NAME.match(raw) or raw.lower() in RESERVED_HEADERS:
+        raise _fail(f"{label} must be a plain header name that is not one the Hub controls")
+    return raw
+
+
+def static_headers(raw, endpoint: str) -> dict[str, str]:
+    """Fixed, non-secret headers sent with one endpoint (for example Accept-Language). Keys belong in the connection."""
+
+    if raw in (None, {}, []):
+        return {}
+    if isinstance(raw, list):
+        raw = {item.get("name"): item.get("value") for item in raw if isinstance(item, dict)}
+    raw = _object(raw, f"Headers of '{endpoint}'")
+    if len(raw) > 10:
+        raise _fail(f"Endpoint '{endpoint}' has too many headers")
+    result = {}
+    for name, value in raw.items():
+        header_name(name, f"Header '{name}' of '{endpoint}'")
+        if not isinstance(value, str) or not value or len(value) > 200 or not value.isprintable():
+            raise _fail(f"Header '{name}' of '{endpoint}' needs a short text value")
+        result[name] = value
+    return result
+
+
 def _endpoint(resource: str, raw, fields: dict[str, dict], app_key: str, label: str) -> dict:
     body = _object(raw, "Endpoint")
     name = body.get("name")
@@ -96,8 +127,10 @@ def _endpoint(resource: str, raw, fields: dict[str, dict], app_key: str, label: 
         raise _fail(f"Endpoint '{name}' required must list its own params")
     required = list(dict.fromkeys(required + list(explicit)))
     description = body.get("description") or f"Read {label} through the {name} endpoint."
+    headers = static_headers(body.get("headers"), name)
     return {
         "method": "GET", "path_template": path, "result_path": result_path,
+        **({"headers": headers} if headers else {}),
         "tool_key": f"{app_key}.{resource}.{name}",
         "description": clean_description(description),
         "input_schema": {"type": "object", "additionalProperties": False, "properties": properties, "required": required},
@@ -151,6 +184,86 @@ def user_auth(raw) -> dict | None:
     return result
 
 
+def _join(prefix: str, key: str) -> str:
+    return f"{prefix}.{key}" if prefix else key
+
+
+def _records(document, prefix: str = "", depth: int = 0):
+    """Where the records of a JSON response sit: (result_path, records), or None."""
+
+    if isinstance(document, list):
+        return (prefix, document) if document and all(isinstance(item, dict) for item in document) else None
+    if not isinstance(document, dict):
+        return None
+    for key, value in document.items():
+        if RESULT_PATH_RE.match(_join(prefix, key)) and isinstance(value, list) and value \
+                and all(isinstance(item, dict) for item in value):
+            return _join(prefix, key), value
+    if depth < 3:
+        for key, value in document.items():
+            if isinstance(value, dict) and RESULT_PATH_RE.match(_join(prefix, key)):
+                found = _records(value, _join(prefix, key), depth + 1)
+                if found:
+                    return found
+    return (prefix, [document]) if any(not isinstance(value, (dict, list)) for value in document.values()) else None
+
+
+def _scalar_type(value) -> str | None:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return None
+
+
+def _shown(value):
+    from app.privacy.pii_inspector import tree_contains_pii
+
+    if isinstance(value, (dict, list)):
+        return "{…}" if isinstance(value, dict) else "[…]"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    text = str(value)
+    return "••••" if tree_contains_pii(text) else (text if len(text) <= 40 else text[:40] + "…")
+
+
+def analyze(document) -> dict:
+    """What an admin needs to write the endpoint: the result path, the scalar fields with types, and a masked sample."""
+
+    from app.security.authorization import is_sensitive_path
+
+    found = _records(document)
+    if found is None:
+        return {"result_path": None, "fields": {}, "sample": [], "count": 0}
+    path, records = found
+    kinds: dict[str, set] = {}
+    nullable: set = set()
+    for record in records[:30]:
+        for name, value in list(record.items())[:80]:
+            if value is None:
+                nullable.add(name)
+                kinds.setdefault(name, set())
+                continue
+            kind = _scalar_type(value)
+            if kind:
+                kinds.setdefault(name, set()).add(kind)
+    fields = {}
+    for name, found_kinds in kinds.items():
+        if not found_kinds or not FIELD_RE.match(name) or not NAME_RE.fullmatch(name):
+            continue
+        kind = "number" if found_kinds <= {"integer", "number"} and "number" in found_kinds else sorted(found_kinds)[0]
+        fields[name] = kind + ("?" if name in nullable else "")
+        if len(fields) >= MAX_FIELDS:
+            break
+    return {"result_path": path, "fields": fields, "count": len(records),
+            "sensitive": [name for name in fields if is_sensitive_path(name)],
+            "sample": [{key: _shown(value) for key, value in list(record.items())[:20]} for record in records[:2]]}
+
+
 def build_manifest(spec: dict, app_key: str) -> tuple[dict, dict]:
     """Return the cleaned spec to store and the validated source-managed manifest it produces."""
 
@@ -187,4 +300,6 @@ def build_manifest(spec: dict, app_key: str) -> tuple[dict, dict]:
     signin = user_auth(spec.get("user_auth"))
     if signin:
         stored["user_auth"] = signin
+    if spec.get("auth_header"):
+        stored["auth_header"] = header_name(spec["auth_header"], "The API key header")
     return stored, manifest
