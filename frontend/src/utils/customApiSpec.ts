@@ -116,20 +116,21 @@ export function toSpec(model: Model): Json {
 export function problems(model: Model): string[] {
   const out: string[] = [];
   const keys = new Set<string>();
-  if (!model.resources.length) out.push("Add at least one resource.");
+  if (!model.resources.length) out.push("Add at least one endpoint.");
   for (const resource of model.resources) {
-    const label = resource.name || resource.key || "A resource";
-    if (!/^[a-z][a-z0-9_]{0,39}$/.test(resource.key)) out.push(`${label}: the key must be lowercase letters, digits or underscores.`);
+    const label = resource.name || resource.key || "New endpoint";
+    if (!resource.name.trim() && !resource.key.trim()) out.push("Give every endpoint a name.");
+    else if (!/^[a-z][a-z0-9_]{0,39}$/.test(resource.key)) out.push(`${label}: the name makes the key: start with a letter and use letters, digits or underscores.`);
     if (keys.has(resource.key)) out.push(`${label}: the key is used twice.`);
     keys.add(resource.key);
-    if (!resource.fields.some((field) => field.name.trim())) out.push(`${label}: list at least one field AI may see.`);
+    if (!resource.fields.some((field) => field.name.trim())) out.push(`${label}: click Send, or add, at least one field AI may see.`);
     const names = new Set<string>();
     for (const endpoint of resource.endpoints) {
       const where = `${label} / ${endpoint.name || "endpoint"}`;
       if (!/^[a-z][a-z0-9_]{0,39}$/.test(endpoint.name)) out.push(`${where}: the name must be lowercase letters, digits or underscores.`);
       if (names.has(endpoint.name)) out.push(`${where}: the name is used twice.`);
       names.add(endpoint.name);
-      if (!endpoint.path.startsWith("/")) out.push(`${where}: the path must start with /.`);
+      if (!endpoint.path.startsWith("/")) out.push(`${label}: the address must start with /.`);
     }
     if (!resource.endpoints.length) out.push(`${label}: add at least one endpoint.`);
   }
