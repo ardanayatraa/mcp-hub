@@ -315,13 +315,47 @@ async def sign_in(db: Session, widget: EmbedWidget, application: Application, co
     if not isinstance(token, str) or not 8 <= len(token) <= 4096:
         raise HubError("SCHEMA_MISMATCH", f"{application.name} signed you in but returned no token where expected", 502)
     name = await _display_name(connector, token, settings)
+    return _open_session(db, widget, application, token, name, settings, "embed.sign_in")
+
+
+async def sign_in_with_token(db: Session, widget: EmbedWidget, application: Application, connector: Connector, token,
+                             settings: Settings) -> dict:
+    """The page the widget sits on is already signed in to the app: its server hands over a short-lived
+    app token. The Hub asks the app who it belongs to before using it, so only a token the app itself
+    accepts (the user's own) opens a session, and it can only ever read that user's data."""
+
+    auth = connector.custom_spec["user_auth"]
+    if "me_path" not in auth:
+        raise HubError("VALIDATION_FAILED", "Signing in from the host page needs me_path in this app's endpoint list", 422)
+    if not isinstance(token, str) or not 8 <= len(token) <= 4096 or not token.isprintable():
+        raise HubError("VALIDATION_FAILED", "The sign-in token is not valid", 422)
+    status, raw, _ = await execute_request(
+        method="GET", url=join_url(connector.base_url, auth["me_path"]), settings=settings,
+        headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+        timeout_ms=connector.timeout_ms, tls_verify=connector.tls_verify, retries=0)
+    if status in {401, 403, 404}:
+        raise HubError("SIGN_IN_FAILED", f"{application.name} did not accept this sign-in", 401)
+    if status == 429:
+        raise HubError("RATE_LIMITED", "Too many sign-in attempts. Wait a moment and try again.", 429)
+    if status >= 400:
+        raise HubError("UPSTREAM_ERROR", f"{application.name} could not sign you in right now", 502)
+    try:
+        value = _dig(json.loads(raw.decode("utf-8")), auth["name_path"])
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        value = None
+    name = " ".join(value.split())[:120] or None if isinstance(value, str) else None
+    return _open_session(db, widget, application, token, name, settings, "embed.sign_in_host")
+
+
+def _open_session(db: Session, widget: EmbedWidget, application: Application, token: str, name: str | None,
+                  settings: Settings, action: str) -> dict:
     session = SESSION_PREFIX + secrets.token_urlsafe(32)
     link = EmbedLink(id=new_id(), widget_id=widget.id, session_hash=_hash(session),
                      token_ciphertext=encrypt_secret(settings.secret_encryption_key, token),
                      label_ciphertext=encrypt_secret(settings.secret_encryption_key, name) if name else None,
                      expires_at=utcnow() + timedelta(days=widget.session_days))
     db.add(link)
-    record_audit(db, action="embed.sign_in", actor_ref=f"embed:{link.id}", result="success",
+    record_audit(db, action=action, actor_ref=f"embed:{link.id}", result="success",
                  app_key=application.key, environment=application.environment)
     return {"session": session, "name": name}
 

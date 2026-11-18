@@ -1,6 +1,7 @@
 /* MCP Hub embedded chat loader. Usage:
    <script src="https://YOUR-HUB/api/embed/v1/embed.js" data-widget="w_..." async></script>
-   Adds a chat button; the chat itself runs in an iframe served by the Hub. */
+   Adds a chat button; the chat itself runs in an iframe served by the Hub.
+   Add data-token="<the signed-in user's app token>" to sign the user in automatically. */
 (function () {
   "use strict";
   var script = document.currentScript;
@@ -10,6 +11,9 @@
   window["__hubEmbed_" + id] = true;
   var base = new URL(script.src).origin;
   var pageUrl = base + "/api/embed/v1/w/" + encodeURIComponent(id);
+  // Optional: when the page is already signed in to the app, its server puts a short-lived app token here
+  // and the chat signs in by itself. It travels in the iframe's fragment, which is never sent to a server.
+  var hostToken = script.getAttribute("data-token");
 
   function start(config) {
     var accent = /^#[0-9a-fA-F]{6}$/.test(config.accent || "") ? config.accent : "#2563eb";
@@ -39,7 +43,7 @@
     function toggle(open) {
       if (open && !frame) {
         frame = document.createElement("iframe");
-        frame.src = pageUrl;
+        frame.src = pageUrl + (hostToken ? "#host=" + encodeURIComponent(hostToken) : "");
         frame.title = config.title || "Chat";
         frame.setAttribute("allow", "clipboard-write");
         panel.appendChild(frame);

@@ -184,3 +184,48 @@ def test_embedding_needs_user_sign_in_and_valid_settings(admin, monkeypatch):
             api(admin, "PUT", f"/connectors/{cid}/embed", bad, expect=422)
         bad_auth = {**SPEC, "user_auth": {"login_path": "api/login"}}
         api(admin, "PUT", f"/connectors/{cid}/custom-api", bad_auth, expect=422)
+
+
+def sign_in_token(client, widget, token):
+    return client.post(f"/api/embed/v1/w/{widget['public_id']}/sign-in-token", json={"token": token})
+
+
+def test_host_page_hands_over_its_users_token(admin, monkeypatch, model):  # noqa: F811 - the imported fixture
+    script, record = model
+    helpers.dns(monkeypatch)
+    client = admin["client"]
+    with helpers.source(shop):
+        _cid, widget = connect(admin)
+        # Only a token the app itself accepts opens a session.
+        assert sign_in_token(client, widget, "tok_made_up_0123456789").status_code == 401
+        assert sign_in_token(client, widget, "short").status_code == 422
+        opened = sign_in_token(client, widget, "tok_budi_0123456789").json()["data"]
+        assert opened["name"] == "Budi Santoso" and opened["session"].startswith("es_")
+
+        script += [providers.Step(calls=[providers.ToolCall("c1", "shop__order__my_orders", {})], stop="tool_use"),
+                   providers.Step(text="Satu pesanan.")]
+        events(chat(client, widget, opened["session"]))
+        result = next(r for r in record["results"][-1])
+        assert "INV-B9" in result.content and "INV-A1" not in result.content
+        assert SEEN[-1].headers["authorization"] == "Bearer tok_budi_0123456789"
+
+    with open_session() as db:
+        link = db.scalars(select(EmbedLink)).one()
+        assert "tok_" not in link.token_ciphertext
+
+
+def test_host_sign_in_needs_me_path(admin, monkeypatch):
+    helpers.dns(monkeypatch)
+    client = admin["client"]
+    spec = {**SPEC, "user_auth": {k: v for k, v in SPEC["user_auth"].items() if k not in ("me_path", "name_path")}}
+    with helpers.source(shop):
+        created = api(admin, "POST", "/connectors", {
+            "name": "Shop", "app_key": "shop", "environment": "dev", "base_url": "http://shop.test",
+            "connector_type": "custom_api", "auth_type": "none"}, expect=201).json()["data"]
+        cid = created["id"]
+        api(admin, "PUT", f"/connectors/{cid}/custom-api", spec, expect=200)
+        api(admin, "POST", f"/connectors/{cid}/test", expect=200)
+        api(admin, "POST", f"/connectors/{cid}/activate", expect=200)
+        enable_chat(admin, cid)
+        widget = api(admin, "PUT", f"/connectors/{cid}/embed", {"enabled": True}, expect=200).json()["data"]
+        assert sign_in_token(client, widget, "tok_andi_0123456789").status_code == 422

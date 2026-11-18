@@ -110,6 +110,24 @@ async def sign_in(public_id: str, request: Request):
     return ok(result)
 
 
+@router.post("/w/{public_id}/sign-in-token")
+async def sign_in_token(public_id: str, request: Request):
+    """The host page is already signed in to the app and hands its user's app token to the widget."""
+
+    body = await read_body(request)
+    settings = get_settings()
+    db = open_session()
+    try:
+        widget, application, connector = embed.public_widget(db, public_id)
+        hit(f"embed-sign-in:{widget.id}:{client_host(request)}", 30, 600)
+        result = await embed.sign_in_with_token(db, widget, application, connector,
+                                                body.get("token") if isinstance(body, dict) else None, settings)
+        db.commit()
+    finally:
+        db.close()
+    return ok(result)
+
+
 @router.post("/w/{public_id}/sign-out")
 def sign_out(public_id: str, request: Request):
     db = open_session()

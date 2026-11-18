@@ -30,8 +30,14 @@
   // An admin preview arrives in the fragment (never sent to a server) and lives only in memory.
   var preview = null;
   var match = /(?:^|[#&])preview=([^&]+)/.exec(location.hash);
-  if (match) {
-    preview = decodeURIComponent(match[1]);
+  if (match) preview = decodeURIComponent(match[1]);
+  // The page the chat sits on is already signed in to the app: it hands over the user's app token.
+  var host = null;
+  var hostMatch = /(?:^|[#&])host=([^&]+)/.exec(location.hash);
+  if (hostMatch) host = decodeURIComponent(hostMatch[1]);
+  var hostTries = 0;
+  var hostError = "";
+  if (match || hostMatch) {
     try { history_replace(); } catch (e) { /* ignore */ }
   }
   function history_replace() { window.history.replaceState(null, "", location.pathname); }
@@ -79,11 +85,31 @@
     load();
   });
 
+  // Signs in with the host page's token unless this browser already holds a session for that same token.
+  function hostSignIn() {
+    if (!host || preview) return Promise.resolve();
+    var key = storeKey + ":host";
+    var fingerprint = host.slice(-16);
+    var last = null;
+    try { last = localStorage.getItem(key); } catch (e) { /* private mode */ }
+    if (hostTries === 0 && stored() && last === fingerprint) return Promise.resolve();
+    return fetch(api + "/sign-in-token", { method: "POST", headers: headers(true), body: JSON.stringify({ token: host }) })
+      .then(function (response) { return response.json(); })
+      .then(function (body) {
+        if (!body.success) throw new Error((body.error && body.error.message) || T.failed);
+        store(body.data.session);
+        try { localStorage.setItem(key, fingerprint); } catch (e) { /* private mode */ }
+        hostError = "";
+      })
+      .catch(function (exc) { store(null); hostError = (exc && exc.message) || T.failed; });
+  }
+
   function load() {
     main.innerHTML = "";
     main.appendChild(el("p", "muted center", "…"));
     composer.hidden = true;
-    fetch(api + "/config", { headers: headers(false) })
+    hostSignIn()
+      .then(function () { return fetch(api + "/config", { headers: headers(false) }); })
       .then(function (response) { return response.json(); })
       .then(function (body) {
         if (!body || !body.success) throw new Error("config");
@@ -94,7 +120,9 @@
         if (!config.available) return message(T.unavailable);
         if (!config.user) {
           if (preview) { preview = null; return message(T.expired); }
-          return signInForm();
+          // A stored session the Hub no longer knows: sign in again from the host token once.
+          if (host && hostTries === 0) { hostTries = 1; store(null); return load(); }
+          return signInForm(hostError || undefined);
         }
         chat();
       })
@@ -166,7 +194,7 @@
     document.getElementById("user").textContent = name ? t("signedAs", name) : "";
     banner.hidden = !config.user.preview;
     banner.textContent = config.user.preview ? t("preview", name || "—") : "";
-    signout.hidden = !!config.user.preview;
+    signout.hidden = !!config.user.preview || !!host;
     signout.textContent = T.signOut;
     main.innerHTML = "";
     if (config.welcome_message) main.appendChild(bubble("bot", config.welcome_message));
