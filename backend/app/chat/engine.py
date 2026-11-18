@@ -23,6 +23,7 @@ from app.chat import providers, registry
 from app.chat import settings as chat_settings
 from app.chat.exports import export_receipts
 from app.config import Settings, get_settings
+from app.connectors import user_credential
 from app.connectors.discovery import connector_secret, sync_source_permissions
 from app.errors import HubError
 from app.ids import new_trace_id, utcnow
@@ -243,8 +244,11 @@ class Turn:
 
     def __init__(self, db: Session, caller: Caller, request: TurnRequest, delegation_header: str | None,
                  settings: Settings | None = None, *, model: tuple[str, str] | None = None,
-                 show_results: bool = False) -> None:
+                 show_results: bool = False, user_token: str | None = None, subject: str | None = None) -> None:
         self.db, self.caller, self.request = db, caller, request
+        # The embedded chat's signed-in user: their app token for this turn's calls, and the
+        # name their rate limits are counted under.
+        self.user_token, self.subject_override = user_token, subject
         self.delegation_header = delegation_header
         self.settings = settings or get_settings()
         self.trace = new_trace_id()
@@ -277,7 +281,7 @@ class Turn:
         if tree_contains_pii(request.skill_arguments):
             raise HubError("PII_DETECTED", PII_MESSAGE, 422)
         delegation = _verified(db, caller, self.delegation_header, settings)
-        subject = _subject(settings, caller, delegation)
+        subject = self.subject_override or _subject(settings, caller, delegation)
         app_id = caller.application.id
         _limit(f"chat:{app_id}:{subject}", settings.chat_rate_limit, 60, "RATE_LIMITED",
                "You're sending messages quickly. Wait a moment and try again.")
@@ -299,6 +303,7 @@ class Turn:
 
     async def run(self, emit: Emit) -> dict:
         error: HubError | None = None
+        handle = user_credential.push(self.user_token)
         try:
             return await self._run(emit)
         except HubError as exc:
@@ -311,6 +316,7 @@ class Turn:
             error = HubError("INTERNAL", "The chat failed unexpectedly", 500)
             raise
         finally:
+            user_credential.reset(handle)
             self.db.rollback()
             record_audit(self.db, action="chat.turn", actor_ref=self.caller.actor_ref,
                          app_key=self.caller.application.key, environment=self.caller.application.environment,

@@ -9,7 +9,7 @@ import re
 
 from app.connectors.contracts import FIELD_RE, KEY_RE, validate_manifest
 from app.errors import HubError
-from app.tools.schema_tools import NAME_RE, TYPES, clean_description
+from app.tools.schema_tools import NAME_RE, PATH_RE, TYPES, clean_description
 
 NAME_PART = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 RESULT_PATH_RE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9_]{0,39}(?:\.[A-Za-z][A-Za-z0-9_]{0,39}){0,3})?$")
@@ -116,6 +116,41 @@ def _label(body: dict, key: str) -> str:
     return str(body.get("name") or key)[:200] + (f" (also called: {', '.join(aliases)})" if aliases else "")
 
 
+def _path(value, label: str) -> str:
+    if not isinstance(value, str) or not PATH_RE.match(value) or ".." in value or "{" in value:
+        raise _fail(f"{label} must be a fixed path that starts with /")
+    return value
+
+
+def user_auth(raw) -> dict | None:
+    """How a user signs in to the app: the Hub posts the login form and keeps the token it returns.
+
+    {"login_path": "/api/login", "fields": ["email", "password"], "token_path": "token",
+     "me_path": "/api/me", "name_path": "name"}. The token is then sent as a bearer token on every
+    call made for that user, so the app itself decides what each user may read.
+    """
+
+    if raw is None:
+        return None
+    body = _object(raw, "user_auth")
+    fields = body.get("fields") or ["email", "password"]
+    if (not isinstance(fields, list) or not 1 <= len(fields) <= 4 or len(set(fields)) != len(fields)
+            or not all(isinstance(name, str) and NAME_RE.fullmatch(name) for name in fields)):
+        raise _fail("user_auth fields must be 1 to 4 field names, such as email and password")
+    token_path = body.get("token_path") or "token"
+    if not isinstance(token_path, str) or not token_path or not RESULT_PATH_RE.match(token_path):
+        raise _fail("user_auth token_path must be dotted names such as token or data.access_token")
+    result = {"login_path": _path(body.get("login_path"), "user_auth login_path"), "fields": fields,
+              "token_path": token_path}
+    if body.get("me_path") is not None:
+        result["me_path"] = _path(body["me_path"], "user_auth me_path")
+        name_path = body.get("name_path") or "name"
+        if not isinstance(name_path, str) or not name_path or not RESULT_PATH_RE.match(name_path):
+            raise _fail("user_auth name_path must be dotted names such as name or data.name")
+        result["name_path"] = name_path
+    return result
+
+
 def build_manifest(spec: dict, app_key: str) -> tuple[dict, dict]:
     """Return the cleaned spec to store and the validated source-managed manifest it produces."""
 
@@ -148,4 +183,8 @@ def build_manifest(spec: dict, app_key: str) -> tuple[dict, dict]:
         {"contract_version": "1.0", "application": app_key, "managed_by": "application",
          "manifest_version": "custom", "modules": modules},
         expected_app_key=app_key, source_managed=True)
-    return {"resources": clean}, manifest
+    stored: dict = {"resources": clean}
+    signin = user_auth(spec.get("user_auth"))
+    if signin:
+        stored["user_auth"] = signin
+    return stored, manifest

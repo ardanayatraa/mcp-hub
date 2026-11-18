@@ -50,6 +50,26 @@ export interface AppSummary {
   delegation_secret?: string;
 }
 
+export interface EmbedWidget {
+  public_id: string;
+  enabled: boolean;
+  allowed_origins: string[];
+  title: string;
+  accent: string;
+  position: "left" | "right";
+  session_days: number;
+  page_url: string;
+  snippet: string;
+  ready: { user_sign_in: boolean; chat_enabled: boolean; app_active: boolean };
+  signed_in_users: number;
+  updated_at: string;
+}
+
+export interface EmbedListed extends EmbedWidget { connector_id: string; app_name: string; app_key: string; environment: string }
+
+/** One user signed in to the app through the embedded chat. The name comes from the app. */
+export interface EmbedUser { id: string; name: string | null; created_at: string; last_used_at: string | null; expires_at: string }
+
 export interface AppDetail extends AppSummary {
   health_history: Health[];
   contracts: { version: string; hash: string; created_at: string; modules: string[] }[];
@@ -664,6 +684,14 @@ export const hub = {
   updateApp: (id: string, body: Record<string, unknown>) => patch<AppSummary>(`/connectors/${id}`, body),
   deleteApp: (id: string) => remove(`/connectors/${id}`),
   saveCustomApi: (id: string, body: unknown) => api<AppSummary>(`/connectors/${id}/custom-api`, { method: "PUT", ...json(body) }),
+  embed: (id: string) => api<EmbedWidget>(`/connectors/${id}/embed`),
+  updateEmbed: (id: string, body: Partial<EmbedWidget>) => api<EmbedWidget>(`/connectors/${id}/embed`, { method: "PUT", ...json(body) }),
+  rotateEmbed: (id: string) => post<EmbedWidget>(`/connectors/${id}/embed/rotate`),
+  embedUsers: (id: string) => api<EmbedUser[]>(`/connectors/${id}/embed/users`),
+  revokeEmbedUser: (id: string, linkId: string) => remove<{ revoked: number }>(`/connectors/${id}/embed/users/${linkId}`),
+  revokeEmbedUsers: (id: string) => remove<{ revoked: number }>(`/connectors/${id}/embed/users`),
+  embedPreview: (id: string, linkId: string) => post<{ token: string; expires_in: number }>(`/connectors/${id}/embed/preview`, { link_id: linkId }),
+  embedWidgets: () => api<EmbedListed[]>("/embed/widgets"),
   testApp: (id: string) => post<Health>(`/connectors/${id}/test`),
   syncApp: (id: string) => post<{ modules: { id: string; module_key: string; name: string; change: string; enabled: boolean }[] }>(`/connectors/${id}/discover`),
   appAction: (id: string, action: "activate" | "pause" | "archive") => post<AppSummary>(`/connectors/${id}/${action}`),

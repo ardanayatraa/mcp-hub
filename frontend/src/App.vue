@@ -24,6 +24,7 @@ const groups = computed(() => [
       { label: "Overview", to: "/", icon: "home" },
       { label: "Monitoring", to: "/monitoring", icon: "monitor" },
       { label: "Apps", to: "/apps", icon: "apps" },
+      { label: "Chat Agent", to: "/chat-agent", icon: "chat" },
       { label: "Tools", to: "/tools", icon: "tools" },
       { label: "Access", to: "/access", icon: "key" },
       { label: "AI providers", to: "/providers", icon: "sparkles" },

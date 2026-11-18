@@ -14,6 +14,7 @@ const router = createRouter({
     { path: "/apps", component: () => import("@/views/AppsView.vue") },
     { path: "/apps/new", component: () => import("@/views/AppConnectView.vue"), meta: { write: true } },
     { path: "/apps/:id", component: () => import("@/views/AppDetailView.vue") },
+    { path: "/chat-agent", component: () => import("@/views/ChatAgentView.vue") },
     { path: "/tools", component: () => import("@/views/ToolsView.vue") },
     { path: "/tools/new", component: () => import("@/views/ToolCreateView.vue"), meta: { write: true } },
     { path: "/tools/import", component: () => import("@/views/OpenApiImportView.vue"), meta: { write: true } },

@@ -101,8 +101,12 @@ async function save() {
             <span class="code">data.items</span>. Leave it out when the response itself is the record.</dd></div>
         <div><dt class="font-medium text-ink">alias</dt>
           <dd>Everyday words for the resource, so AI and chat can match them.</dd></div>
+        <div><dt class="font-medium text-ink">user_auth (optional)</dt>
+          <dd>Data per user: <span class="code">{"login_path":"/api/login","token_path":"token","me_path":"/api/me"}</span>.
+            Users sign in in the embedded chat, and every call carries their own token, so the API decides what each one sees.
+            Then turn the chat on in the Embed tab.</dd></div>
       </dl>
-      <p class="text-xs text-subtle">Treated as data anyone with this connection may read: there is no per-user filter.
+      <p class="text-xs text-subtle">Without user_auth the data is treated as readable by anyone with this connection.
         Saving applies right away; no redeploy.</p>
     </aside>
   </section>

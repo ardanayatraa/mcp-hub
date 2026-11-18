@@ -502,3 +502,45 @@ class HubSetting(Base):
     value: Mapped[dict] = mapped_column(JSON, nullable=False)
     updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class EmbedWidget(Base):
+    """The chat an app embeds in other websites. One per app; only signed-in users of the app can chat."""
+
+    __tablename__ = "embed_widgets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    app_id: Mapped[str] = mapped_column(ForeignKey("applications.id", ondelete="CASCADE"), unique=True, nullable=False)
+    # The id in the snippet; public, rotated to cut off a snippet copied to another site.
+    public_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Sites that may show the widget (https://host[:port]); the page refuses to load in any other.
+    allowed_origins: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    title: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    accent: Mapped[str] = mapped_column(String(7), nullable=False, default="#2563eb")
+    position: Mapped[str] = mapped_column(String(8), nullable=False, default="right")
+    session_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class EmbedLink(Base):
+    """One signed-in user of an embedded chat: their access token for the app, encrypted.
+
+    Created when the user signs in to the app inside the widget. The password is never stored;
+    the token and the display name are stored encrypted, and the widget holds only a random
+    session id whose hash is kept here.
+    """
+
+    __tablename__ = "embed_links"
+    __table_args__ = (Index("ix_embed_link_widget", "widget_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    widget_id: Mapped[str] = mapped_column(ForeignKey("embed_widgets.id", ondelete="CASCADE"), nullable=False)
+    session_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    token_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    label_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
