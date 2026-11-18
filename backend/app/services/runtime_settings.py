@@ -217,6 +217,28 @@ def _smtp(value, current: dict | None, settings: Settings) -> dict:
             "password_ciphertext": ciphertext}
 
 
+def approve_host(db: Session, admin: AdminUser, url: str, settings: Settings) -> None:
+    """Add a connector's host to the approved list when an admin explicitly asks for it.
+
+    Does nothing while the list is empty (no host restriction is active). Scheme, port and
+    private-address checks still run afterwards, so only the host-list rule is relaxed.
+    """
+
+    from urllib.parse import urlsplit
+
+    if admin.role not in {"super_admin", "hub_admin"}:
+        raise HubError("PERMISSION_DENIED", "Only a hub administrator can approve a new host", 403)
+    try:
+        raw = urlsplit(url).hostname or ""
+    except ValueError:
+        return
+    host = _host(raw, "The app address")
+    hosts = settings.csv(settings.egress_allowed_hosts)
+    if not hosts or host in hosts:
+        return
+    update(db, admin, {"egress_allowed_hosts": [*hosts, host]}, settings)
+
+
 def update(db: Session, admin: AdminUser, payload, settings: Settings) -> list[str]:
     """Save the given settings; null resets one to its environment value. Returns what changed."""
 

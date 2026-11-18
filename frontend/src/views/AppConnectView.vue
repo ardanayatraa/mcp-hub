@@ -93,14 +93,25 @@ async function runChecks() {
   }
 }
 
+// Set when the Hub refuses the app's address because it is not on the approved host list.
+const hostBlocked = ref(false);
+const approveHost = ref(false);
+
+async function approveAndSave() {
+  approveHost.value = true;
+  await save();
+}
+
 async function save() {
   error.value = "";
+  hostBlocked.value = false;
   busy.value = true;
   try {
     if (!app.value) {
       // The Hub makes the bearer token unless the app already has one, so there is nothing to generate by hand.
       const secret = form.value.secret || randomToken();
-      const created = await hub.createApp({ ...form.value, secret, delegation_secret: form.value.delegation_secret || "" });
+      const created = await hub.createApp({ ...form.value, secret, delegation_secret: form.value.delegation_secret || "",
+                                           approve_host: approveHost.value });
       app.value = created;
       appToken.value = secret;
       delegation.value = created.delegation_secret || form.value.delegation_secret;
@@ -128,7 +139,9 @@ async function save() {
     await runChecks();
   } catch (exc) {
     error.value = errorMessage(exc);
+    hostBlocked.value = !app.value && /outside approved egress/i.test(error.value);
   } finally {
+    approveHost.value = false;
     busy.value = false;
   }
 }
@@ -249,7 +262,11 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
     </li>
   </ol>
 
-  <p v-if="error" role="alert" class="mb-4 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}</p>
+  <p v-if="error" role="alert" class="mb-4 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{{ error }}
+    <button v-if="hostBlocked" type="button" class="btn-ghost btn-sm ml-2 underline" :disabled="busy" @click="approveAndSave">
+      Approve this host and continue
+    </button>
+  </p>
 
   <form v-if="!done && step === 1" class="card card-pad max-w-3xl space-y-5" @submit.prevent="save">
     <div class="grid gap-4 sm:grid-cols-2">

@@ -116,6 +116,10 @@ def create_connector(db: Session, admin: AdminUser, payload: dict, settings: Set
     if not KEY_RE.match(app_key):
         raise HubError("VALIDATION_FAILED", "App key must be lowercase letters, digits and underscores", 422)
     base_url = data["base_url"].rstrip("/")
+    if payload.get("approve_host") is True:
+        from app.services import runtime_settings
+
+        runtime_settings.approve_host(db, admin, base_url, settings)
     validate_destination(base_url + "/", settings)
     join_url(base_url, data["manifest_path"])
     join_url(base_url, data["health_path"])
