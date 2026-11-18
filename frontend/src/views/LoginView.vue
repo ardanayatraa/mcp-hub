@@ -102,6 +102,7 @@ async function submit() {
         </template>
         <button class="btn-primary w-full" type="submit" :disabled="busy">{{ mfaToken ? "Verify" : "Sign in" }}</button>
         <button v-if="mfaToken" class="btn-ghost w-full" type="button" @click="mfaToken = ''; code = ''; error = ''">Start again</button>
+        <p v-if="!mfaToken" class="text-center text-xs text-subtle">Forgot your password? Ask the root administrator for a reset link.</p>
       </form>
     </div>
   </main>

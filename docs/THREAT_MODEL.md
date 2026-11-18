@@ -37,4 +37,4 @@
 - A stolen client key can call that app's public-aggregate routes and the built-in tools until revoked or expired. User-scoped data still needs a fresh delegation token.
 - A `super_admin` can publish any manifest-approved route and export encrypted configuration. This is an accepted administrator power, bounded by field policy and egress checks, and audited.
 - Regex detectors cannot recognize every kind of personal data in free text. Apps must keep free-text fields out of the allowlist or mark them hidden.
-- Rate limits are per process. A multi-worker deployment needs shared counters first.
+- Rate limits use shared, authenticated Redis in production (the Hub refuses to start without it), so every worker counts together. Development uses per-process counters.

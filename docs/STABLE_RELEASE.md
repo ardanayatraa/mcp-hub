@@ -54,7 +54,12 @@ Hub regression checks, dependency reviews, source-to-Hub integration, and
 installation/upgrade/recovery checks. No production data writes are used for
 release verification.
 
-## Work in progress (29 October 2026)
+## Status
+
+Released. The Laravel package shipped 1.0.0 on 3 November 2026 (now 1.0.2) and the Hub is at 1.1.0,
+deployed to production. The notes below are the verification record kept from before the release.
+
+## Verification record (29 October 2026)
 
 - Both repositories use feature/stable-1.0 branches. No stable tag, production
   deployment or aaPanel access has been performed.

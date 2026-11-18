@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import ChangePasswordDialog from "@/components/ChangePasswordDialog.vue";
 import ThemeSwitch from "@/components/ThemeSwitch.vue";
 import ToastHost from "@/components/ToastHost.vue";
 import { useSession } from "@/stores/session";
@@ -12,6 +13,7 @@ const router = useRouter();
 const open = ref(false);
 const collapsed = ref(readCollapsed());
 const menuOpen = ref(false);
+const changingPassword = ref(false);
 const menu = ref<HTMLElement | null>(null);
 const content = ref<HTMLElement | null>(null);
 
@@ -158,6 +160,10 @@ async function signOut() {
                 <ThemeSwitch />
               </div>
               <div class="my-1 h-px bg-line" />
+              <button type="button" role="menuitem" class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                      @click="menuOpen = false; changingPassword = true">
+                <AppIcon name="key" :size="16" /> Change password
+              </button>
               <button type="button" role="menuitem" class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted" @click="signOut">
                 <AppIcon name="logout" :size="16" /> Sign out
               </button>
@@ -173,5 +179,6 @@ async function signOut() {
     </div>
   </div>
   <RouterView v-else />
+  <ChangePasswordDialog v-if="changingPassword" @close="changingPassword = false" />
   <ToastHost />
 </template>

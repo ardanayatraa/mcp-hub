@@ -77,6 +77,8 @@ class BodyLimitMiddleware:
 
 # FastAPI's API explorer, served in development only; its page loads scripts from a CDN.
 DOCS_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc"}
+# Endpoints called with a client key or a pairing code: they tell the caller the Hub's version.
+CLIENT_PATHS = ("/mcp", "/chat/", "/gateway/", "/api/connect/")
 # Probes call these by the container's own address, which is not a public host name.
 PROBE_PATHS = {"/health", "/ready"}
 
@@ -128,6 +130,10 @@ class SecurityHeaderMiddleware(BaseHTTPMiddleware):
         # The backend answers JSON and event streams only; nothing it sends may run, load or be framed.
         if request.url.path not in DOCS_PATHS:
             response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+        # Apps' servers learn which Hub release answers them (the Laravel package's doctor checks it).
+        # Public probes and the admin console do not advertise it.
+        if request.url.path.startswith(CLIENT_PATHS) and response.status_code != 401:
+            response.headers["X-Hub-Version"] = __version__
         if get_settings().cookie_secure:  # served over HTTPS
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response

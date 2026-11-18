@@ -8,6 +8,7 @@ const router = createRouter({
   routes: [
     { path: "/login", component: () => import("@/views/LoginView.vue"), meta: { public: true } },
     { path: "/activate", component: () => import("@/views/ActivateView.vue"), meta: { public: true } },
+    { path: "/reset-password", component: () => import("@/views/ResetPasswordView.vue"), meta: { public: true } },
     { path: "/", component: () => import("@/views/OverviewView.vue") },
     { path: "/monitoring", component: () => import("@/views/MonitoringView.vue") },
     { path: "/apps", component: () => import("@/views/AppsView.vue") },

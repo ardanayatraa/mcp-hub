@@ -732,6 +732,9 @@ export const hub = {
   users: () => api<AdminUserRow[]>("/users"),
   createUser: (body: Record<string, unknown>) => post<AdminInvitation>("/users", body),
   updateUser: (id: string, body: Record<string, unknown>) => patch<AdminUserRow>(`/users/${id}`, body),
+  passwordResetLink: (id: string) => post<{ reset_url: string; expires_at: string }>(`/users/${id}/password-reset`),
+  changePassword: (current_password: string, new_password: string) => post<{ changed: boolean }>("/auth/password", { current_password, new_password }),
+  completePasswordReset: (token: string, password: string) => post<{ reset: boolean }>("/auth/password-reset", { token, password }),
   resendInvite: (id: string, invite_expiry: string) =>
     post<{ activation_url: string; activation_expires_at: string | null }>(`/users/${id}/resend-invite`, { invite_expiry }),
 

@@ -1,6 +1,6 @@
 [project]
 name = "mcp-hub"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP Hub: connect business apps to AI clients and an AI chat, with reviewed, permission-checked tools"
 requires-python = ">=3.12"
 dependencies = [

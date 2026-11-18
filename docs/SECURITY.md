@@ -99,7 +99,7 @@ Memory is off until an admin turns it on for an app. When it is on:
   skill) explicitly requests a write. A tool result or earlier assistant message cannot
   introduce that authorization; a model call to a withheld tool is rejected.
 - Per-user limits: `CHAT_RATE_LIMIT` per minute and the app's daily message limit, keyed by the
-  signed user (or the client key without one). Counters are per process.
+  signed user (or the client key without one). Production counts in shared Redis across workers.
 - The model provider receives an opaque per-user hash (`metadata.user_id`) for abuse detection,
   never a name or email. Claude Opus and Sonnet requests opt in to server-side fallback
   (`fallbacks: "default"`): a declined request is retried on Anthropic's fallback model.

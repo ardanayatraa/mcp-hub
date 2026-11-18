@@ -32,6 +32,29 @@ const oneTimeExpiry = ref<string | null>(null);
 const userForm = ref({ open: false, role: "hub_admin", app_ids: [] as string[], invite_expiry: "1_day" });
 const editingUser = ref<AdminUserRow | null>(null);
 const renewingUser = ref<AdminUserRow | null>(null);
+// A one-use link root hands to an administrator who forgot their password.
+const resetLink = ref<{ email: string; url: string; expires: string } | null>(null);
+
+async function createResetLink(user: AdminUserRow) {
+  busy.value = true;
+  try {
+    const result = await hub.passwordResetLink(user.id);
+    resetLink.value = { email: user.email ?? "", url: result.reset_url, expires: result.expires_at };
+  } catch (exc) {
+    toast.error(errorMessage(exc));
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function copyResetLink() {
+  try {
+    await navigator.clipboard.writeText(resetLink.value?.url ?? "");
+    toast.ok("Reset link copied");
+  } catch {
+    toast.error("Copy failed. Select and copy the link below.");
+  }
+}
 const renewalExpiry = ref("1_day");
 
 async function load() {
@@ -164,7 +187,7 @@ const expiryLabel = (iso: string | null) => iso ? `Expires ${new Date(iso).toLoc
             <td class="text-xs text-subtle">{{ ["super_admin", "hub_admin"].includes(user.role) ? "All apps" : user.app_ids.map(appName).join(", ") || "None assigned" }}</td>
             <td><span :class="user.mfa_enabled ? 'badge-ok' : 'badge-neutral'">{{ user.pending_activation ? "Activation code" : user.auth_method === "password" ? "Password" : user.mfa_enabled ? "Authenticator" : "Off" }}</span></td>
             <td><span :class="user.is_active && !user.pending_activation ? 'badge-ok' : 'badge-neutral'">{{ !user.is_active ? "Disabled" : user.pending_activation ? "Pending" : "Active" }}</span><p v-if="user.pending_activation && user.is_active" class="mt-1 text-xs text-subtle">{{ expiryLabel(user.activation_expires_at) }}</p></td>
-            <td class="text-right whitespace-nowrap"><button v-if="session.isRoot && user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="renewingUser = user">New link</button><button v-if="session.isRoot && !user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
+            <td class="text-right whitespace-nowrap"><button v-if="session.isRoot && user.pending_activation && user.is_active" class="btn-ghost btn-sm" type="button" :disabled="busy || !mailerReady" @click="renewingUser = user">New link</button><button v-if="session.isRoot && !user.is_root && user.is_active && !user.pending_activation" class="btn-ghost btn-sm" type="button" :disabled="busy" @click="createResetLink(user)">Reset password</button><button v-if="session.isRoot && !user.is_root" class="btn-ghost btn-sm" type="button" @click="editingUser = { ...user, app_ids: [...user.app_ids] }">Edit</button></td>
           </tr>
         </tbody>
       </table>
@@ -207,6 +230,18 @@ const expiryLabel = (iso: string | null) => iso ? `Expires ${new Date(iso).toLoc
     <template #footer>
       <button class="btn-secondary" type="button" @click="userForm.open = false; editingUser = null">Cancel</button>
       <button class="btn-primary" type="submit" form="user-form" :disabled="busy">Save</button>
+    </template>
+  </ModalDialog>
+
+  <ModalDialog v-if="resetLink" title="Password reset link" @close="resetLink = null">
+    <div class="space-y-3 text-sm">
+      <p class="text-subtle">Send this link to <span class="font-medium text-ink">{{ resetLink.email }}</span>. It works once, until
+        {{ new Date(resetLink.expires).toLocaleString() }}, and signs them out everywhere. Earlier reset links for this account stop working.</p>
+      <input class="input w-full font-mono text-xs" :value="resetLink.url" readonly aria-label="Reset link" @focus="($event.target as HTMLInputElement).select()" />
+    </div>
+    <template #footer>
+      <button class="btn-secondary" type="button" @click="resetLink = null">Done</button>
+      <button class="btn-primary" type="button" @click="copyResetLink">Copy link</button>
     </template>
   </ModalDialog>
 
