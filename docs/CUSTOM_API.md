@@ -54,7 +54,10 @@ Editing the list later (same `PUT`) updates the tools. Nothing is redeployed.
 
 ## The editor, headers and the test request
 
-The **Endpoints** tab has a visual editor (Visual / JSON switch). Per endpoint you set the path, where the
+The **Endpoints** tab opens in **Simple** mode: one card per endpoint. Type a name and the address, click
+**Send**, and the fields found in the answer appear as chips to tick (sensitive-looking ones are locked). Parameters,
+headers and where the records sit are under *More options*. **Advanced** groups several endpoints under one resource
+with shared fields, and **JSON** edits the saved list directly. Per endpoint you set the path, where the
 records sit, parameters (type, required, a test value) and fixed headers. **Send** calls the API as this
 connection and shows the status, the time, the records it found and the fields with their types; one click
 fills in the result path and the fields. Sensitive-looking fields are listed but never offered to AI, and

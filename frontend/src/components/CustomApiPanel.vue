@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 
 import CustomApiEditor from "@/components/CustomApiEditor.vue";
+import CustomApiSimple from "@/components/CustomApiSimple.vue";
 import { hub, type AppDetail } from "@/services/hub";
 import { useToast } from "@/stores/toast";
 import { errorMessage } from "@/utils/format";
@@ -26,30 +27,37 @@ const EXAMPLE = {
   },
 };
 
-const mode = ref<"visual" | "json">("visual");
+type Mode = "simple" | "visual" | "json";
 const model = reactive<Model>(fromSpec(props.app.custom_spec ?? null));
+// One card per endpoint, unless a saved resource groups several endpoints.
+const mode = ref<Mode>(model.resources.every((item) => item.endpoints.length === 1) ? "simple" : "visual");
 const text = ref("");
 const error = ref("");
 const saving = ref(false);
 
+// What the editor was last filled from. The app page refreshes itself in the background, and a refresh that
+// brings the same saved list must not wipe what is being typed.
+let loadedJson = "";
 function load() {
+  loadedJson = JSON.stringify(props.app.custom_spec ?? null);
   Object.assign(model, fromSpec(props.app.custom_spec ?? null));
-  if (!model.resources.length) model.resources.push(emptyResource());
   text.value = JSON.stringify(props.app.custom_spec ?? EXAMPLE, null, 2);
   error.value = "";
 }
 load();
-watch(() => props.app.custom_spec, load);
+watch(() => props.app.custom_spec, () => {
+  if (JSON.stringify(props.app.custom_spec ?? null) !== loadedJson) load();
+});
 
 const saved = computed(() => !!props.app.custom_spec?.resources);
-const issues = computed(() => (mode.value === "visual" ? problems(model) : []));
+const issues = computed(() => (mode.value === "json" ? [] : problems(model)));
 
-function switchTo(next: "visual" | "json") {
+function switchTo(next: Mode) {
   error.value = "";
   if (next === mode.value) return;
   if (next === "json") {
     text.value = JSON.stringify(toSpec(model), null, 2);
-  } else {
+  } else if (mode.value === "json") {
     try {
       Object.assign(model, fromSpec(JSON.parse(text.value)));
     } catch {
@@ -63,7 +71,7 @@ function switchTo(next: "visual" | "json") {
 async function save() {
   error.value = "";
   let body: unknown;
-  if (mode.value === "visual") {
+  if (mode.value !== "json") {
     if (issues.value.length) { error.value = issues.value[0]; return; }
     body = toSpec(model);
   } else {
@@ -99,12 +107,14 @@ async function save() {
           </p>
         </div>
         <div class="inline-flex rounded-lg border border-line p-0.5 text-sm" role="tablist" aria-label="Editor mode">
-          <button type="button" role="tab" :aria-selected="mode === 'visual'" :class="mode === 'visual' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'" @click="switchTo('visual')">Visual</button>
+          <button type="button" role="tab" :aria-selected="mode === 'simple'" :class="mode === 'simple' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'" @click="switchTo('simple')">Simple</button>
+          <button type="button" role="tab" :aria-selected="mode === 'visual'" :class="mode === 'visual' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'" @click="switchTo('visual')">Advanced</button>
           <button type="button" role="tab" :aria-selected="mode === 'json'" :class="mode === 'json' ? 'btn-primary btn-sm' : 'btn-ghost btn-sm'" @click="switchTo('json')">JSON</button>
         </div>
       </div>
 
-      <CustomApiEditor v-if="mode === 'visual'" :model="model" :connector-id="app.id" :editable="editable" />
+      <CustomApiSimple v-if="mode === 'simple'" :model="model" :connector-id="app.id" :editable="editable" @advanced="switchTo('visual')" />
+      <CustomApiEditor v-else-if="mode === 'visual'" :model="model" :connector-id="app.id" :editable="editable" />
       <textarea v-else v-model="text" class="input min-h-[26rem] font-mono text-xs leading-relaxed" spellcheck="false"
                 :disabled="!editable || saving" aria-label="Endpoint list as JSON" />
 
@@ -117,7 +127,7 @@ async function save() {
         <span v-else />
         <div class="flex items-center gap-3">
           <span v-if="saved" class="text-xs text-ok">Saved</span>
-          <button class="btn-primary" type="submit" :disabled="saving || (mode === 'visual' && issues.length > 0)">
+          <button class="btn-primary" type="submit" :disabled="saving || issues.length > 0">
             <span v-if="saving" class="spinner" /> {{ saving ? "Saving…" : "Save endpoints" }}</button>
         </div>
       </div>
