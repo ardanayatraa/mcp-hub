@@ -85,6 +85,9 @@ class FakeRuntime:
         self.backups = []
         self.built = False
         self.probes = [True]
+        self.backend_schema = "d3e5a7c9f204"
+        self.migrations = []
+        self.fail_migration = False
 
     def inventory(self):
         return self.containers.copy()
@@ -99,7 +102,13 @@ class FakeRuntime:
         return self.schema_value
 
     def run(self, command):
-        return b"d3e5a7c9f204\n"
+        return (self.backend_schema+"\n").encode()
+
+    def migrate(self, file, command, revision="head", downgrade=False):
+        self.migrations.append(("downgrade" if downgrade else "upgrade", revision, len(self.backups), len(self.activations)))
+        if self.fail_migration:
+            raise docker.DeploymentError("DOCKER_OPERATION_FAILED_CHECK_SERVER")
+        self.schema_value = revision if downgrade else "d3e5a7c9f204"
 
     def preflight(self):
         pass
@@ -164,13 +173,83 @@ class ActivationTest(unittest.TestCase):
     def deploy(self):
         return self.manager.deploy("a"*40, "b"*64, "c"*64)
 
-    def test_schema_change_cannot_build_backup_or_touch_live_containers(self):
-        self.runtime.schema_value = "a2d4f6c8e010"
-        with self.assertRaisesRegex(docker.DeploymentError, "SCHEMA_CHANGE"):
-            self.deploy()
+    def migrations(self, *pairs):
+        versions = self.release/"backend/app/persistence/migrations/versions"
+        versions.mkdir(parents=True, exist_ok=True)
+        for revision, down in pairs:
+            (versions/(revision+".py")).write_text(
+                f'raise RuntimeError("never executed")\nrevision: str = "{revision}"\ndown_revision = {down!r}\n')
+
+    def at_older_schema(self):
+        self.migrations(("a1c3e5f70912", None), ("d3e5a7c9f204", "a1c3e5f70912"))
+        self.runtime.schema_value = self.runtime.backend_schema = "a1c3e5f70912"
+
+    def test_unknown_or_backward_schema_cannot_build_backup_or_touch_live_containers(self):
+        self.migrations(("a1c3e5f70912", None), ("d3e5a7c9f204", "a1c3e5f70912"))
+        for live in ("a2d4f6c8e010", "ffffffffffff"):
+            self.runtime.schema_value = self.runtime.backend_schema = live
+            with self.subTest(live=live), self.assertRaisesRegex(docker.DeploymentError, "NOT_A_FORWARD_UPGRADE"):
+                self.deploy()
         self.assertFalse(self.runtime.built)
         self.assertEqual([], self.runtime.backups)
         self.assertEqual([], self.runtime.activations)
+        self.assertEqual([], self.runtime.migrations)
+
+    def test_merge_revision_needs_an_operator(self):
+        self.migrations(("a1c3e5f70912", None), ("b2b2b2b2b2b2", None),
+                        ("d3e5a7c9f204", ("a1c3e5f70912", "b2b2b2b2b2b2")))
+        self.runtime.schema_value = self.runtime.backend_schema = "a1c3e5f70912"
+        with self.assertRaisesRegex(docker.DeploymentError, "NOT_A_FORWARD_UPGRADE"):
+            self.deploy()
+        self.assertEqual([], self.runtime.migrations)
+
+    def test_forward_upgrade_migrates_after_the_backup_and_before_activation(self):
+        self.at_older_schema()
+        result = self.deploy()
+        self.assertEqual("deployed", result["status"])
+        self.assertEqual(["d3e5a7c9f204"], result["migrated"])
+        # The upgrade ran with one verified backup taken and no container recreated yet.
+        self.assertEqual([("upgrade", "head", 1, 0)], self.runtime.migrations)
+        self.assertEqual(1, len(self.runtime.activations))
+
+    def test_failed_migration_leaves_the_live_release_untouched(self):
+        self.at_older_schema()
+        self.runtime.fail_migration = True
+        with self.assertRaisesRegex(docker.DeploymentError, "MIGRATION_FAILED_NO_LIVE_CHANGES_MADE"):
+            self.deploy()
+        self.assertEqual([], self.runtime.activations)
+        self.assertEqual(1, len(self.runtime.backups))
+
+    def test_failed_health_after_migration_downgrades_then_restores_previous_images(self):
+        self.at_older_schema()
+        self.runtime.probes = [False, True]
+        with self.assertRaisesRegex(docker.DeploymentError, "PREVIOUS_IMAGES_RESTORED"):
+            self.deploy()
+        self.assertEqual([("upgrade", "head", 1, 0), ("downgrade", "a1c3e5f70912", 1, 1)], self.runtime.migrations)
+        self.assertEqual("a1c3e5f70912", self.runtime.schema_value)
+        previous = json.loads(self.runtime.activations[1].read_text())
+        self.assertEqual(IMAGES["backend"], previous["services"]["backend"]["image"])
+
+    def test_live_backend_on_another_schema_than_the_database_needs_an_operator(self):
+        self.at_older_schema()
+        self.runtime.backend_schema = "d3e5a7c9f204"
+        with self.assertRaisesRegex(docker.DeploymentError, "BASELINE_SCHEMA_DIFFERS"):
+            self.deploy()
+        self.assertFalse(self.runtime.built)
+
+    def test_migration_command_keeps_the_server_secret_loading(self):
+        runtime = docker.DockerRuntime({"project": "mcp-hub-local", "base": "/tmp"})
+        with patch.object(runtime, "run") as run:
+            runtime.migrate(Path("/srv/candidate.json"), docker.start_command(COMMAND))
+            runtime.migrate(Path("/srv/candidate.json"), docker.start_command(COMMAND), "a1c3e5f70912", downgrade=True)
+        upgrade, downgrade = (call.args[0] for call in run.call_args_list)
+        self.assertEqual(["docker", "compose", "--project-name", "mcp-hub-local", "--file", str(Path("/srv/candidate.json")),
+                          "run", "--rm", "--no-deps", "-T", "backend", "sh", "-c"], upgrade[:13])
+        self.assertTrue(upgrade[13].startswith(". /secrets/env && export DATABASE_URL=") and upgrade[13].endswith("alembic upgrade head"))
+        self.assertTrue(downgrade[13].endswith("alembic downgrade a1c3e5f70912"))
+        for bad in ("head; rm -rf /", "../x"):
+            with self.assertRaises(docker.DeploymentError):
+                runtime.migrate(Path("/srv/c.json"), docker.start_command(COMMAND), bad)
 
     def test_failed_health_restores_previous_immutable_images(self):
         self.runtime.probes = [False, True]

@@ -2,7 +2,10 @@
 """Restricted Docker release controller, installed outside the application checkout.
 
 The existing Compose document, environment, database and volumes stay server-owned.
-Database migrations are an operator task; automated releases require an unchanged schema.
+A release whose schema is a forward upgrade of the live one is migrated after an approved
+deployment starts: a verified backup first, then `alembic upgrade head` with the new image, and
+`alembic downgrade` back if the release then fails its health check. Downgrades, merges and
+unknown revisions still need an operator.
 """
 
 import ast
@@ -78,6 +81,41 @@ def target_schema(release):
             if isinstance(value, str) and re.fullmatch(r"[a-f0-9]{12}", value):
                 return value
     raise DeploymentError("INVALID_RELEASE_SCHEMA")
+
+
+def _migration_graph(release):
+    """revision -> down_revision for every migration the release ships, read without executing it."""
+    graph = {}
+    for file in sorted((release/"backend/app/persistence/migrations/versions").glob("*.py")):
+        values = {}
+        for node in ast.parse(file.read_text()).body:
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets = [node.target]
+            else:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id in ("revision", "down_revision"):
+                    values[target.id] = ast.literal_eval(node.value)
+        if isinstance(values.get("revision"), str):
+            graph[values["revision"]] = values.get("down_revision")
+    return graph
+
+
+def upgrade_path(release, current, target):
+    """The revisions a forward upgrade from `current` to `target` applies, oldest first.
+
+    Only a straight chain qualifies: a downgrade, a merge or an unknown revision needs an operator.
+    """
+    graph = _migration_graph(release)
+    path, revision = [], target
+    while revision != current:
+        if not isinstance(revision, str) or revision not in graph or len(path) >= 100:
+            raise DeploymentError("SCHEMA_CHANGE_IS_NOT_A_FORWARD_UPGRADE_NO_LIVE_CHANGES_MADE")
+        path.append(revision)
+        revision = graph[revision]
+    return list(reversed(path))
 
 
 def start_command(command):
@@ -206,6 +244,16 @@ class DockerRuntime:
                                     stdin=incoming, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=60)
         if result.returncode:
             raise DeploymentError("DATABASE_BACKUP_VERIFICATION_FAILED")
+
+    def migrate(self, file, command, revision="head", downgrade=False):
+        """Run Alembic in a one-off container of the release's backend image, with the server's own
+        secret loading (the start command's prefix builds DATABASE_URL). Output never leaves the server."""
+        prefix = command[2].split("exec uvicorn")[0]
+        if not prefix.lstrip().startswith(". /secrets/env &&") or not re.fullmatch(r"head|[a-f0-9]{12}", revision):
+            raise DeploymentError("REVIEW_SERVER_START_COMMAND")
+        action = f"alembic downgrade {revision}" if downgrade else f"alembic upgrade {revision}"
+        self.run(["docker", "compose", "--project-name", self.config["project"], "--file", str(file), "run", "--rm",
+                  "--no-deps", "-T", "backend", "sh", "-c", prefix + action], timeout=600)
 
     def preflight(self):
         # Fail before import/recreation when the shared host has little headroom.
@@ -357,11 +405,12 @@ class DockerManager(Manager):
             previous, containers = self.runtime.snapshot()
             release = self.unpack(commit, checksum)
             schema = target_schema(release)
-            if self.runtime.schema() != schema:
-                raise DeploymentError("SCHEMA_CHANGE_REQUIRES_OPERATOR_REVIEW_NO_LIVE_CHANGES_MADE")
+            current = self.runtime.schema()
+            # Decided before anything is built: only a straight forward upgrade migrates automatically.
+            migrations = upgrade_path(release, current, schema) if current != schema else []
             live_schema = self.runtime.run(["docker", "exec", self.config["backend"], "python", "-c",
                                             "from app.persistence import SCHEMA_REVISION; print(SCHEMA_REVISION)"]).decode().strip()
-            if live_schema != schema:
+            if live_schema != current:
                 raise DeploymentError("BASELINE_SCHEMA_DIFFERS_OPERATOR_CUTOVER_REQUIRED")
             if not self.runtime.public_ready():
                 raise DeploymentError('PUBLIC_SITE_UNHEALTHY_NO_LIVE_CHANGES_MADE')
@@ -376,8 +425,19 @@ class DockerManager(Manager):
             atomic_json(previous_file, compose_literals(previous))
             atomic_json(candidate_file, compose_literals(candidate))
             self.assert_preserved(protected, before)
-            if self.runtime.schema() != schema:
+            if self.runtime.schema() != current:
                 raise DeploymentError("SCHEMA_CHANGED_DURING_BUILD")
+            command = candidate["services"]["backend"]["command"]
+            if migrations:
+                # PostgreSQL applies the whole upgrade in one transaction, so a failure leaves `current`.
+                try:
+                    self.runtime.migrate(candidate_file, command)
+                except Exception:
+                    if self.runtime.schema() == current:
+                        raise DeploymentError("MIGRATION_FAILED_NO_LIVE_CHANGES_MADE") from None
+                    raise DeploymentError("MIGRATION_FAILED_OPERATOR_RECOVERY_REQUIRED_BACKUP_KEPT") from None
+                if self.runtime.schema() != schema:
+                    raise DeploymentError("MIGRATION_DID_NOT_REACH_RELEASE_SCHEMA_BACKUP_KEPT")
             try:
                 self.runtime.activate(candidate_file)
                 self.runtime.restore_networks(containers)
@@ -388,6 +448,14 @@ class DockerManager(Manager):
                     if runtime_boundary(containers[key]) != runtime_boundary(self.runtime.inspect(self.config[key])):
                         raise DeploymentError("LIVE_RUNTIME_BOUNDARY_CHANGED")
             except Exception:
+                if migrations:
+                    # The previous images expect the previous schema: undo the upgrade first.
+                    try:
+                        self.runtime.migrate(candidate_file, command, current, downgrade=True)
+                    except Exception:
+                        pass
+                    if self.runtime.schema() != current:
+                        raise DeploymentError("ROLLBACK_DOWNGRADE_FAILED_RESTORE_BACKUP_OPERATOR_REQUIRED") from None
                 self.runtime.activate(previous_file)
                 self.runtime.restore_networks(containers)
                 if not self.runtime.ready():
@@ -398,7 +466,7 @@ class DockerManager(Manager):
             atomic_json(state, {"current": commit, "schema": schema,
                         "compose": str(candidate_file), "backup": str(backup), "images": images})
             return {"status": "deployed", "commit": commit, "protected_files_unchanged": True,
-                    "cleanup": self.tidy({commit, replaced})}
+                    "migrated": migrations, "cleanup": self.tidy({commit, replaced})}
 
     def tidy(self, keep):
         """After a verified release, drop what the next one does not need. Uploaded archives are not used for
