@@ -21,6 +21,7 @@ from app.api.v1 import (
     auth,
     connectors,
     enrollments,
+    hub_settings,
     modules,
     openapi,
     profiles,
@@ -103,6 +104,20 @@ class HostCheckMiddleware:
         return await self.app(scope, receive, send)
 
 
+class RuntimeSettingsMiddleware:
+    """Pick up settings changed in the admin UI by another Hub process, at most every few seconds."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            from app.services import runtime_settings
+
+            runtime_settings.refresh(get_settings())
+        return await self.app(scope, receive, send)
+
+
 class SecurityHeaderMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -159,6 +174,8 @@ def create_app() -> FastAPI:
     if settings.secret_encryption_key:
         keyring(settings.secret_encryption_key)  # a malformed current or previous key stops the start, not a request
     assert_schema_current(init_engine(settings.database_url))
+    from app.services import runtime_settings
+    runtime_settings.refresh(settings, force=True)  # values saved in the admin UI win over the environment
     mcp = build_mcp_server(settings)
     mcp_app = mcp.streamable_http_app(
         json_response=True,
@@ -188,6 +205,7 @@ def create_app() -> FastAPI:
     app.add_middleware(HostCheckMiddleware, hosts=settings.host_list)
     app.add_middleware(SecurityHeaderMiddleware)
     app.add_middleware(BodyLimitMiddleware, max_bytes=max(settings.max_payload_bytes, 2 * 1024 * 1024))
+    app.add_middleware(RuntimeSettingsMiddleware)
 
     @app.exception_handler(HubError)
     async def _hub_error(_request: Request, exc: HubError):
@@ -236,7 +254,7 @@ def create_app() -> FastAPI:
             db.close()
         return {"status": "ready"}
 
-    for module in (auth, connectors, enrollments, modules, openapi, profiles, tools, skills, providers, access, activity, system, assistant):
+    for module in (auth, connectors, enrollments, modules, openapi, profiles, tools, skills, providers, access, activity, system, assistant, hub_settings):
         app.include_router(module.router, prefix="/api/admin/v1")
     # Called by apps' servers with a client key, like /mcp.
     app.include_router(chat.router)

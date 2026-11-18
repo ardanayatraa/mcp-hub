@@ -206,10 +206,10 @@ def test_complete_backup_restore_preserves_secrets_tests_and_runtime(published):
     admin = published["admin"]
     with open_session() as db:
         encrypted = db.scalar(select(ConnectorSecret)).secret_ciphertext
-    backup = api(admin, "POST", "/operations/export", expect=200).json()["data"]
+    sealed, backup = helpers.export_backup(admin)
     assert backup["tables"]["tool_test_runs"]
     assert "dev-your-app-key" not in json.dumps(backup)
-    restored = api(admin, "POST", "/operations/import", backup)
+    restored = api(admin, "POST", "/operations/import", sealed)
     assert restored.status_code == 200, restored.text
     with open_session() as db:
         assert db.scalar(select(ConnectorSecret)).secret_ciphertext == encrypted

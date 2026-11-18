@@ -162,7 +162,18 @@
   .code-line::before { @apply mr-4 inline-block w-6 select-none text-right text-subtle/60; content: counter(line); }
   .no-numbers .code-line::before { content: none; }
 
+  /* Monitoring board: requests flow along pipes like water; live parts pulse. Both stop for reduced motion. */
+  .monitor-flow { stroke-dasharray: 3 9; animation: monitor-flow var(--flow-speed, 1s) linear infinite; }
+  .monitor-pulse { transform-box: fill-box; transform-origin: center; animation: monitor-pulse 1.8s ease-out infinite; }
+
   /* Loading placeholders: shaped like the content they stand in for. */
   .skeleton { @apply block rounded-md bg-muted motion-safe:animate-pulse; }
   .spinner { @apply inline-block h-4 w-4 shrink-0 rounded-full border-2 border-current border-r-transparent motion-safe:animate-spin; }
+}
+
+/* One dash period (3 + 9) per loop, so the flow never jumps. */
+@keyframes monitor-flow { to { stroke-dashoffset: -12; } }
+@keyframes monitor-pulse { from { opacity: 0.6; transform: scale(1); } to { opacity: 0; transform: scale(2.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .monitor-flow, .monitor-pulse { animation: none; }
 }

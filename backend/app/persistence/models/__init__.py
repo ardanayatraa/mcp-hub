@@ -485,3 +485,18 @@ class ModelProvider(Base):
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class HubSetting(Base):
+    """A runtime setting changed in the admin UI. It overrides the environment value until reset.
+
+    Only settings that cannot lock administrators out or open private networks live here;
+    the rest stay in the environment. Secrets (the SMTP password) are stored encrypted.
+    """
+
+    __tablename__ = "hub_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

@@ -185,7 +185,7 @@ def test_memory_is_opt_in_private_per_user_and_encrypted(admin, monkeypatch):
         view = api(admin, "GET", root, expect=200).json()["data"]
         assert (view["users"], view["notes"], view["profile_entries"]) == (1, 5, 1)
         assert "Note number" not in json.dumps(view)  # administrators see counts, never content
-        backup = api(admin, "POST", "/operations/export", expect=200).json()["data"]
+        _sealed, backup = helpers.export_backup(admin)
         assert "user_memories" not in backup["tables"] and backup["tables"]["memory_settings"]
 
         result(call(client, token, "forget_memory", {"key": "language"}, alice))

@@ -1,7 +1,19 @@
-"""Metadata export and restore. Ciphertext is copied; plaintext secrets are not."""
+"""Metadata export and restore. Ciphertext is copied; plaintext secrets are not.
 
+Exports are sealed: the whole document is compressed and encrypted with the Hub's
+SECRET_ENCRYPTION_KEY, so a backup file reveals nothing without that key. Restore opens a
+sealed backup with the current key or any key in SECRET_ENCRYPTION_KEY_PREVIOUS. Unsealed
+backups from earlier releases are still accepted.
+"""
+
+import gzip
+import hashlib
+import hmac
+import json
+import zlib
 from datetime import datetime, timedelta
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +34,7 @@ from app.persistence.models import (
     ContractSnapshot,
     FieldPolicy,
     GatewayUsage,
+    HubSetting,
     McpAccessProfile,
     MemorySetting,
     MfaChallenge,
@@ -58,6 +71,7 @@ EXPORT_ORDER = [
     McpAccessProfile,
     ServiceIdentity,
     ConnectorEnrollment,
+    HubSetting,
 ]
 # Placeholder tables from earlier releases; their rows are ignored on restore.
 LEGACY_TABLES = {"mcp_server_profiles", "mcp_profile_tools", "skill_definitions"}
@@ -70,7 +84,7 @@ def _jsonable(value):
 
 
 def export_metadata(db: Session) -> dict:
-    document = {"format": "mcp-hub-metadata-v1", "tables": {}}
+    document = {"format": PLAIN_FORMAT, "tables": {}}
     for model in EXPORT_ORDER:
         rows = []
         for obj in db.scalars(select(model)):
@@ -79,10 +93,75 @@ def export_metadata(db: Session) -> dict:
     return document
 
 
+SEALED_FORMAT = "mcp-hub-backup-v2"
+PLAIN_FORMAT = "mcp-hub-metadata-v1"
+# A sealed backup never opens to more than this, so a crafted file cannot exhaust memory.
+MAX_OPENED_BYTES = 64 * 1024 * 1024
+
+
+def key_fingerprint(key: str) -> str:
+    """A short, one-way label for an encryption key, safe to show: it tells keys apart, never reveals one."""
+
+    digest = hmac.new(key.encode("utf-8"), b"mcp-hub backup key fingerprint", hashlib.sha256).hexdigest()[:16]
+    return "-".join(digest[index:index + 4] for index in range(0, 16, 4))
+
+
+def seal(document: dict, key: str, *, version: str, created_at: datetime) -> dict:
+    data = gzip.compress(json.dumps(document, separators=(",", ":"), ensure_ascii=False).encode("utf-8"), mtime=0)
+    return {"format": SEALED_FORMAT, "created_at": created_at.isoformat(), "hub_version": version,
+            "encryption": "fernet+gzip", "key_fingerprint": key_fingerprint(key),
+            "ciphertext": encrypt_bytes(key, data)}
+
+
+def encrypt_bytes(key: str, data: bytes) -> str:
+    from app.security.crypto import keyring
+
+    return keyring(key).encrypt(data).decode("ascii")
+
+
+def unseal(envelope: dict, key: str) -> dict:
+    """The document inside a sealed backup. Refuses another Hub's key, a changed file and oversized content."""
+
+    from app.security.crypto import keyring, previous_keys
+
+    allowed = {"format", "created_at", "hub_version", "encryption", "key_fingerprint", "ciphertext"}
+    ciphertext = envelope.get("ciphertext")
+    if set(envelope) - allowed or envelope.get("encryption") != "fernet+gzip" or not isinstance(ciphertext, str):
+        raise HubError("VALIDATION_FAILED", "Backup file is not a sealed MCP Hub backup", 422)
+    try:
+        data = keyring(key).decrypt(ciphertext.encode("ascii"))
+    except (InvalidToken, UnicodeEncodeError) as exc:
+        known = {key_fingerprint(item) for item in [key, *previous_keys()]}
+        made_with = envelope.get("key_fingerprint")
+        if isinstance(made_with, str) and made_with not in known:
+            raise HubError("BACKUP_KEY_MISMATCH", f"This backup was made with another encryption key ({made_with[:19]}). "
+                           "Set that key as SECRET_ENCRYPTION_KEY_PREVIOUS on this Hub, restart it and try again.", 422) from exc
+        raise HubError("BACKUP_DAMAGED", "This backup cannot be opened: the file was changed or damaged.", 422) from exc
+    try:
+        opener = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        raw = opener.decompress(data, MAX_OPENED_BYTES)
+        if opener.unconsumed_tail or not opener.eof:
+            raise HubError("VALIDATION_FAILED", "Backup content is too large", 422)
+        document = json.loads(raw.decode("utf-8"))
+    except (zlib.error, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HubError("BACKUP_DAMAGED", "This backup cannot be opened: the file was changed or damaged.", 422) from exc
+    if not isinstance(document, dict) or document.get("format") != PLAIN_FORMAT:
+        raise HubError("VALIDATION_FAILED", "Backup format is not recognized", 422)
+    return document
+
+
+def open_backup(file: dict, key: str) -> dict:
+    """A restorable document from a sealed backup, or from an unsealed one made by an earlier release."""
+
+    if not isinstance(file, dict):
+        raise HubError("VALIDATION_FAILED", "Backup format is not recognized", 422)
+    return unseal(file, key) if file.get("format") == SEALED_FORMAT else file
+
+
 def import_metadata(db: Session, document: dict) -> dict:
     from sqlalchemy.exc import IntegrityError
 
-    if document.get("format") != "mcp-hub-metadata-v1":
+    if document.get("format") != PLAIN_FORMAT:
         raise HubError("VALIDATION_FAILED", "Backup format is not recognized", 422)
     tables = document.get("tables") or {}
     if not isinstance(tables, dict) or set(tables) - {m.__tablename__ for m in EXPORT_ORDER} - LEGACY_TABLES:

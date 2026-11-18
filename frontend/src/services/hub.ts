@@ -513,12 +513,99 @@ export interface Overview {
   checklist: { app_connected: boolean; source_enabled: boolean; tool_published: boolean; key_created: boolean };
 }
 
+/** live: traffic in the last few minutes · on: ready · off: cannot be used · warn: health check failing. */
+export type MonitorState = "live" | "on" | "off" | "warn";
+export type GateKey = "key" | "privacy" | "permissions" | "limits";
+export interface MonitorCounts { requests: number; failed: number; last_seen_at: string | null }
+export interface MonitorClient extends MonitorCounts {
+  id: string;
+  kind: "key" | "unknown" | "preview";
+  name: string;
+  /** The connector id of the client's app. */
+  app: string | null;
+  app_name: string | null;
+  state: MonitorState;
+  reason: string | null;
+  blocked: number;
+  can_write: boolean;
+  profile: string | null;
+  last_used_at: string | null;
+}
+export interface MonitorApp extends MonitorCounts {
+  id: string;
+  name: string;
+  app_key: string;
+  environment: string;
+  state: MonitorState;
+  reason: string | null;
+  status: string;
+  health: { status: string; latency_ms: number | null; checked_at: string | null } | null;
+  tools: number;
+  sources: number;
+  chat: boolean;
+}
+export interface MonitorModel extends MonitorCounts { key: string; name: string; state: MonitorState; reason: string | null }
+export interface MonitorEvent {
+  id: string;
+  at: string;
+  kind: "tool" | "chat" | "model" | "skill";
+  label: string;
+  client: string;
+  app: string | null;
+  model: string | null;
+  destination: "app" | "model" | "hub";
+  /** null when it succeeded; a gate when a check refused it; app, model or hub when it failed there. */
+  stopped_at: GateKey | "app" | "model" | "hub" | null;
+  result: string;
+  error_code: string | null;
+  duration_ms: number | null;
+  trace_id: string;
+}
+export interface MonitoringBoard {
+  as_of: string;
+  window: string;
+  window_seconds: number;
+  live_seconds: number;
+  totals: { requests: number; passed: number; blocked: number; failed: number; per_minute: number };
+  gates: { key: GateKey; stopped: number; codes: { code: string; count: number }[] }[];
+  clients: MonitorClient[];
+  apps: MonitorApp[];
+  models: MonitorModel[];
+  hub: { answered: number };
+  events: MonitorEvent[];
+}
+
 export interface SystemInfo {
   version: string;
   environment: string;
   mcp_url: string;
+  /** Which encryption key opens this Hub's backups: a one-way label, never the key. Missing on older Hubs. */
+  backup_key_fingerprint?: string;
   limits: Record<string, number>;
   security: Record<string, boolean>;
+}
+
+type SettingSource = { source: "hub" | "environment"; updated_at: string | null };
+export interface HubLimit extends SettingSource { value: number; environment: number; min: number; max: number }
+/** Runtime settings the admin UI changes; "environment" means the .env value is in effect. */
+export interface HubSettings {
+  limits: Record<string, HubLimit>;
+  mfa_required: SettingSource & { value: boolean; environment: boolean };
+  egress_allowed_hosts: SettingSource & { value: string[]; environment: string[]; cidrs: string[] };
+  smtp: SettingSource & { host: string; port: number; username: string; from: string; tls_mode: string; password_set: boolean; ready: boolean };
+  environment_only: Record<string, unknown>;
+  production: boolean;
+}
+export interface SmtpDraft { host: string; port: number; username: string; password: string; from: string; tls_mode: string }
+
+/** A sealed backup: everything is encrypted with the Hub's key except these labels. */
+export interface SealedBackup {
+  format: "mcp-hub-backup-v2";
+  created_at: string;
+  hub_version: string;
+  encryption: string;
+  key_fingerprint: string;
+  ciphertext: string;
 }
 
 export interface ConnectorEnrollment {
@@ -559,6 +646,7 @@ const remove = <T>(path: string) => api<T>(path, { method: "DELETE" });
 
 export const hub = {
   overview: (period: string) => api<Overview>(`/dashboard?period=${period}`),
+  monitoring: (window: string) => api<MonitoringBoard>(`/monitoring?window=${encodeURIComponent(window)}`),
   system: () => api<SystemInfo>("/system"),
 
   apps: () => api<AppSummary[]>("/connectors"),
@@ -648,7 +736,10 @@ export const hub = {
     post<{ activation_url: string; activation_expires_at: string | null }>(`/users/${id}/resend-invite`, { invite_expiry }),
 
   activity: (query: URLSearchParams) => api<AuditRow[]>(`/executions?${query.toString()}`),
-  exportBackup: () => post<unknown>("/operations/export"),
+  hubSettings: () => api<HubSettings>("/hub-settings"),
+  updateHubSettings: (body: Record<string, unknown>) => patch<HubSettings>("/hub-settings", body),
+  testEmail: () => post<{ sent_to: string }>("/hub-settings/test-email"),
+  exportBackup: () => post<SealedBackup>("/operations/export"),
   importBackup: (document: unknown) => post<Record<string, number>>("/operations/import", document),
   purge: () => post<{ removed: Record<string, number> }>("/operations/purge"),
 };

@@ -163,10 +163,10 @@ def test_backup_preserves_profile_bindings_and_rejects_broken_references(admin, 
         app = connect_app(admin)
         row = profile(admin, app, enabled=True, modules=["projects"], tools=["run_report"])
         token = issue_key(admin, profile_id=row["id"])
-        backup = api(admin, "POST", "/operations/export", expect=200).json()["data"]
+        sealed, backup = helpers.export_backup(admin)
         assert backup["tables"]["mcp_access_profiles"][0]["id"] == row["id"]
         assert backup["tables"]["service_identities"][0]["profile_id"] == row["id"]
-        api(admin, "POST", "/operations/import", backup, expect=200)
+        api(admin, "POST", "/operations/import", sealed, expect=200)
         assert listed(admin["client"], token) == ["run_report"]
         broken = copy.deepcopy(backup)
         broken["tables"]["mcp_access_profiles"] = []
