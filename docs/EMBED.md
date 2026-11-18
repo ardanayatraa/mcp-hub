@@ -51,6 +51,22 @@ snippet → chat button   →     widget page (iframe, Hub origin)
 4. **Embed tab:** turn it on, list the websites that may show it (`https://www.example.com`, one per line),
    pick a title and colour, and copy the snippet.
 
+## Already signed in on the host page
+
+Show the chat only on pages where the user is signed in, and let the host page sign them in to the chat:
+its server creates a short-lived, read-only token for the signed-in user and puts it on the snippet.
+
+```html
+<script src="https://YOUR-HUB/api/embed/v1/embed.js" data-widget="w_..." data-token="USER-APP-TOKEN" async></script>
+```
+
+- The widget gets the token in the iframe's URL fragment, which no server ever receives. The Hub asks the
+  app (`me_path`) whose token it is before using it, so only a token the app itself accepts opens a chat,
+  and that chat can only read that user's data. `me_path` is required for this.
+- If the user signs out of the host and another signs in, the new token replaces the old chat session.
+- Without `data-token` the chat shows its own sign-in form, as before.
+- Keep the token short-lived (hours), read-only, and revoke it when the user signs out of the host.
+
 ## Chat Agent
 
 **Chat Agent** in the menu shows any embedded chat as its users see it:
