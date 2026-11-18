@@ -132,9 +132,8 @@ reviewed images, and verify readiness and existing functionality before reopenin
 traffic. Do not restart schema-incompatible old code or restore a database after
 new production writes. Establish the successful image/schema baseline first.
 
-Future schema changes stop the automated controller for the same operator
-procedure. Ordinary code/frontend releases on that baseline can then deploy
-automatically. This does not change a development-mode installation into a
+Once that baseline is established, later releases deploy automatically, including
+schema changes that are a straight forward upgrade (see below). This does not change a development-mode installation into a
 production-safe one: use the production requirements in `DEPLOY.md`, including
 authenticated shared Redis and the appropriate egress policy.
 
@@ -150,14 +149,25 @@ address leaves the site answering 502 until nginx reloads. In the server-owned
 
 ### Applying a release that carries a migration
 
-The controller stops such a release with `SCHEMA_CHANGE_REQUIRES_OPERATOR_REVIEW` and changes nothing.
-As root on the server: take a verified `pg_dump`, load the release images, run `alembic upgrade head`
-once with the new backend image and the backend command's own environment (it builds `DATABASE_URL`
-from `/secrets/env`), then run the controller's deploy for the same commit. The old backend keeps
-serving until the new one is healthy; the controller still verifies images, backs up again and rolls
-back the containers if the release is unhealthy. If that rollback is needed after a migration, downgrade
-the schema with the new image first (`alembic downgrade <previous revision>`), because older code refuses
-a newer schema.
+After the deployment is approved, a release whose migrations lead in a straight line from the live
+schema to the release's schema is migrated by the controller itself:
+
+1. Before anything changes: the release's migration files are read (never executed) and must form a
+   forward chain from the live revision; the running backend must report the live revision; the public
+   site must be healthy. A downgrade, a merge revision or an unknown revision still stops with
+   `SCHEMA_CHANGE_IS_NOT_A_FORWARD_UPGRADE_NO_LIVE_CHANGES_MADE` for an operator.
+2. The new images are loaded and verified, and a verified `pg_dump` is written to `shared/backups`.
+3. `alembic upgrade head` runs once in a one-off container of the new backend image with the backend
+   command's own secret loading (it builds `DATABASE_URL` from `/secrets/env`). PostgreSQL applies the
+   whole upgrade in one transaction; a failure leaves the database and the running release unchanged
+   (`MIGRATION_FAILED_NO_LIVE_CHANGES_MADE`).
+4. The new containers start. If the release is unhealthy, the controller runs `alembic downgrade <previous
+   revision>` with the new image, because older code refuses a newer schema, and then restores the previous
+   images. If that downgrade fails it stops with `ROLLBACK_DOWNGRADE_FAILED_RESTORE_BACKUP_OPERATOR_REQUIRED`
+   and the backup from step 2 is the way back.
+
+The deployment result lists the applied revisions under `migrated`. The controller is server-owned:
+copy a changed `docker_deploy.py` to `/usr/local/libexec/mcp-hub-docker-deploy/` by hand (keep a backup).
 
 ## Verification and retention
 
