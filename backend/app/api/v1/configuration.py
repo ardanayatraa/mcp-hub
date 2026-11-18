@@ -15,10 +15,10 @@ class ConnectorConfiguration(BaseModel):
     name: str = Field(default="", max_length=200)
     app_key: str = Field(min_length=1, max_length=64)
     environment: Environment = "dev"
-    connector_type: Literal["http_contract", "data_push", "source_managed"] = "http_contract"
+    connector_type: Literal["http_contract", "data_push", "source_managed", "custom_api"] = "http_contract"
     base_url: str = Field(min_length=1, max_length=2048)
-    auth_type: Literal["bearer"] = "bearer"
-    secret: str = Field(min_length=8, max_length=500)
+    auth_type: Literal["bearer", "none"] = "bearer"
+    secret: str = Field(default="", max_length=500)
     delegation_secret: str = Field(default="", max_length=500)
     manifest_path: str = Field(default="/api/ai/v1/capabilities", max_length=500)
     health_path: str = Field(default="/api/ai/v1/health", max_length=500)
@@ -28,7 +28,7 @@ class ConnectorConfiguration(BaseModel):
 
 class ConnectorChanges(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
-    connector_type: Literal["http_contract", "source_managed"] = "http_contract"
+    connector_type: Literal["http_contract", "source_managed", "custom_api"] = "http_contract"
     name: str = Field(default="", min_length=1, max_length=200)
     base_url: str = Field(default="", min_length=1, max_length=2048)
     manifest_path: str = Field(default="/api/ai/v1/capabilities", max_length=500)

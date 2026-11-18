@@ -103,6 +103,8 @@ class Connector(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     tls_verify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     timeout_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=5000)
+    # The admin-written endpoint list of a custom_api connection; null for every other type.
+    custom_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     circuit_open_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

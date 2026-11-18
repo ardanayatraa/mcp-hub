@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.connectors.contracts import developer_baseline
 from app.connectors.endpoint_policy import dataset_endpoint
+from app.connectors.kinds import is_managed
 from app.errors import HubError
 from app.persistence.models import Connector, FieldPolicy, ModuleDefinition, ModuleSetting
 from app.security.authorization import RANK, is_sensitive_path
@@ -37,8 +38,9 @@ def enableable_operations(module: ModuleDefinition) -> list[str]:
 def update_module_policy(db: Session, module: ModuleDefinition, setting: ModuleSetting, *, enabled: bool,
                          operations: list[str], field_updates: list[dict], report_endpoint=...) -> None:
     connector = db.scalar(select(Connector).where(Connector.app_id == module.app_id))
-    if connector and connector.connector_type == "source_managed":
-        raise HubError("POLICY_LOCKED", "Manage models, fields and operations in the connected application", 409)
+    if connector and is_managed(connector.connector_type):
+        raise HubError("POLICY_LOCKED", "Manage models, fields and operations in the connected application"
+                       if connector.connector_type == "source_managed" else "Change what this connection exposes by editing its endpoint list", 409)
     if not isinstance(operations, list) or not all(isinstance(op, str) for op in operations):
         raise HubError("VALIDATION_FAILED", "Operations must be a list of names", 422)
     operations = list(dict.fromkeys(operations))

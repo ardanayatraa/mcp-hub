@@ -28,6 +28,7 @@ from app.connectors.endpoint_policy import (
     pagination_for,
     reviewed_endpoint,
 )
+from app.connectors.kinds import MANAGED_TYPES, is_managed
 from app.connectors.registry import get_connector_bundle
 from app.connectors.ssrf_guard import validate_destination
 from app.errors import HubError
@@ -305,8 +306,10 @@ def _passing_test(db: Session, tool: ToolDefinition, fingerprint: str) -> ToolTe
 
 
 def require_manual_tools(connector: Connector) -> None:
-    if connector.connector_type == "source_managed":
-        raise HubError("POLICY_LOCKED", "Manage models, fields and operations in the connected application", 409)
+    if is_managed(connector.connector_type):
+        raise HubError("POLICY_LOCKED", "Manage models, fields and operations in the connected application"
+                       if connector.connector_type == "source_managed" else
+                       "Change this connection's tools by editing its endpoint list", 409)
 
 
 def sync_source_tools(db: Session, connector: Connector, application: Application,
@@ -400,7 +403,7 @@ def tool_view(db: Session, tool: ToolDefinition) -> dict:
         "connector_id": tool.connector_id, "app_id": application.id if application else None,
         "app_key": application.key if application else None, "app_name": application.name if application else None,
         "environment": application.environment if application else None,
-        "source_managed": connector.connector_type == "source_managed" if connector else False,
+        "source_managed": is_managed(connector.connector_type) if connector else False,
         "module_key": tool.module_key, "module_name": module.name if module else tool.module_key,
         "method": mapping.method if mapping else None, "path_template": mapping.path_template if mapping else None,
         "input_schema": tool.input_schema, "output_schema": tool.output_schema, "output_policy": tool.output_policy,
@@ -432,7 +435,7 @@ def list_tools(db: Session, admin: AdminUser, *, include_archived: bool = False)
     if not include_archived:
         query = query.where(ToolDefinition.status != "archived")
     # Retired source grants remain in audit/history, never in the current catalog.
-    query = query.where(or_(Connector.connector_type != "source_managed", ToolDefinition.status == "published"))
+    query = query.where(or_(Connector.connector_type.notin_(MANAGED_TYPES), ToolDefinition.status == "published"))
     return [tool_view(db, tool) for tool in db.scalars(query)]
 
 
@@ -957,7 +960,7 @@ async def generate_tools(db: Session, admin: AdminUser, payload: dict, settings:
     require_app_access(db, admin, application.id)
     if connector.status == "archived":
         raise HubError("CONFLICT", "Archived apps cannot get new tools", 409)
-    if connector.connector_type == "source_managed":
+    if is_managed(connector.connector_type):
         return await _refresh_source_tools(db, admin, connector, application, settings)
     publish = body.get("publish", True) is not False
     existing: dict[tuple[str, str, str], tuple[ToolDefinition, RestToolMapping]] = {}

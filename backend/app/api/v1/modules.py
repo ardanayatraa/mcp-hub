@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.connectors.contracts import developer_baseline
 from app.connectors.discovery import sync_admin_sources
 from app.connectors.endpoint_policy import dataset_endpoint, is_dataset_candidate, module_endpoints
+from app.connectors.kinds import MANAGED_TYPES, is_managed
 from app.errors import HubError
 from app.ids import as_utc
 from app.persistence.models import (
@@ -64,7 +65,7 @@ def module_view(db: Session, module: ModuleDefinition, setting: ModuleSetting, a
     chosen = dataset_endpoint(module, setting.report_endpoint) if setting.report_endpoint else auto
     connector = db.scalar(select(Connector).where(Connector.app_id == application.id))
     connector_id = connector.id if connector else None
-    source_managed = connector and connector.connector_type == "source_managed"
+    source_managed = connector and is_managed(connector.connector_type)
     if source_managed:
         policies = [policy for policy in policies if policy.field_path in baseline]
     tools = db.scalar(select(func.count()).select_from(ToolDefinition).where(
@@ -102,7 +103,7 @@ async def index(app_key: str | None = None, environment: str | None = None, conn
              .join(ModuleSetting, ModuleSetting.module_id == ModuleDefinition.id)
              .join(Application, Application.id == ModuleDefinition.app_id)
              .join(Connector, Connector.app_id == Application.id)
-             .where(or_(Connector.connector_type != "source_managed", ModuleSetting.enabled.is_(True)))
+             .where(or_(Connector.connector_type.notin_(MANAGED_TYPES), ModuleSetting.enabled.is_(True)))
              .order_by(Application.name, ModuleDefinition.name))
     if app_key:
         query = query.where(Application.key == app_key)

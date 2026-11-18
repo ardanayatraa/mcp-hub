@@ -37,7 +37,7 @@ const KINDS = [
 onMounted(async () => {
   try {
     [apps.value, sources.value] = await Promise.all([hub.apps(), hub.sources()]);
-    apps.value = apps.value.filter((app) => app.status !== "archived" && app.connector_type !== "source_managed");
+    apps.value = apps.value.filter((app) => app.status !== "archived" && !["source_managed", "custom_api"].includes(app.connector_type));
   } catch (exc) {
     error.value = errorMessage(exc);
   }

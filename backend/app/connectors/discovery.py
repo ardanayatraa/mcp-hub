@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.connectors.auth_profiles import auth_headers
 from app.connectors.contracts import initial_field_policies, validate_manifest
+from app.connectors.custom_api import build_manifest
 from app.connectors.http_adapter import execute_request, join_url
+from app.connectors.kinds import MANAGED_TYPES, is_managed
 from app.errors import HubError
 from app.ids import new_id, utcnow
 from app.persistence.models import (
@@ -35,6 +37,11 @@ def module_fingerprint(module: dict) -> str:
 
 
 async def fetch_manifest(connector: Connector, application: Application, secret: str, settings: Settings) -> dict:
+    if connector.connector_type == "custom_api":
+        # The admin wrote the endpoint list, so there is nothing to fetch from the other side.
+        if not connector.custom_spec:
+            raise HubError("SCHEMA_MISMATCH", "Add at least one resource and endpoint before syncing", 422)
+        return build_manifest(connector.custom_spec, application.key)[1]
     status, body, _elapsed = await execute_request(
         method="GET",
         url=join_url(connector.base_url, connector.manifest_path),
@@ -55,7 +62,7 @@ async def fetch_manifest(connector: Connector, application: Application, secret:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HubError("SCHEMA_MISMATCH", "Capability manifest was not valid JSON", 422) from exc
     return validate_manifest(document, expected_app_key=application.key,
-                             source_managed=connector.connector_type == "source_managed")
+                             source_managed=is_managed(connector.connector_type))
 
 
 async def discover_capabilities(db: Session, connector: Connector, application: Application, *,
@@ -73,7 +80,7 @@ async def discover_capabilities(db: Session, connector: Connector, application: 
 async def sync_source_permissions(db: Session, connector: Connector | None, application: Application,
                                   settings: Settings) -> None:
     # Client keys cannot choose a source, change connector mode or grant permissions.
-    if connector and connector.connector_type == "source_managed" and connector.status == "active":
+    if connector and is_managed(connector.connector_type) and connector.status == "active":
         await discover_capabilities(db, connector, application, settings=settings,
                                     encryption_key=settings.secret_encryption_key)
 
@@ -83,7 +90,7 @@ async def sync_admin_sources(db: Session, admin: AdminUser, settings: Settings, 
                              connection_metadata: bool = False) -> dict[str, dict]:
     """Refresh only this admin's trusted sources before showing their current catalog."""
     query = (select(Connector, Application).join(Application, Application.id == Connector.app_id)
-             .where(Connector.connector_type == "source_managed", Connector.status == "active"))
+             .where(Connector.connector_type.in_(MANAGED_TYPES), Connector.status == "active"))
     allowed = allowed_app_ids(db, admin)
     if allowed is not None:
         query = query.where(Application.id.in_(allowed))
@@ -143,7 +150,7 @@ async def _discover_capabilities(db: Session, connector: Connector, application:
         for column, value in _columns(module).items():
             setattr(existing, column, value)
         _merge_developer_policies(db, existing.id, module,
-                                  source_managed=connector.connector_type == "source_managed")
+                                  source_managed=is_managed(connector.connector_type))
         if changed:
             # A changed contract needs review: off until an admin re-enables it, and its
             # tools need a fresh test because their fingerprints include the module hash.
@@ -153,7 +160,7 @@ async def _discover_capabilities(db: Session, connector: Connector, application:
             from app.services.tools import refresh_fingerprints
             refresh_fingerprints(db, existing, previous_hash)
         results.append((existing, "changed" if changed else "unchanged"))
-    if connector.connector_type == "source_managed":
+    if is_managed(connector.connector_type):
         from app.services.tools import sync_source_tools
 
         db.flush()

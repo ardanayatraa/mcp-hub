@@ -68,6 +68,9 @@ def normalize_endpoints(raw, readable_fields: list[str], max_page_size: int) -> 
         result.append({"method": method, "path_template": path, "input_schema": schema,
                        "output_schema": output, "requires_user_context": requires_user,
                        "tenant_field": tenant, "safe_query": method == "POST", "public_aggregate": not requires_user})
+        if "result_path" in route:
+            # Custom API connections read a plain JSON body at this path instead of the Hub envelope.
+            result[-1]["result_path"] = route["result_path"]
     return result
 
 

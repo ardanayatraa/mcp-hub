@@ -83,6 +83,15 @@ def remove(connector_id: str, db: Session = Depends(get_db), user: AdminUser = D
     return ok({"deleted": True})
 
 
+@router.put("/{connector_id}/custom-api")
+async def save_custom_api(connector_id: str, payload: dict, db: Session = Depends(get_db),
+                          user: AdminUser = Depends(require_csrf)):
+    connector, application = writable_bundle(db, user, connector_id)
+    body = await service.save_custom_spec(db, user, connector, application, payload, get_settings())
+    db.commit()
+    return ok(body)
+
+
 @router.post("/{connector_id}/test")
 async def test(connector_id: str, db: Session = Depends(get_db), user: AdminUser = Depends(require_csrf)):
     connector, application = writable_bundle(db, user, connector_id)
