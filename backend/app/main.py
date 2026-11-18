@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
@@ -13,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
 from app.api import chat, gateway
+from app.api import embed as embed_public
 from app.api import enrollments as pairing
 from app.api.v1 import (
     access,
@@ -30,6 +32,7 @@ from app.api.v1 import (
     system,
     tools,
 )
+from app.api.v1 import embed as embed_admin
 from app.config import get_settings
 from app.errors import HubError
 from app.mcp.server import build_mcp_server, transport_security
@@ -77,6 +80,7 @@ class BodyLimitMiddleware:
 
 # FastAPI's API explorer, served in development only; its page loads scripts from a CDN.
 DOCS_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc"}
+EMBED_PAGE = re.compile(r"^/api/embed/v1/w/[^/]+$")
 # Endpoints called with a client key or a pairing code: they tell the caller the Hub's version.
 CLIENT_PATHS = ("/mcp", "/chat/", "/gateway/", "/api/connect/")
 # Probes call these by the container's own address, which is not a public host name.
@@ -124,7 +128,9 @@ class SecurityHeaderMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # The embedded chat page is framed by the sites its admin allows (its own CSP says which).
+        if not EMBED_PAGE.match(request.url.path):
+            response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         # The backend answers JSON and event streams only; nothing it sends may run, load or be framed.
@@ -260,10 +266,12 @@ def create_app() -> FastAPI:
             db.close()
         return {"status": "ready"}
 
-    for module in (auth, connectors, enrollments, modules, openapi, profiles, tools, skills, providers, access, activity, system, assistant, hub_settings):
+    for module in (auth, connectors, embed_admin, enrollments, modules, openapi, profiles, tools, skills, providers, access, activity, system, assistant, hub_settings):
         app.include_router(module.router, prefix="/api/admin/v1")
     # Called by apps' servers with a client key, like /mcp.
     app.include_router(chat.router)
+    # The embedded chat other websites show (loader, widget page and its own API).
+    app.include_router(embed_public.router)
     app.include_router(gateway.router)
     app.include_router(pairing.router)
     # Mount last so /api and /health stay reachable. The SDK app serves /mcp.

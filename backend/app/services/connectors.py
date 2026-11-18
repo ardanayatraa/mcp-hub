@@ -21,6 +21,7 @@ from app.connectors.http_adapter import execute_request, join_url
 from app.connectors.kinds import is_managed
 from app.connectors.registry import list_connectors
 from app.connectors.ssrf_guard import validate_destination
+from app.connectors.user_credential import signs_in_users
 from app.errors import HubError
 from app.ids import as_utc, new_id, new_trace_id, utcnow
 from app.persistence.models import (
@@ -192,12 +193,15 @@ async def test_connector(db: Session, admin: AdminUser, connector: Connector, ap
         raise HubError("VALIDATION_FAILED", "Save at least one endpoint before testing the connection", 422)
     try:
         status, body, latency = await execute_request(
-            method="GET", url=join_url(connector.base_url, probe if custom else connector.health_path), settings=settings,
+            method="GET", url=join_url(connector.base_url, (probe or "/") if custom else connector.health_path), settings=settings,
             headers={**auth_headers(connector.auth_type, secret), "Accept": "application/json"},
             timeout_ms=connector.timeout_ms, tls_verify=connector.tls_verify, retries=0)
-        if status in {401, 403}:
+        if status in {401, 403} and custom and signs_in_users(connector):
+            pass  # reachable and protected: each user signs in with their own account
+        elif status in {401, 403}:
             status_label, category = "fail", "authorization"
-        elif status >= 400:
+        elif status >= (500 if custom and probe is None else 400):
+            # With no input-free endpoint the base address is checked: any answer below 500 means reachable.
             status_label, category = "fail", "network"
         elif custom:
             try:

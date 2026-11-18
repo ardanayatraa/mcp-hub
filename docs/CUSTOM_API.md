@@ -52,6 +52,19 @@ Editing the list later (same `PUT`) updates the tools. Nothing is redeployed.
   Leave it out when the response itself is the record or the list. A single object becomes one row.
 - **`alias`** words are added to the tool description so AI and chat can map everyday words to the resource.
 
+## Data per user (`user_auth`)
+
+Add `user_auth` to the list when each user should see only their own data:
+
+```json
+"user_auth": { "login_path": "/api/login", "fields": ["email", "password"], "token_path": "token",
+               "me_path": "/api/me", "name_path": "name" }
+```
+
+Users then sign in in the app's embedded chat, and every call carries their own bearer token instead
+of the connection's. Such a connection never calls the app without a signed-in user. See
+[Embedded chat](EMBED.md).
+
 ## What the Hub does for you
 
 - Sends no credentials when `auth_type` is `none`, and never sends the bearer token anywhere

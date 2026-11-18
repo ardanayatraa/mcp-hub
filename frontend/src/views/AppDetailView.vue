@@ -6,6 +6,7 @@ import AppCredentials from "@/components/AppCredentials.vue";
 import AppSkillsPanel from "@/components/AppSkillsPanel.vue";
 import ChatPanel from "@/components/ChatPanel.vue";
 import CustomApiPanel from "@/components/CustomApiPanel.vue";
+import EmbedPanel from "@/components/EmbedPanel.vue";
 import DataSourcesPanel from "@/components/DataSourcesPanel.vue";
 import ClientKeysPanel from "@/components/ClientKeysPanel.vue";
 import AccessProfilesPanel from "@/components/AccessProfilesPanel.vue";
@@ -33,7 +34,7 @@ const router = useRouter();
 const session = useSession();
 const toast = useToast();
 const id = String(route.params.id);
-const TABS = ["endpoints", "sources", "tools", "skills", "chat", "try", "keys", "memory", "connection", "history"];
+const TABS = ["endpoints", "embed", "sources", "tools", "skills", "chat", "try", "keys", "memory", "connection", "history"];
 // Skills that are on, reported by the Skills tab once it has loaded.
 const skillsOn = ref<number | undefined>(undefined);
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : "sources");
@@ -239,7 +240,7 @@ async function archive() {
 }
 
 const tabs = computed(() => [
-  ...(app.value?.connector_type === "custom_api" ? [{ key: "endpoints", label: "Endpoints" }] : []),
+  ...(app.value?.connector_type === "custom_api" ? [{ key: "endpoints", label: "Endpoints" }, { key: "embed", label: "Embed" }] : []),
   { key: "sources", label: "Data sources", count: catalogLoaded.value ? sources.value.length : undefined },
   { key: "tools", label: "Tools", count: catalogLoaded.value ? tools.value.length : undefined },
   { key: "skills", label: "Skills", count: skillsOn.value },
@@ -302,6 +303,8 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
 
     <CustomApiPanel v-else-if="tab === 'endpoints' && customApi" :app="app" :editable="session.canWrite && !archived"
                     @saved="load()" />
+
+    <EmbedPanel v-else-if="tab === 'embed' && customApi" :app="app" :editable="session.canWrite && !archived" />
 
     <DataSourcesPanel v-else-if="tab === 'sources'" :sources="sources" :app-name="app.name"
                       :editable="session.canWrite && !archived" :managed="sourceManaged" @updated="sourceSaved" />

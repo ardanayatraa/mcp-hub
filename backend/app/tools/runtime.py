@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.capabilities.policy_service import module_for_operation, module_setting, policy_map
 from app.config import Settings, get_settings
+from app.connectors import user_credential
 from app.connectors.auth_profiles import auth_headers
 from app.connectors.discovery import connector_secret
 from app.connectors.endpoint_policy import dataset_endpoint, pagination_for, reviewed_endpoint
@@ -146,8 +147,15 @@ async def call_source(source: Source, route: Route, arguments: dict, delegation:
     url = join_url(base_url, path)
     if urlsplit(url).netloc != urlsplit(base_url).netloc:
         raise HubError("SSRF_BLOCKED", "Resolved URL escaped the connector origin", 422)
-    base_headers = {"Accept": "application/json", **auth_headers(source.connector.auth_type, source.api_secret),
-                    "X-Request-ID": new_request_id()}
+    if user_credential.signs_in_users(source.connector):
+        # Read as the signed-in user: the app's own permissions decide what comes back.
+        user_token = user_credential.current()
+        if not user_token:
+            raise HubError("SIGN_IN_REQUIRED", "This app answers signed-in users only. Sign in to it in its chat.", 401)
+        credential = {"Authorization": f"Bearer {user_token}"}
+    else:
+        credential = auth_headers(source.connector.auth_type, source.api_secret)
+    base_headers = {"Accept": "application/json", **credential, "X-Request-ID": new_request_id()}
     if write or route.method == "POST":
         # Also de-duplicate read-only POST jobs, such as private report exports.
         # The Hub itself never retries a POST.
