@@ -9,11 +9,13 @@
     en: { signIn: "Sign in", signInTo: "Sign in to %s", signInHint: "Use your %s account. Only you can see your data.",
       signOut: "Sign out", working: "Signing in…", type: "Type a message…", unavailable: "This chat is not available right now.",
       failed: "Something went wrong. Try again.", reading: "Reading", read: "Read", failedRead: "Could not read", preview: "Admin preview as %s · read-only",
-      signedAs: "Signed in as %s", expired: "Your session ended. Sign in again.", offline: "Can't reach the chat. Check your connection." },
+      signedAs: "Signed in as %s", expired: "Your session ended. Sign in again.", offline: "Can't reach the chat. Check your connection.",
+      hostOnly: "Open this chat from a page where you are signed in.", reconnecting: "Reconnecting…" },
     id: { signIn: "Masuk", signInTo: "Masuk ke %s", signInHint: "Gunakan akun %s kamu. Hanya kamu yang bisa melihat datamu.",
       signOut: "Keluar", working: "Sedang masuk…", type: "Ketik pesan…", unavailable: "Chat ini sedang tidak tersedia.",
       failed: "Terjadi kesalahan. Coba lagi.", reading: "Membaca", read: "Dibaca:", failedRead: "Gagal membaca", preview: "Pratinjau admin sebagai %s · hanya baca",
-      signedAs: "Masuk sebagai %s", expired: "Sesi kamu berakhir. Silakan masuk lagi.", offline: "Chat tidak bisa dihubungi. Periksa koneksimu." }
+      signedAs: "Masuk sebagai %s", expired: "Sesi kamu berakhir. Silakan masuk lagi.", offline: "Chat tidak bisa dihubungi. Periksa koneksimu.",
+      hostOnly: "Buka chat ini dari halaman tempat kamu sudah login.", reconnecting: "Menyambungkan ulang…" }
   }[lang];
   function t(key, value) { return T[key].replace("%s", value == null ? "" : value); }
 
@@ -37,6 +39,20 @@
   if (hostMatch) host = decodeURIComponent(hostMatch[1]);
   var hostTries = 0;
   var hostError = "";
+  // The page may renew its token while the chat is open.
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (event.source !== window.parent || !data || data.widget !== id || typeof data.hubEmbedToken !== "string") return;
+    // The same token again would only repeat the failure that made us ask for a new one.
+    if (data.hubEmbedToken === host) return;
+    host = data.hubEmbedToken;
+    hostTries = 0;
+    hostError = "";
+    load();
+  });
+  function askHost() {
+    if (window.parent !== window) window.parent.postMessage({ hubEmbed: id, action: "need-token" }, "*");
+  }
   if (match || hostMatch) {
     try { history_replace(); } catch (e) { /* ignore */ }
   }
@@ -177,6 +193,8 @@
           if (preview) { preview = null; return message(T.expired); }
           // A stored session the Hub no longer knows: sign in again from the host token once.
           if (host && hostTries === 0) { hostTries = 1; store(null); return load(); }
+          // No form when the page signs users in: wait for it to hand over a token.
+          if (!config.sign_in.length) { askHost(); return message(hostError || T.hostOnly); }
           return signInForm(hostError || undefined);
         }
         chat();
@@ -301,6 +319,7 @@
     main.appendChild(answer);
     scroll();
     var full = "";
+    var expired = false;
     var chipsById = {};
     var sent = history.slice(-40);
     fetch(api + "/turn", { method: "POST", headers: headers(true),
@@ -309,7 +328,12 @@
         if (!response.ok) {
           return response.json().then(function (body) {
             var error = (body && body.error) || {};
-            if (response.status === 401) { store(null); preview = null; signInForm(T.expired); throw null; }
+            if (response.status === 401) {
+              store(null);
+              preview = null;
+              if (host) { message(T.reconnecting); askHost(); } else signInForm(T.expired);
+              throw null;
+            }
             throw new Error(error.message || T.failed);
           });
         }
@@ -329,6 +353,7 @@
             full += payload.delta || "";
             answer.innerHTML = render(full);
           } else if (event === "tool") {
+            if (payload.error && payload.error.code === "UPSTREAM_UNAUTHORIZED") expired = true;
             // Only the app's own data is worth showing; the Hub's built-in helper tools stay out of sight.
             if (String(payload.name || "").indexOf("__") < 0) return;
             var chip = chipsById[payload.id];
@@ -361,6 +386,12 @@
         if (!full) answer.remove();
         history.push({ role: "user", text: text });
         if (full) history.push({ role: "assistant", text: full });
+        // The app refused the user's token: forget it and ask the page for a fresh one.
+        if (expired) {
+          store(null);
+          try { localStorage.removeItem(storeKey + ":host"); } catch (e) { /* private mode */ }
+          if (host) { hostTries = 1; askHost(); } else { signInForm(T.expired); }
+        }
       })
       .catch(function (exc) {
         if (exc === null) return;

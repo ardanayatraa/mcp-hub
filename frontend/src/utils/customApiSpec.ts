@@ -15,7 +15,8 @@ export interface Endpoint {
   headers: Header[];
 }
 export interface Resource { key: string; name: string; description: string; alias: string; fields: Field[]; endpoints: Endpoint[] }
-export interface UserAuth { enabled: boolean; login_path: string; fields: string; token_path: string; me_path: string; name_path: string }
+/** "token": the page the chat sits on hands over the token its user already has (no login API needed). */
+export interface UserAuth { enabled: boolean; mode: "token" | "form"; login_path: string; fields: string; token_path: string; me_path: string; name_path: string }
 export interface Model { userAuth: UserAuth; resources: Resource[]; authHeader: string | null }
 
 type Json = Record<string, unknown>;
@@ -61,8 +62,8 @@ export function fromSpec(spec: unknown): Model {
     return { key, name: text(body.name), description: text(body.description), alias, fields, endpoints };
   });
   return {
-    userAuth: { enabled: !!auth, login_path: auth ? text(auth.login_path, "/api/login") : "/api/login", fields: fieldsRaw.join(", "),
-                token_path: auth ? text(auth.token_path, "token") : "token", me_path: auth ? text(auth.me_path, "/api/me") : "/api/me",
+    userAuth: { enabled: !!auth, mode: auth && typeof auth.login_path === "string" ? "form" : "token", login_path: auth ? text(auth.login_path, "/api/login") : "/api/login", fields: fieldsRaw.join(", "),
+                token_path: auth ? text(auth.token_path, "token") : "token", me_path: auth ? text(auth.me_path) : "",
                 name_path: auth ? text(auth.name_path, "name") : "name" },
     resources,
     authHeader: typeof root.auth_header === "string" ? root.auth_header : null,
@@ -100,8 +101,9 @@ export function toSpec(model: Model): Json {
   }
   const spec: Json = { resources };
   if (model.userAuth.enabled) {
-    const auth: Json = { login_path: model.userAuth.login_path.trim(), fields: words(model.userAuth.fields),
-                         token_path: model.userAuth.token_path.trim() || "token" };
+    const auth: Json = model.userAuth.mode === "form"
+      ? { login_path: model.userAuth.login_path.trim(), fields: words(model.userAuth.fields), token_path: model.userAuth.token_path.trim() || "token" }
+      : {};
     if (model.userAuth.me_path.trim()) {
       auth.me_path = model.userAuth.me_path.trim();
       auth.name_path = model.userAuth.name_path.trim() || "name";

@@ -51,21 +51,40 @@ snippet → chat button   →     widget page (iframe, Hub origin)
 4. **Embed tab:** turn it on, list the websites that may show it (`https://www.example.com`, one per line),
    pick a title and colour, and copy the snippet.
 
-## Already signed in on the host page
+## No login API: use the token the page already has
 
-Show the chat only on pages where the user is signed in, and let the host page sign them in to the chat:
-its server creates a short-lived, read-only token for the signed-in user and puts it on the snippet.
+The simplest setup needs nothing new from the app. The page the chat sits on is already signed in, so it hands
+the chat the token its user already has, and the app only has to accept that token on the read routes you listed.
+
+In the endpoint list, tick *Each user signs in with their own account* and choose **The page hands over the token
+its user already has**. That is `"user_auth": {}` in JSON. Then put the token on the snippet:
 
 ```html
-<script src="https://YOUR-HUB/api/embed/v1/embed.js" data-widget="w_..." data-token="USER-APP-TOKEN" async></script>
+<!-- a server-rendered page: print the signed-in user's token -->
+<script src="https://YOUR-HUB/api/embed/v1/embed.js" data-widget="w_..." data-token="{{ $userToken }}" async></script>
 ```
 
-- The widget gets the token in the iframe's URL fragment, which no server ever receives. The Hub asks the
-  app (`me_path`) whose token it is before using it, so only a token the app itself accepts opens a chat,
-  and that chat can only read that user's data. `me_path` is required for this.
-- If the user signs out of the host and another signs in, the new token replaces the old chat session.
-- Without `data-token` the chat shows its own sign-in form, as before.
-- Keep the token short-lived (hours), read-only, and revoke it when the user signs out of the host.
+```js
+// a single-page app that already holds the user's token (and renews it)
+HubChat.setToken(auth.token);                       // whenever it changes
+HubChat.getToken = () => auth.refresh();            // optional: the chat asks when the app says it expired
+```
+
+- The token reaches the widget in the iframe's URL fragment, which no server ever receives. The Hub stores it
+  encrypted and sends it as `Authorization: Bearer …` to the routes you registered, nothing else. The chat is
+  read-only whoever is signed in.
+- `me_path` is optional: with it the Hub asks the app whose token this is (and shows the name); without it a wrong
+  token simply fails when the chat reads, and the chat asks the page for a new one. The same token is never retried.
+- If the user signs out of the page and another signs in, the new token replaces the old chat session.
+- Use a short-lived token. If the page has no token (a cookie-session site), have its server create a read-only
+  one for the session, for example Laravel Sanctum `$user->createToken('chat', ['read'], now()->addHours(12))`,
+  and revoke it on logout. That is one line, not a login API.
+- Show the chat only on pages where the user is signed in.
+
+## Or let the chat ask for email and password
+
+Choose *The chat asks for email and password* and give the app's login path. The Hub posts the form, keeps the
+token that comes back and uses it the same way. This suits an app whose login API already exists.
 
 ## Chat Agent
 

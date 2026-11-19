@@ -278,7 +278,8 @@ def _label(link: EmbedLink, settings: Settings) -> str | None:
 
 
 def sign_in_form(connector: Connector) -> list[dict]:
-    fields = connector.custom_spec["user_auth"]["fields"]
+    # No form when users arrive with the token their page already has.
+    fields = connector.custom_spec["user_auth"].get("fields") or []
     secret = ("password", "pin", "secret", "passcode")
     return [{"name": name, "label": name.replace("_", " ").capitalize(),
              "type": "password" if any(word in name.lower() for word in secret)
@@ -290,6 +291,8 @@ async def sign_in(db: Session, widget: EmbedWidget, application: Application, co
     """Post the visitor's sign-in form to the app and keep the token it returns. The form is never stored."""
 
     auth = connector.custom_spec["user_auth"]
+    if "login_path" not in auth:
+        raise HubError("VALIDATION_FAILED", "This chat opens from a page where you are already signed in", 422)
     if not isinstance(form, dict):
         raise HubError("VALIDATION_FAILED", "Fill in the sign-in form", 422)
     body = {}
@@ -320,15 +323,16 @@ async def sign_in(db: Session, widget: EmbedWidget, application: Application, co
 
 async def sign_in_with_token(db: Session, widget: EmbedWidget, application: Application, connector: Connector, token,
                              settings: Settings) -> dict:
-    """The page the widget sits on is already signed in to the app: its server hands over a short-lived
-    app token. The Hub asks the app who it belongs to before using it, so only a token the app itself
-    accepts (the user's own) opens a session, and it can only ever read that user's data."""
+    """The page the widget sits on is already signed in to the app: it hands over the user's own token. When the
+    app has a me_path the Hub asks it whose token this is before using it; either way the token can only ever read
+    that user's data, because the app decides what it may read."""
 
     auth = connector.custom_spec["user_auth"]
-    if "me_path" not in auth:
-        raise HubError("VALIDATION_FAILED", "Signing in from the host page needs me_path in this app's endpoint list", 422)
     if not isinstance(token, str) or not 8 <= len(token) <= 4096 or not token.isprintable():
         raise HubError("VALIDATION_FAILED", "The sign-in token is not valid", 422)
+    if "me_path" not in auth:
+        # Nothing to ask the app: a wrong token simply fails when the chat reads, and the widget asks for a new one.
+        return _open_session(db, widget, application, token, None, settings, "embed.sign_in_host")
     status, raw, _ = await execute_request(
         method="GET", url=join_url(connector.base_url, auth["me_path"]), settings=settings,
         headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
