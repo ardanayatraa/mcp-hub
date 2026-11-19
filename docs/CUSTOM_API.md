@@ -71,16 +71,16 @@ the sample is masked.
 
 ## Data per user (`user_auth`)
 
-Add `user_auth` to the list when each user should see only their own data:
+Add `user_auth` when each user should see only their own data. Two ways, no login API needed for the first:
 
 ```json
-"user_auth": { "login_path": "/api/login", "fields": ["email", "password"], "token_path": "token",
-               "me_path": "/api/me", "name_path": "name" }
+"user_auth": {}                                    // the page hands over the token its user already has
+"user_auth": { "login_path": "/api/login", "fields": ["email", "password"], "token_path": "token" }
 ```
 
-Users then sign in in the app's embedded chat, and every call carries their own bearer token instead
-of the connection's. Such a connection never calls the app without a signed-in user. See
-[Embedded chat](EMBED.md).
+Either way every call carries the user's own bearer token instead of the connection's, and the API decides what
+each user sees. Such a connection never calls the app without a signed-in user. `me_path` / `name_path` are optional
+in both. See [Embedded chat](EMBED.md).
 
 ## What the Hub does for you
 

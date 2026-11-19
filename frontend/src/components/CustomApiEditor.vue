@@ -68,13 +68,23 @@ const statusTone = (status: number) => (status >= 200 && status < 300 ? "text-ok
         Each user signs in with their own account (data per user)
       </label>
       <div v-if="model.userAuth.enabled" class="grid gap-3 sm:grid-cols-2">
-        <label><span class="label">Login path</span><input v-model="model.userAuth.login_path" class="input font-mono" :disabled="!editable" /></label>
-        <label><span class="label">Login fields</span><input v-model="model.userAuth.fields" class="input font-mono" placeholder="email, password" :disabled="!editable" />
-          <span class="hint">The form the user fills in, posted as JSON.</span></label>
-        <label><span class="label">Token in the answer</span><input v-model="model.userAuth.token_path" class="input font-mono" :disabled="!editable" />
-          <span class="hint">Where the token sits, such as token or data.access_token.</span></label>
+        <label class="sm:col-span-2"><span class="label">How the chat learns who the user is</span>
+          <select v-model="model.userAuth.mode" class="input" :disabled="!editable">
+            <option value="token">The page hands over the token its user already has (no login API needed)</option>
+            <option value="form">The chat asks for email and password and posts them to a login API</option>
+          </select>
+          <span class="hint">{{ model.userAuth.mode === "token"
+            ? "Add data-token to the snippet on the signed-in page. The API only needs to accept that token."
+            : "The API must return a token from a login request." }}</span></label>
+        <template v-if="model.userAuth.mode === 'form'">
+          <label><span class="label">Login path</span><input v-model="model.userAuth.login_path" class="input font-mono" :disabled="!editable" /></label>
+          <label><span class="label">Login fields</span><input v-model="model.userAuth.fields" class="input font-mono" placeholder="email, password" :disabled="!editable" />
+            <span class="hint">The form the user fills in, posted as JSON.</span></label>
+          <label><span class="label">Token in the answer</span><input v-model="model.userAuth.token_path" class="input font-mono" :disabled="!editable" />
+            <span class="hint">Where the token sits, such as token or data.access_token.</span></label>
+        </template>
         <label><span class="label">Who am I path (optional)</span><input v-model="model.userAuth.me_path" class="input font-mono" :disabled="!editable" />
-          <span class="hint">Needed to sign in from a host page; also gives the user's name.</span></label>
+          <span class="hint">Only gives the user's name, and checks the token early.</span></label>
         <label v-if="model.userAuth.me_path"><span class="label">Name in that answer</span><input v-model="model.userAuth.name_path" class="input font-mono" :disabled="!editable" /></label>
       </div>
       <p v-if="model.authHeader" class="text-xs text-subtle">The connection sends its API key in the <span class="code">{{ model.authHeader }}</span> header.</p>

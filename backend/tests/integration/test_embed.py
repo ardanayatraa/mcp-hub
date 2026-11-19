@@ -214,18 +214,40 @@ def test_host_page_hands_over_its_users_token(admin, monkeypatch, model):  # noq
         assert "tok_" not in link.token_ciphertext
 
 
-def test_host_sign_in_needs_me_path(admin, monkeypatch):
+def test_page_token_works_without_any_login_api_or_me_path(admin, monkeypatch, model):  # noqa: F811 - fixture
+    script, record = model
     helpers.dns(monkeypatch)
     client = admin["client"]
-    spec = {**SPEC, "user_auth": {k: v for k, v in SPEC["user_auth"].items() if k not in ("me_path", "name_path")}}
+    spec = {**SPEC, "user_auth": {}}  # no login_path, no me_path: only the token the page already has
     with helpers.source(shop):
         created = api(admin, "POST", "/connectors", {
             "name": "Shop", "app_key": "shop", "environment": "dev", "base_url": "http://shop.test",
             "connector_type": "custom_api", "auth_type": "none"}, expect=201).json()["data"]
         cid = created["id"]
-        api(admin, "PUT", f"/connectors/{cid}/custom-api", spec, expect=200)
+        saved = api(admin, "PUT", f"/connectors/{cid}/custom-api", spec, expect=200).json()["data"]
+        assert saved["custom_spec"]["user_auth"] == {"host_token": True}
         api(admin, "POST", f"/connectors/{cid}/test", expect=200)
         api(admin, "POST", f"/connectors/{cid}/activate", expect=200)
         enable_chat(admin, cid)
         widget = api(admin, "PUT", f"/connectors/{cid}/embed", {"enabled": True}, expect=200).json()["data"]
-        assert sign_in_token(client, widget, "tok_andi_0123456789").status_code == 422
+
+        # No form to fill in: the chat only opens from a page that hands over a token.
+        config = client.get(f"/api/embed/v1/w/{widget['public_id']}/config").json()["data"]
+        assert config["sign_in"] == [] and config["user"] is None
+        assert sign_in(client, widget, "andi@shop.test", "pass-andi-123").status_code == 422
+
+        opened = sign_in_token(client, widget, "tok_andi_0123456789").json()["data"]
+        assert opened["name"] is None  # nothing to ask the app, so no name
+        script += [providers.Step(calls=[providers.ToolCall("c1", "shop__order__my_orders", {})], stop="tool_use"),
+                   providers.Step(text="Dua pesanan.")]
+        events(chat(client, widget, opened["session"]))
+        result = next(r for r in record["results"][-1])
+        assert "INV-A1" in result.content and "INV-B9" not in result.content
+
+        # A token the app refuses surfaces as an authorization failure the widget can react to.
+        wrong = sign_in_token(client, widget, "tok_expired_0123456789").json()["data"]
+        script += [providers.Step(calls=[providers.ToolCall("c1", "shop__order__my_orders", {})], stop="tool_use"),
+                   providers.Step(text="Gagal.")]
+        stream = events(chat(client, widget, wrong["session"]))
+        failed = [data for name, data in stream if name == "tool" and data.get("status") == "error"]
+        assert failed and failed[0]["error"]["code"] == "UPSTREAM_UNAUTHORIZED"

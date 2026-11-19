@@ -1,7 +1,8 @@
 /* MCP Hub embedded chat loader. Usage:
    <script src="https://YOUR-HUB/api/embed/v1/embed.js" data-widget="w_..." async></script>
    Adds a chat button; the chat itself runs in an iframe served by the Hub.
-   Add data-token="<the signed-in user's app token>" to sign the user in automatically. */
+   Add data-token="<the signed-in user's app token>" to sign the user in automatically. A page that renews the token
+   calls HubChat.setToken(newToken), or sets HubChat.getToken = () => token (may return a promise) so the chat can ask. */
 (function () {
   "use strict";
   var script = document.currentScript;
@@ -14,6 +15,12 @@
   // Optional: when the page is already signed in to the app, its server puts a short-lived app token here
   // and the chat signs in by itself. It travels in the iframe's fragment, which is never sent to a server.
   var hostToken = script.getAttribute("data-token");
+  var frame = null;
+  var hub = window.HubChat = window.HubChat || {};
+  hub.setToken = function (token) {
+    hostToken = typeof token === "string" && token ? token : null;
+    if (frame && frame.contentWindow && hostToken) frame.contentWindow.postMessage({ hubEmbedToken: hostToken, widget: id }, base);
+  };
 
   function start(config) {
     var accent = /^#[0-9a-fA-F]{6}$/.test(config.accent || "") ? config.accent : "#2563eb";
@@ -39,7 +46,6 @@
       "0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg></button>";
     var panel = root.querySelector(".p");
     var button = root.querySelector(".b");
-    var frame = null;
     function toggle(open) {
       if (open && !frame) {
         frame = document.createElement("iframe");
@@ -55,7 +61,12 @@
     }
     button.addEventListener("click", function () { toggle(!panel.classList.contains("o")); });
     window.addEventListener("message", function (event) {
-      if (event.origin === base && event.data && event.data.hubEmbed === id && event.data.action === "close") toggle(false);
+      if (event.origin !== base || !event.data || event.data.hubEmbed !== id) return;
+      if (event.data.action === "close") toggle(false);
+      // The chat found its token expired: ask the page for a new one, if the page said how.
+      if (event.data.action === "need-token" && typeof hub.getToken === "function") {
+        Promise.resolve(hub.getToken()).then(function (token) { if (token) hub.setToken(token); }).catch(function () {});
+      }
     });
     (document.body || document.documentElement).appendChild(host);
   }

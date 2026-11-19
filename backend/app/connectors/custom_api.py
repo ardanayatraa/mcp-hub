@@ -161,11 +161,23 @@ def user_auth(raw) -> dict | None:
     {"login_path": "/api/login", "fields": ["email", "password"], "token_path": "token",
      "me_path": "/api/me", "name_path": "name"}. The token is then sent as a bearer token on every
     call made for that user, so the app itself decides what each user may read.
+
+    Without a login_path the Hub shows no form: the page the chat sits on hands over the token its user already
+    has (``data-token``), and me_path, if given, only supplies the name. {} means exactly that.
     """
 
     if raw is None:
         return None
     body = _object(raw, "user_auth")
+    if body.get("login_path") is None:
+        result = {"host_token": True}
+        if body.get("me_path") is not None:
+            result["me_path"] = _path(body["me_path"], "user_auth me_path")
+            name_path = body.get("name_path") or "name"
+            if not isinstance(name_path, str) or not name_path or not RESULT_PATH_RE.match(name_path):
+                raise _fail("user_auth name_path must be dotted names such as name or data.name")
+            result["name_path"] = name_path
+        return result
     fields = body.get("fields") or ["email", "password"]
     if (not isinstance(fields, list) or not 1 <= len(fields) <= 4 or len(set(fields)) != len(fields)
             or not all(isinstance(name, str) and NAME_RE.fullmatch(name) for name in fields)):
