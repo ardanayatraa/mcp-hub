@@ -202,6 +202,81 @@ def sample_fetch(document: dict) -> Fetch:
     return fetch
 
 
+_INTEGER = re.compile(r"^[+-]?\d{1,18}$")
+_NUMBER = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
+
+
+def _fit(value, spec: dict):
+    """One value in the declared type, or _DROP when it cannot be read as that type without guessing."""
+
+    kinds = spec.get("type")
+    kinds = kinds if isinstance(kinds, list) else [kinds]
+    kind = next((item for item in kinds if item != "null"), "string")
+    if value is None:
+        return None if "null" in kinds else _DROP
+    if kind == "string":
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        elif isinstance(value, bool):
+            text = "true" if value else "false"
+        else:
+            text = str(value)
+        limit = spec.get("maxLength", 200)
+        return text if len(text) <= limit else text[: max(1, limit - 1)] + "…"
+    if kind == "integer":
+        if isinstance(value, bool):
+            return _DROP
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str) and _INTEGER.match(value.strip()):
+            return int(value.strip())
+        return _DROP
+    if kind == "number":
+        if isinstance(value, bool):
+            return _DROP
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str) and _NUMBER.match(value.strip()):
+            number = float(value.strip())
+            return int(number) if number.is_integer() and "." not in value and "e" not in value.lower() else number
+        return _DROP
+    if kind == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str) and value.strip().lower() in {"true", "false", "1", "0", "yes", "no"}:
+            return value.strip().lower() in {"true", "1", "yes"}
+        return _DROP
+    return value
+
+
+_DROP = object()
+
+
+def fit_rows(rows: list[dict], output_schema: dict) -> list[dict]:
+    """APIs often send numbers as text, long text, or nested values. Each reviewed field is fitted to its declared
+    type (text is cut to its length, nested values become JSON text); a value that cannot be read as that type is
+    left out instead of failing the whole answer. Fields that were not reviewed are dropped later by the guard."""
+
+    properties = (output_schema.get("items") or {}).get("properties") or {}
+    fitted = []
+    for row in rows:
+        out = {}
+        for key, value in row.items():
+            spec = properties.get(key)
+            if spec is None:
+                out[key] = value
+                continue
+            new = _fit(value, spec)
+            if new is not _DROP:
+                out[key] = new
+        fitted.append(out)
+    return fitted
+
+
 def _plain_rows(document, result_path: str, max_rows: int) -> tuple[list[dict], dict]:
     """A custom API answers in its own shape: follow the reviewed path to a record or a list."""
 
@@ -242,7 +317,8 @@ def parse_rows(status: int, raw: bytes, route: Route, *, max_rows: int) -> tuple
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HubError("SCHEMA_MISMATCH", "Upstream response was not valid JSON", 502) from exc
     if route.result_path is not None:
-        return _plain_rows(document, route.result_path, max_rows)
+        rows, meta = _plain_rows(document, route.result_path, max_rows)
+        return fit_rows(rows, route.output_schema), meta
     if isinstance(document, dict) and document.get("success") is False:
         error = document.get("error") if isinstance(document.get("error"), dict) else {}
         code = error.get("code") if error.get("code") in SAFE_UPSTREAM_CODES else "UPSTREAM_ERROR"

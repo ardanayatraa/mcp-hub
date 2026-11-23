@@ -90,5 +90,8 @@ in both. See [Embedded chat](EMBED.md).
   Use this only for APIs whose data is meant to be read by everyone who can use the connection.
 - States the dataset metadata itself (time, scope, `partial` coverage when the API reports a
   larger `total` than it returned).
+- Fits each value to the field type you reviewed: `"2000"` becomes `2000` for an `integer` field, `"1"` becomes
+  `true` for a `boolean`, long text is cut to its length and nested values become JSON text. A value that cannot be
+  read as its type (`"abc"` for an integer) is left out of that row instead of failing the whole answer.
 - Keeps all existing protections: SSRF guard and approved hosts, no redirects, response size
   and record limits, output schema validation, and the privacy scan on arguments.

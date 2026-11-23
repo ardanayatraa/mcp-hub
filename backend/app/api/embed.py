@@ -150,11 +150,14 @@ async def turn(public_id: str, request: Request):
         signed = embed.resolve_session(db, widget, _bearer(request), settings)
         if signed is None:
             raise HubError("SIGN_IN_REQUIRED", f"Sign in to {application.name} to chat", 401)
-        caller = embed.caller_for(application, connector, signed)
+        caller = embed.caller_for(application, connector, signed, widget)
         request_body = {key: body.get(key) for key in ("message", "history", "locale") if key in body} \
             if isinstance(body, dict) else body
         prepared = await engine.Turn(db, caller, engine.parse_request(request_body), None, settings,
                                      user_token=signed.token, subject=f"embed:{signed.link.id}").prepare()
+        if signed.admin_id is None:
+            link_id = signed.link.id
+            prepared.on_unauthorized = lambda session: embed.end_link(session, link_id)
     except BaseException:
         db.close()
         raise

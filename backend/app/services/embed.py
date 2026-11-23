@@ -43,6 +43,7 @@ PREVIEW_PREFIX = "sim."
 PREVIEW_SECONDS = 1800
 ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 PUBLIC_ID_RE = re.compile(r"^w_[A-Za-z0-9_-]{8,36}$")
+TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 MAX_ORIGINS = 20
 MAX_FIELD = 300
 
@@ -134,6 +135,7 @@ def widget_view(db: Session, widget: EmbedWidget, application: Application, conn
         "ready": {"user_sign_in": signs_in_users(connector), "chat_enabled": bool(chat and chat.enabled),
                   "app_active": bool(connector and connector.status == "active")},
         "signed_in_users": len(_active_links(db, widget)),
+        "allowed_tools": widget.allowed_tools,
         "updated_at": as_utc(widget.updated_at).isoformat(),
     }
 
@@ -142,7 +144,7 @@ def update_widget(db: Session, admin: AdminUser, widget: EmbedWidget, applicatio
                   connector: Connector | None, payload, settings: Settings) -> None:
     if not isinstance(payload, dict):
         raise HubError("VALIDATION_FAILED", "Request body must be an object", 422)
-    unknown = set(payload) - {"enabled", "allowed_origins", "title", "accent", "position", "session_days"}
+    unknown = set(payload) - {"enabled", "allowed_origins", "title", "accent", "position", "session_days", "allowed_tools"}
     if unknown:
         raise HubError("VALIDATION_FAILED", f"Unknown setting: {sorted(unknown)[0]}", 422)
     if "allowed_origins" in payload:
@@ -168,6 +170,12 @@ def update_widget(db: Session, admin: AdminUser, widget: EmbedWidget, applicatio
         if type(days) is not int or not 1 <= days <= 90:
             raise HubError("VALIDATION_FAILED", "Sessions last 1 to 90 days", 422)
         widget.session_days = days
+    if "allowed_tools" in payload:
+        tools = payload["allowed_tools"]
+        if tools is not None and (not isinstance(tools, list) or len(tools) > 300
+                                  or not all(isinstance(name, str) and TOOL_NAME_RE.match(name) for name in tools)):
+            raise HubError("VALIDATION_FAILED", "Choose the tools by name, or null for every tool", 422)
+        widget.allowed_tools = None if tools is None else sorted(set(tools))
     if "enabled" in payload:
         if type(payload["enabled"]) is not bool:
             raise HubError("VALIDATION_FAILED", "enabled must be true or false", 422)
@@ -409,6 +417,14 @@ def resolve_session(db: Session, widget: EmbedWidget, token: str | None, setting
     return SignedIn(link, user_token, _label(link, settings), admin_id)
 
 
+def end_link(db: Session, link_id: str) -> None:
+    """The app refused this user's token while chatting: the session ends, and the page signs in again."""
+
+    link = db.get(EmbedLink, link_id)
+    if link is not None and link.revoked_at is None:
+        link.revoked_at = utcnow()
+
+
 def sign_out(db: Session, widget: EmbedWidget, application: Application, token: str | None, settings: Settings) -> None:
     if isinstance(token, str) and token.startswith(SESSION_PREFIX):
         link = db.scalar(select(EmbedLink).where(EmbedLink.session_hash == _hash(token)))
@@ -418,8 +434,10 @@ def sign_out(db: Session, widget: EmbedWidget, application: Application, token: 
                          app_key=application.key, environment=application.environment)
 
 
-def caller_for(application: Application, connector: Connector, session: SignedIn) -> EmbedCaller:
-    # Read-only always: an embedded chat never changes data, whoever is signed in.
+def caller_for(application: Application, connector: Connector, session: SignedIn,
+               widget: EmbedWidget | None = None) -> EmbedCaller:
+    # Read-only always: an embedded chat never changes data, whoever is signed in. The widget may narrow the
+    # tools further; the same list also hides the rest from the model.
     identity = ServiceIdentity(id="embed", name="Embedded chat", token_hash="", app_id=application.id,
-                               scopes=[READ_SCOPE], allowed_tools=None)
+                               scopes=[READ_SCOPE], allowed_tools=widget.allowed_tools if widget else None)
     return EmbedCaller(identity, application, connector, link_id=session.link.id, admin_id=session.admin_id)

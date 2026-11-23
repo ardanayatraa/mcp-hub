@@ -266,6 +266,9 @@ class Turn:
         self.skill_used: str | None = None
         self.user_id: str | None = None
         self.endpoint: registry.Endpoint | None = None
+        # Set when the app refused the user's own token during this turn; the embedded chat ends that session.
+        self.unauthorized = False
+        self.on_unauthorized: Callable[[Session], None] | None = None
 
     async def prepare(self) -> "Turn":
         # The Claude key saved under AI providers wins over ANTHROPIC_API_KEY for this turn.
@@ -318,6 +321,8 @@ class Turn:
         finally:
             user_credential.reset(handle)
             self.db.rollback()
+            if self.unauthorized and self.on_unauthorized is not None:
+                self.on_unauthorized(self.db)
             record_audit(self.db, action="chat.turn", actor_ref=self.caller.actor_ref,
                          app_key=self.caller.application.key, environment=self.caller.application.environment,
                          tool_key=self.skill_used, trace_id=self.trace,
@@ -381,6 +386,8 @@ class Turn:
                         outcome = await dispatch.execute(self.db, name, call.arguments, caller_for=lambda _db: self.caller,
                                                          delegation=self.delegation_header, trace=self.trace)
                         payload, failure = outcome.payload, outcome.error
+                        if failure is not None and failure.code == "UPSTREAM_UNAUTHORIZED":
+                            self.unauthorized = True
                     status = "error" if failure else "done"
                     event = {"id": call.id, "name": name, "title": titles.get(name, name), "status": status,
                              "write": name in writes}

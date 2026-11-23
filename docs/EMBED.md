@@ -49,7 +49,12 @@ snippet → chat button   →     widget page (iframe, Hub origin)
 2. **Test and activate the app.** A protected endpoint answering 401 without a user counts as reachable.
 3. **Turn the chat on** in the Chat tab. Its model, instructions, welcome message and suggestions are used.
 4. **Embed tab:** turn it on, list the websites that may show it (`https://www.example.com`, one per line),
-   pick a title and colour, and copy the snippet.
+   pick a title and colour, and copy the snippet. The Setup list at the top of the tab shows what is still
+   missing.
+5. **What the chat may use** (Embed tab): every tool of the app by default, or only the endpoints you tick.
+   Tools that change data are never offered. **Register or edit endpoints** opens the endpoint list right there,
+   so a developer can add an endpoint and allow it for the chat without leaving the tab. A developer only needs a
+   Hub account with the **App admin** role for that app (Access → Team).
 
 ## No login API: use the token the page already has
 
@@ -76,6 +81,8 @@ HubChat.getToken = () => auth.refresh();            // optional: the chat asks w
 - `me_path` is optional: with it the Hub asks the app whose token this is (and shows the name); without it a wrong
   token simply fails when the chat reads, and the chat asks the page for a new one. The same token is never retried.
 - If the user signs out of the page and another signs in, the new token replaces the old chat session.
+- If the app answers 401 to the user's token while chatting, that chat session ends at once and the page has to
+  hand over a fresh token.
 - Use a short-lived token. If the page has no token (a cookie-session site), have its server create a read-only
   one for the session, for example Laravel Sanctum `$user->createToken('chat', ['read'], now()->addHours(12))`,
   and revoke it on logout. That is one line, not a login API.

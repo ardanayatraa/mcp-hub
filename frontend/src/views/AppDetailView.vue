@@ -304,7 +304,8 @@ const sourceManaged = computed(() => app.value?.connector_type === "source_manag
     <CustomApiPanel v-else-if="tab === 'endpoints' && customApi" :app="app" :editable="session.canWrite && !archived"
                     @saved="load()" />
 
-    <EmbedPanel v-else-if="tab === 'embed' && customApi" :app="app" :editable="session.canWrite && !archived" />
+    <EmbedPanel v-else-if="tab === 'embed' && customApi" :app="app" :editable="session.canWrite && !archived"
+                @saved="load()" />
 
     <DataSourcesPanel v-else-if="tab === 'sources'" :sources="sources" :app-name="app.name"
                       :editable="session.canWrite && !archived" :managed="sourceManaged" @updated="sourceSaved" />

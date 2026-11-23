@@ -75,6 +75,8 @@ export interface EmbedWidget {
   snippet: string;
   ready: { user_sign_in: boolean; chat_enabled: boolean; app_active: boolean };
   signed_in_users: number;
+  /** MCP names of the tools the embedded chat may use; null means every tool the app offers. */
+  allowed_tools: string[] | null;
   updated_at: string;
 }
 
