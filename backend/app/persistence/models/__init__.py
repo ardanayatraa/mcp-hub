@@ -520,6 +520,8 @@ class EmbedWidget(Base):
     accent: Mapped[str] = mapped_column(String(7), nullable=False, default="#2563eb")
     position: Mapped[str] = mapped_column(String(8), nullable=False, default="right")
     session_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    # The tools the embedded chat may use (MCP names); null means every tool the app offers.
+    allowed_tools: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
