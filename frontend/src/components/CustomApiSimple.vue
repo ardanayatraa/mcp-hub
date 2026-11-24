@@ -5,8 +5,8 @@ import { hub, type CustomApiProbe } from "@/services/hub";
 import { errorMessage } from "@/utils/format";
 import { emptyEndpoint, FIELD_TYPES, slug, type Field, type Model, type Resource } from "@/utils/customApiSpec";
 
-const props = defineProps<{ model: Model; connectorId: string; editable: boolean }>();
-const emit = defineEmits<{ (event: "advanced"): void }>();
+const props = defineProps<{ model: Model; connectorId: string; editable: boolean; linkId?: string }>();
+const emit = defineEmits<{ (event: "advanced"): void; (event: "signIn"): void }>();
 
 type Probe = CustomApiProbe & { error?: string; busy?: boolean };
 // Per card, kept while the page is open: the last answer and every field it contained.
@@ -47,7 +47,9 @@ async function send(resource: Resource) {
         throw new Error(`Give a test value for {${match[1]}} under More options.`);
       }
     }
-    const found = await hub.probeCustomApi(props.connectorId, { path: endpoint.path.trim(), params, headers });
+    const found = await hub.probeCustomApi(props.connectorId, {
+      path: endpoint.path.trim(), params, headers, ...(props.linkId ? { link_id: props.linkId } : {}),
+    });
     probes[at] = { ...found, busy: false };
     if (found.fields && Object.keys(found.fields).length) {
       // Fill the card straight away: where the records are, and every field that is safe to show.
@@ -122,7 +124,15 @@ const tone = (status: number) => (status >= 200 && status < 300 ? "text-ok" : "t
           <p v-else class="text-sm">
             <span class="font-mono font-semibold" :class="tone(probes[indexOf(resource)].status)">{{ probes[indexOf(resource)].status }}</span>
             <span class="text-subtle"> · {{ probes[indexOf(resource)].elapsed_ms }} ms</span>
-            <span v-if="probes[indexOf(resource)].needs_user_sign_in" class="text-subtle"> · this API wants a signed-in user, so it cannot be tried from here. Add the fields below by hand.</span>
+            <span v-if="probes[indexOf(resource)].user_rejected" class="text-subtle">
+              · this user's sign-in was refused.
+              <button v-if="editable" type="button" class="font-medium underline" @click="emit('signIn')">Sign in again</button>
+            </span>
+            <span v-else-if="probes[indexOf(resource)].needs_user_sign_in || ([401, 403].includes(probes[indexOf(resource)].status) && !linkId)" class="text-subtle">
+              · this API wants a signed-in user.
+              <button v-if="editable" type="button" class="font-medium underline" @click="emit('signIn')">Sign in as user</button>
+              or add the fields below by hand.
+            </span>
             <span v-else-if="!probes[indexOf(resource)].json" class="text-subtle"> · the answer is not JSON</span>
             <span v-else-if="probes[indexOf(resource)].count !== undefined" class="text-subtle"> · {{ probes[indexOf(resource)].count }} records found</span>
           </p>

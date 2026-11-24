@@ -83,3 +83,71 @@ def test_test_request_describes_the_answer_without_leaking_personal_data(admin, 
         for bad in ({"path": "no-slash"}, {"path": "/a/../b"}, {"path": "/x/{id}"}, {"path": "/x", "params": []},
                     {"path": "/x", "headers": {"Authorization": "x"}}):
             api(admin, "POST", f"/connectors/{cid}/custom-api/probe", bad, expect=422)
+
+
+def test_admin_can_sign_in_as_users_and_probe_endpoints(admin, monkeypatch):
+    from tests.integration.test_embed import SPEC as USER_SPEC
+    from tests.integration.test_embed import shop
+
+    helpers.dns(monkeypatch)
+    with helpers.source(shop):
+        cid = api(admin, "POST", "/connectors", {
+            "name": "Shop", "app_key": "shop_probe", "environment": "dev", "base_url": "http://shop.test",
+            "connector_type": "custom_api", "auth_type": "none"}, expect=201).json()["data"]["id"]
+
+        # Admin can sign in via the form using unsaved user_auth config so Send can detect fields before saving.
+        andi = api(admin, "POST", f"/connectors/{cid}/custom-api/sign-in", {
+            "mode": "form",
+            "fields": {"email": "andi@shop.test", "password": "pass-andi-123"},
+            "user_auth": USER_SPEC["user_auth"],
+        }, expect=201).json()["data"]
+        assert andi["name"] == "Andi Pratama"
+
+        found_andi = api(admin, "POST", f"/connectors/{cid}/custom-api/probe",
+                         {"path": "/api/orders", "link_id": andi["id"]}, expect=200).json()["data"]
+        assert found_andi["status"] == 200 and found_andi["result_path"] == "data"
+        assert found_andi["fields"] == {"id": "integer", "code": "string", "total": "integer"}
+        assert found_andi["sample"][0]["code"] == "INV-A1"
+        assert not found_andi["needs_user_sign_in"] and not found_andi["user_rejected"]
+
+        # Token sign-in with an explicit label (no me_path) and switching between signed-in users.
+        budi = api(admin, "POST", f"/connectors/{cid}/custom-api/sign-in", {
+            "mode": "token", "token": "tok_budi_0123456789", "label": "Budi tester",
+        }, expect=201).json()["data"]
+        assert budi["name"] == "Budi tester"
+        found_budi = api(admin, "POST", f"/connectors/{cid}/custom-api/probe",
+                         {"path": "/api/orders", "link_id": budi["id"]}, expect=200).json()["data"]
+        assert found_budi["sample"][0]["code"] == "INV-B9"
+
+        # Save user_auth and verify probing without a user reports needs_user_sign_in, while a bad token reports user_rejected.
+        api(admin, "PUT", f"/connectors/{cid}/custom-api", USER_SPEC, expect=200)
+        unauthenticated = api(admin, "POST", f"/connectors/{cid}/custom-api/probe",
+                              {"path": "/api/orders"}, expect=200).json()["data"]
+        assert unauthenticated["status"] == 401 and unauthenticated["needs_user_sign_in"] is True
+        assert unauthenticated["user_rejected"] is False
+
+        expired = api(admin, "POST", f"/connectors/{cid}/custom-api/sign-in", {
+            "mode": "token", "token": "tok_expired_0123456789", "label": "Expired", "user_auth": {},
+        }, expect=201).json()["data"]
+        rejected = api(admin, "POST", f"/connectors/{cid}/custom-api/probe",
+                         {"path": "/api/orders", "link_id": expired["id"]}, expect=200).json()["data"]
+        assert rejected["status"] == 401 and rejected["user_rejected"] is True
+        assert rejected["needs_user_sign_in"] is False
+
+        # Cross-connector isolation and sign-out revocation.
+        other = api(admin, "POST", "/connectors", {
+            "name": "Other", "app_key": "other_probe", "environment": "dev", "base_url": "http://keyed.test",
+            "connector_type": "custom_api", "auth_type": "none"}, expect=201).json()["data"]["id"]
+        api(admin, "POST", f"/connectors/{other}/custom-api/probe",
+            {"path": "/items", "link_id": andi["id"]}, expect=404)
+
+        api(admin, "DELETE", f"/connectors/{cid}/embed/users/{andi['id']}", expect=200)
+        api(admin, "POST", f"/connectors/{cid}/custom-api/probe",
+            {"path": "/api/orders", "link_id": andi["id"]}, expect=404)
+
+        # Validation guards.
+        api(admin, "POST", f"/connectors/{cid}/custom-api/sign-in", {"mode": "oauth"}, expect=422)
+        api(admin, "POST", f"/connectors/{cid}/custom-api/sign-in",
+            {"mode": "form", "fields": {"email": "andi@shop.test", "password": "wrong"}}, expect=401)
+        api(admin, "POST", f"/connectors/{cid}/custom-api/probe",
+            {"path": "/api/orders", "link_id": 123}, expect=422)

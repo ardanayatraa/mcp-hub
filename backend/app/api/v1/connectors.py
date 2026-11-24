@@ -20,7 +20,7 @@ from app.security.auth import require_csrf
 from app.security.authorization import ADMIN_ROLES, WRITE_ROLES, require_app_access, require_role
 from app.security.clients import READ_SCOPE, Caller
 from app.services import connectors as service
-from app.services import tool_switches
+from app.services import embed, tool_switches
 from app.tools import memory
 
 router = APIRouter(prefix="/connectors", tags=["apps"])
@@ -99,6 +99,15 @@ async def probe_custom_api(connector_id: str, payload: dict, db: Session = Depen
     body = await service.probe_custom_endpoint(db, user, connector, application, payload, get_settings())
     db.commit()
     return ok(body)
+
+
+@router.post("/{connector_id}/custom-api/sign-in")
+async def sign_in_custom_api(connector_id: str, payload: dict, db: Session = Depends(get_db),
+                             user: AdminUser = Depends(require_csrf)):
+    connector, application = writable_bundle(db, user, connector_id)
+    body = await embed.admin_sign_in_user(db, user, application, connector, payload, get_settings())
+    db.commit()
+    return ok(body, 201)
 
 
 @router.post("/{connector_id}/test")

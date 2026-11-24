@@ -6,7 +6,8 @@ import { useToast } from "@/stores/toast";
 import { errorMessage } from "@/utils/format";
 import { emptyEndpoint, emptyResource, FIELD_TYPES, slug, type Endpoint, type Field, type Model, type Resource } from "@/utils/customApiSpec";
 
-const props = defineProps<{ model: Model; connectorId: string; editable: boolean }>();
+const props = defineProps<{ model: Model; connectorId: string; editable: boolean; linkId?: string }>();
+const emit = defineEmits<{ (event: "signIn"): void }>();
 const toast = useToast();
 
 // One test result per endpoint, kept only while this page is open.
@@ -36,7 +37,12 @@ async function send(resource: Resource, endpoint: Endpoint) {
     for (const match of endpoint.path.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)) {
       if (!(match[1] in params)) throw new Error(`Give a test value for {${match[1]}} under Parameters.`);
     }
-    results[key] = { ...(await hub.probeCustomApi(props.connectorId, { path: endpoint.path.trim(), params, headers })), busy: false };
+    results[key] = {
+      ...(await hub.probeCustomApi(props.connectorId, {
+        path: endpoint.path.trim(), params, headers, ...(props.linkId ? { link_id: props.linkId } : {}),
+      })),
+      busy: false,
+    };
   } catch (exc) {
     results[key] = { status: 0, elapsed_ms: 0, json: false, busy: false, error: errorMessage(exc) } as never;
   }
@@ -176,7 +182,14 @@ const statusTone = (status: number) => (status >= 200 && status < 300 ? "text-ok
                 <p>
                   <span class="font-mono font-semibold" :class="statusTone(results[slot(resource, endpoint)].status)">{{ results[slot(resource, endpoint)].status }}</span>
                   <span class="text-subtle"> · {{ results[slot(resource, endpoint)].elapsed_ms }} ms</span>
-                  <span v-if="results[slot(resource, endpoint)].needs_user_sign_in" class="text-subtle"> · this API wants a signed-in user, so it cannot be tried from here</span>
+                  <span v-if="results[slot(resource, endpoint)].user_rejected" class="text-subtle">
+                    · this user's sign-in was refused.
+                    <button v-if="editable" type="button" class="font-medium underline" @click="emit('signIn')">Sign in again</button>
+                  </span>
+                  <span v-else-if="results[slot(resource, endpoint)].needs_user_sign_in || ([401, 403].includes(results[slot(resource, endpoint)].status) && !linkId)" class="text-subtle">
+                    · this API wants a signed-in user.
+                    <button v-if="editable" type="button" class="font-medium underline" @click="emit('signIn')">Sign in as user</button>
+                  </span>
                   <span v-else-if="!results[slot(resource, endpoint)].json" class="text-subtle"> · the answer is not JSON</span>
                 </p>
                 <template v-if="results[slot(resource, endpoint)].fields">

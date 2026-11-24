@@ -280,8 +280,16 @@ async def probe_custom_endpoint(db: Session, admin: AdminUser, connector: Connec
             raise HubError("VALIDATION_FAILED", f"Parameter '{name}' needs a plain value", 422)
         query[name] = value
     extra = static_headers(body.get("headers"), "the test request")
+    link_id = body.get("link_id")
+    used_user = link_id is not None and link_id != ""
     credential = {}
-    if not signs_in_users(connector):
+    if used_user:
+        if not isinstance(link_id, str):
+            raise HubError("VALIDATION_FAILED", "Choose a signed-in user", 422)
+        from app.services import embed
+
+        credential = {"Authorization": f"Bearer {embed.user_token_for_link(db, application, link_id, settings)}"}
+    elif not signs_in_users(connector):
         secret = decrypt_secret(settings.secret_encryption_key, connector_secret(db, connector.id).secret_ciphertext)
         credential = auth_headers(connector.auth_type, secret, (connector.custom_spec or {}).get("auth_header"))
     status, raw, elapsed = await execute_request(
@@ -295,7 +303,8 @@ async def probe_custom_endpoint(db: Session, admin: AdminUser, connector: Connec
     _audit(db, admin, "connector.probe", application, result="success" if status < 400 else "error",
            error_code=None if status < 400 else str(status), duration_ms=elapsed)
     result = {"status": status, "elapsed_ms": elapsed, "json": document is not None,
-              "needs_user_sign_in": signs_in_users(connector) and status in {401, 403}}
+              "needs_user_sign_in": (not used_user) and signs_in_users(connector) and status in {401, 403},
+              "user_rejected": used_user and status in {401, 403}}
     if document is not None and status < 400:
         result.update(analyze(document))
     return result

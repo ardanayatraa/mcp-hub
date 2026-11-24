@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 
 import CustomApiEditor from "@/components/CustomApiEditor.vue";
 import CustomApiSimple from "@/components/CustomApiSimple.vue";
+import CustomApiUserBar from "@/components/CustomApiUserBar.vue";
 import { hub, type AppDetail } from "@/services/hub";
 import { useToast } from "@/stores/toast";
 import { errorMessage } from "@/utils/format";
@@ -34,6 +35,8 @@ const mode = ref<Mode>(model.resources.every((item) => item.endpoints.length ===
 const text = ref("");
 const error = ref("");
 const saving = ref(false);
+const testLinkId = ref("");
+const signingIn = ref(false);
 
 // What the editor was last filled from. The app page refreshes itself in the background, and a refresh that
 // brings the same saved list must not wipe what is being typed.
@@ -113,8 +116,13 @@ async function save() {
         </div>
       </div>
 
-      <CustomApiSimple v-if="mode === 'simple'" :model="model" :connector-id="app.id" :editable="editable" @advanced="switchTo('visual')" />
-      <CustomApiEditor v-else-if="mode === 'visual'" :model="model" :connector-id="app.id" :editable="editable" />
+      <CustomApiUserBar v-if="mode !== 'json'" v-model="testLinkId" v-model:signing-in="signingIn"
+                        :connector-id="app.id" :user-auth="model.userAuth" :editable="editable" />
+
+      <CustomApiSimple v-if="mode === 'simple'" :model="model" :connector-id="app.id" :editable="editable"
+                       :link-id="testLinkId" @advanced="switchTo('visual')" @sign-in="signingIn = true" />
+      <CustomApiEditor v-else-if="mode === 'visual'" :model="model" :connector-id="app.id" :editable="editable"
+                       :link-id="testLinkId" @sign-in="signingIn = true" />
       <textarea v-else v-model="text" class="input min-h-[26rem] font-mono text-xs leading-relaxed" spellcheck="false"
                 :disabled="!editable || saving" aria-label="Endpoint list as JSON" />
 

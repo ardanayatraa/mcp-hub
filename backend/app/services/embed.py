@@ -195,14 +195,26 @@ def rotate_widget(db: Session, admin: AdminUser, widget: EmbedWidget, applicatio
                  app_key=application.key, environment=application.environment)
 
 
+def _link_view(link: EmbedLink, settings: Settings) -> dict:
+    return {"id": link.id, "name": _label(link, settings),
+            "created_at": as_utc(link.created_at).isoformat(),
+            "last_used_at": as_utc(link.last_used_at).isoformat() if link.last_used_at else None,
+            "expires_at": as_utc(link.expires_at).isoformat()}
+
+
 def link_views(db: Session, widget: EmbedWidget, settings: Settings) -> list[dict]:
-    rows = []
-    for link in _active_links(db, widget):
-        rows.append({"id": link.id, "name": _label(link, settings),
-                     "created_at": as_utc(link.created_at).isoformat(),
-                     "last_used_at": as_utc(link.last_used_at).isoformat() if link.last_used_at else None,
-                     "expires_at": as_utc(link.expires_at).isoformat()})
-    return rows
+    return [_link_view(link, settings) for link in _active_links(db, widget)]
+
+
+def user_token_for_link(db: Session, application: Application, link_id: str, settings: Settings) -> str:
+    """Return an active signed-in user's decrypted app token so an admin can test an endpoint as them."""
+
+    widget = widget_for(db, application)
+    link = db.get(EmbedLink, link_id) if isinstance(link_id, str) else None
+    if (widget is None or link is None or link.widget_id != widget.id
+            or link.revoked_at is not None or as_utc(link.expires_at) <= utcnow()):
+        raise HubError("NOT_FOUND", "That signed-in user was not found or has signed out", 404)
+    return decrypt_secret(settings.secret_encryption_key, link.token_ciphertext)
 
 
 def revoke_links(db: Session, admin: AdminUser, widget: EmbedWidget, application: Application,
@@ -294,11 +306,14 @@ def sign_in_form(connector: Connector) -> list[dict]:
              else "email" if "email" in name.lower() else "text"} for name in fields]
 
 
-async def sign_in(db: Session, widget: EmbedWidget, application: Application, connector: Connector, form,
-                  settings: Settings) -> dict:
-    """Post the visitor's sign-in form to the app and keep the token it returns. The form is never stored."""
+def _clean_name(value) -> str | None:
+    return (" ".join(value.split())[:120] or None) if isinstance(value, str) else None
 
-    auth = connector.custom_spec["user_auth"]
+
+async def _sign_in_form(db: Session, widget: EmbedWidget, application: Application, connector: Connector, form,
+                        settings: Settings, *, auth: dict | None = None,
+                        actor_ref: str | None = None) -> tuple[EmbedLink, dict]:
+    auth = connector.custom_spec["user_auth"] if auth is None else auth
     if "login_path" not in auth:
         raise HubError("VALIDATION_FAILED", "This chat opens from a page where you are already signed in", 422)
     if not isinstance(form, dict):
@@ -325,22 +340,29 @@ async def sign_in(db: Session, widget: EmbedWidget, application: Application, co
         token = None
     if not isinstance(token, str) or not 8 <= len(token) <= 4096:
         raise HubError("SCHEMA_MISMATCH", f"{application.name} signed you in but returned no token where expected", 502)
-    name = await _display_name(connector, token, settings)
-    return _open_session(db, widget, application, token, name, settings, "embed.sign_in")
+    name = await _display_name(connector, token, settings, auth=auth)
+    return _open_session(db, widget, application, token, name, settings, "embed.sign_in", actor_ref=actor_ref)
 
 
-async def sign_in_with_token(db: Session, widget: EmbedWidget, application: Application, connector: Connector, token,
-                             settings: Settings) -> dict:
-    """The page the widget sits on is already signed in to the app: it hands over the user's own token. When the
-    app has a me_path the Hub asks it whose token this is before using it; either way the token can only ever read
-    that user's data, because the app decides what it may read."""
+async def sign_in(db: Session, widget: EmbedWidget, application: Application, connector: Connector, form,
+                  settings: Settings) -> dict:
+    """Post the visitor's sign-in form to the app and keep the token it returns. The form is never stored."""
 
-    auth = connector.custom_spec["user_auth"]
+    _link, session = await _sign_in_form(db, widget, application, connector, form, settings)
+    return session
+
+
+async def _sign_in_token(db: Session, widget: EmbedWidget, application: Application, connector: Connector, token,
+                         settings: Settings, *, auth: dict | None = None, label: str | None = None,
+                         actor_ref: str | None = None) -> tuple[EmbedLink, dict]:
+    auth = connector.custom_spec["user_auth"] if auth is None else auth
     if not isinstance(token, str) or not 8 <= len(token) <= 4096 or not token.isprintable():
         raise HubError("VALIDATION_FAILED", "The sign-in token is not valid", 422)
+    fallback_name = _clean_name(label)
     if "me_path" not in auth:
         # Nothing to ask the app: a wrong token simply fails when the chat reads, and the widget asks for a new one.
-        return _open_session(db, widget, application, token, None, settings, "embed.sign_in_host")
+        return _open_session(db, widget, application, token, fallback_name, settings, "embed.sign_in_host",
+                             actor_ref=actor_ref)
     status, raw, _ = await execute_request(
         method="GET", url=join_url(connector.base_url, auth["me_path"]), settings=settings,
         headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
@@ -355,25 +377,66 @@ async def sign_in_with_token(db: Session, widget: EmbedWidget, application: Appl
         value = _dig(json.loads(raw.decode("utf-8")), auth["name_path"])
     except (UnicodeDecodeError, json.JSONDecodeError):
         value = None
-    name = " ".join(value.split())[:120] or None if isinstance(value, str) else None
-    return _open_session(db, widget, application, token, name, settings, "embed.sign_in_host")
+    name = _clean_name(value) or fallback_name
+    return _open_session(db, widget, application, token, name, settings, "embed.sign_in_host", actor_ref=actor_ref)
+
+
+async def sign_in_with_token(db: Session, widget: EmbedWidget, application: Application, connector: Connector, token,
+                             settings: Settings) -> dict:
+    """The page the widget sits on is already signed in to the app: it hands over the user's own token. When the
+    app has a me_path the Hub asks it whose token this is before using it; either way the token can only ever read
+    that user's data, because the app decides what it may read."""
+
+    _link, session = await _sign_in_token(db, widget, application, connector, token, settings)
+    return session
+
+
+async def admin_sign_in_user(db: Session, admin: AdminUser, application: Application, connector: Connector,
+                             payload, settings: Settings) -> dict:
+    """Let an admin sign in a user (or paste a user token) right from the Endpoints editor to test endpoints as them."""
+
+    from app.connectors.custom_api import user_auth as parse_user_auth
+
+    if connector.connector_type != "custom_api":
+        raise HubError("CONFLICT", "Only a custom API connection can sign in a test user", 409)
+    if connector.status == "archived":
+        raise HubError("CONFLICT", "Archived apps cannot sign in users", 409)
+    if not isinstance(payload, dict):
+        raise HubError("VALIDATION_FAILED", "Request body must be an object", 422)
+    raw_auth = payload.get("user_auth")
+    auth = parse_user_auth(raw_auth) if raw_auth is not None else (connector.custom_spec or {}).get("user_auth")
+    widget = ensure_widget(db, application)
+    mode = payload.get("mode") or ("form" if auth and "login_path" in auth else "token")
+    if mode == "form":
+        if not auth or "login_path" not in auth:
+            raise HubError("VALIDATION_FAILED", "Set a login path first, or sign in with a user token", 422)
+        link, _ = await _sign_in_form(db, widget, application, connector, payload.get("fields"), settings,
+                                      auth=auth, actor_ref=f"admin:{admin.id}")
+    elif mode == "token":
+        link, _ = await _sign_in_token(db, widget, application, connector, payload.get("token"), settings,
+                                       auth=auth or {"host_token": True}, label=payload.get("label"),
+                                       actor_ref=f"admin:{admin.id}")
+    else:
+        raise HubError("VALIDATION_FAILED", "Sign-in mode must be form or token", 422)
+    return _link_view(link, settings)
 
 
 def _open_session(db: Session, widget: EmbedWidget, application: Application, token: str, name: str | None,
-                  settings: Settings, action: str) -> dict:
+                  settings: Settings, action: str, *, actor_ref: str | None = None) -> tuple[EmbedLink, dict]:
     session = SESSION_PREFIX + secrets.token_urlsafe(32)
+    now = utcnow()
     link = EmbedLink(id=new_id(), widget_id=widget.id, session_hash=_hash(session),
                      token_ciphertext=encrypt_secret(settings.secret_encryption_key, token),
                      label_ciphertext=encrypt_secret(settings.secret_encryption_key, name) if name else None,
-                     expires_at=utcnow() + timedelta(days=widget.session_days))
+                     created_at=now, expires_at=now + timedelta(days=widget.session_days))
     db.add(link)
-    record_audit(db, action=action, actor_ref=f"embed:{link.id}", result="success",
+    record_audit(db, action=action, actor_ref=actor_ref or f"embed:{link.id}", result="success",
                  app_key=application.key, environment=application.environment)
-    return {"session": session, "name": name}
+    return link, {"session": session, "name": name}
 
 
-async def _display_name(connector: Connector, token: str, settings: Settings) -> str | None:
-    auth = connector.custom_spec["user_auth"]
+async def _display_name(connector: Connector, token: str, settings: Settings, *, auth: dict | None = None) -> str | None:
+    auth = connector.custom_spec["user_auth"] if auth is None else auth
     if "me_path" not in auth:
         return None
     try:
@@ -384,7 +447,7 @@ async def _display_name(connector: Connector, token: str, settings: Settings) ->
         value = _dig(json.loads(raw.decode("utf-8")), auth["name_path"]) if status < 400 else None
     except (HubError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    return " ".join(value.split())[:120] or None if isinstance(value, str) else None
+    return _clean_name(value)
 
 
 def resolve_session(db: Session, widget: EmbedWidget, token: str | None, settings: Settings) -> SignedIn | None:
