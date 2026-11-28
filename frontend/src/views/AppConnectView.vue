@@ -16,6 +16,7 @@ import { useSlowFlag } from "@/utils/loading";
 const toast = useToast();
 const router = useRouter();
 const step = ref(1);
+const usage = ref<"embed" | "connect" | null>(null);
 const onboarding = ref("manual");
 const busy = ref(false);
 const error = ref("");
@@ -43,6 +44,17 @@ const allowed = ref<Record<string, boolean>>({});
 // What happened to each ticked draft, so the last screen can name the ones that stayed drafts.
 const outcome = ref<{ title: string; ok: boolean; note: string }[]>([]);
 const done = ref(false);
+
+function chooseUsage(value: "embed" | "connect") {
+  usage.value = value;
+  onboarding.value = "manual";
+  form.value.connector_type = value === "embed" ? "custom_api" : "http_contract";
+  form.value.secret = "";
+  form.value.delegation_secret = "";
+  error.value = "";
+  hostBlocked.value = false;
+  approveHost.value = false;
+}
 
 watch(() => form.value.name, (name) => { if (!keyEdited.value) form.value.app_key = slugify(name); });
 
@@ -119,7 +131,7 @@ async function save() {
         auth_type: form.value.auth_mode, auth_header: form.value.auth_mode === "header" ? form.value.auth_header : "",
         secret: form.value.auth_mode === "none" ? "" : form.value.secret,
         timeout_ms: form.value.timeout_ms, tls_verify: form.value.tls_verify, approve_host: approveHost.value });
-      await router.push({ path: `/apps/${created.id}`, query: { tab: "endpoints" } });
+      await router.push({ path: `/apps/${created.id}`, query: { tab: usage.value === "embed" ? "embed" : "endpoints" } });
       return;
     }
     if (!app.value) {
@@ -259,10 +271,24 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
 </script>
 
 <template>
-  <PageHeader title="Connect an app" back="/apps"
-              subtitle="The app must implement the connector contract: an authenticated health check, a capability manifest and the reviewed routes it lists." />
+  <PageHeader :title="usage === 'embed' ? 'Set up embedded chat' : usage === 'connect' ? 'Connect an app' : 'Add an app'" back="/apps"
+              :subtitle="usage === 'embed' ? 'Add your API, then set up endpoints, user sign-in and the chat widget.' : usage === 'connect' ? 'Connect your application so AI clients can use its tools.' : 'Choose how you want to use this app.'" />
 
-  <div v-if="step === 1 && !app" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="Connection method">
+  <section v-if="!usage" class="grid max-w-3xl gap-4 sm:grid-cols-2" aria-label="How to use this app">
+    <button type="button" class="card card-pad space-y-2 text-left hover:border-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand" @click="chooseUsage('embed')">
+      <span class="block text-lg font-semibold">Embed</span>
+      <span class="block text-sm text-subtle">Put a chat widget on your website. Set up your API and user sign-in, then copy the embed snippet.</span>
+      <span class="block text-xs text-subtle">No Hub credentials to paste into your app's .env.</span>
+    </button>
+    <button type="button" class="card card-pad space-y-2 text-left hover:border-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand" @click="chooseUsage('connect')">
+      <span class="block text-lg font-semibold">Connect</span>
+      <span class="block text-sm text-subtle">Connect your application to the Hub for AI clients and server integration.</span>
+      <span class="block text-xs text-subtle">Set up with the connector API or Laravel package.</span>
+    </button>
+  </section>
+  <template v-else>
+  <button v-if="step === 1 && !app" type="button" class="btn-ghost btn-sm mb-4" :disabled="busy" @click="usage = null">Change Embed / Connect</button>
+  <div v-if="usage === 'connect' && step === 1 && !app" class="mb-6 flex flex-wrap gap-2" role="group" aria-label="Connection method">
     <button type="button" :class="onboarding === 'manual' ? 'btn-primary' : 'btn-secondary'"
       :aria-pressed="onboarding === 'manual'" @click="onboarding = 'manual'">Connector API</button>
     <button type="button" :class="onboarding === 'laravel' ? 'btn-primary' : 'btn-secondary'"
@@ -270,7 +296,7 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
   </div>
   <LaravelPairing v-show="onboarding === 'laravel'" />
   <template v-if="onboarding !== 'laravel'">
-  <ol v-if="!done" class="mb-6 flex flex-wrap gap-2">
+  <ol v-if="!done && !customApi" class="mb-6 flex flex-wrap gap-2">
     <li v-for="(label, index) in steps" :key="label" class="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
         :class="step === index + 1 ? 'bg-brand-soft text-brand' : step > index + 1 ? 'bg-ok-soft text-ok' : 'bg-muted text-subtle'">
       <AppIcon v-if="step > index + 1" name="check" :size="14" /><span v-else>{{ index + 1 }}</span> {{ label }}
@@ -288,7 +314,7 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
       <label><span class="label">App name</span><input v-model="form.name" class="input" placeholder="Your App" required /></label>
       <label><span class="label">App key</span>
         <input v-model="form.app_key" class="input font-mono" pattern="[a-z][a-z0-9_]*" required :disabled="!!app" @input="keyEdited = true" />
-        <span class="hint">Lowercase id. Must match <span class="code">application</span> in the app's manifest.</span></label>
+        <span class="hint">{{ customApi ? "A unique lowercase id for this app." : "Lowercase id. Must match application in the app's manifest." }}</span></label>
       <label class="sm:col-span-2"><span class="label">Base URL</span>
         <input v-model="form.base_url" class="input" placeholder="https://app.example.com" required />
         <span class="hint">{{ customApi ? "The Hub only calls the endpoints you list under this address." : "The Hub only calls routes under this address that the app lists in its manifest." }}</span></label>
@@ -296,7 +322,7 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
         <select v-model="form.environment" class="input" :disabled="!!app">
           <option value="dev">Development</option><option value="test">Test</option><option value="staging">Staging</option><option value="production">Production</option>
         </select></label>
-      <label class="sm:col-span-2"><span class="label">Permission management</span>
+      <label v-if="usage === 'connect'" class="sm:col-span-2"><span class="label">Permission management</span>
         <select v-model="form.connector_type" class="input" :disabled="!!app">
           <option value="http_contract">Set up in Hub</option>
           <option value="source_managed">Follow application permissions automatically</option>
@@ -455,5 +481,6 @@ const failed = computed(() => outcome.value.filter((item) => !item.ok));
       <RouterLink :to="`/apps/${app?.id}?tab=keys`" class="btn-primary">Manage API keys</RouterLink>
     </div>
   </section>
+  </template>
   </template>
 </template>
